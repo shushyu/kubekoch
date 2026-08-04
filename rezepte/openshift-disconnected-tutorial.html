@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenShift Disconnected – Der Fahrplan (DO0032 · 4.18)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#33394a;
+  --ink-soft:#5c6376;
+  --paper:#fbfaf7;
+  --card:#ffffff;
+  --line:#e9e6df;
+  --code-bg:#31364a;
+  --code-ink:#e8eaf2;
+  --mint:#d9f2e4;      --mint-deep:#2f8f6b;
+  --sky:#dcebf9;       --sky-deep:#2d6fa8;
+  --lav:#e7e2f7;       --lav-deep:#6b5bb5;
+  --peach:#fbe6d7;     --peach-deep:#c2703d;
+  --butter:#faf0cf;    --butter-deep:#a5842a;
+  --rose:#f9e0e6;      --rose-deep:#b34f6d;
+  --aqua:#d7eff0;      --aqua-deep:#2b8288;
+  --r-lg:26px; --r-md:18px; --r-sm:12px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;scroll-padding-top:90px}
+body{font-family:'Inter',sans-serif;background:var(--paper);color:var(--ink);line-height:1.65;font-size:16px}
+h1,h2,h3,h4{font-family:'Sora',sans-serif;line-height:1.2}
+
+/* ---------- Kopf ---------- */
+header{max-width:1060px;margin:0 auto;padding:56px 24px 8px}
+.kicker{display:inline-block;background:var(--lav);color:var(--lav-deep);font-weight:600;font-size:.8rem;letter-spacing:.08em;text-transform:uppercase;padding:6px 14px;border-radius:999px;margin-bottom:18px}
+header h1{font-size:clamp(1.9rem,4.5vw,3rem);font-weight:800;letter-spacing:-.02em}
+header h1 span{color:var(--mint-deep)}
+.lede{color:var(--ink-soft);max-width:640px;margin-top:14px;font-size:1.05rem}
+
+/* ---------- Fahrplan ---------- */
+.route{max-width:1060px;margin:34px auto 10px;padding:0 24px;display:grid;grid-template-columns:repeat(7,1fr);gap:12px}
+.route a{display:flex;flex-direction:column;gap:8px;text-decoration:none;color:var(--ink);background:var(--card);border:1.5px solid var(--line);border-radius:var(--r-md);padding:16px 14px;transition:transform .15s ease,box-shadow .15s ease}
+.route a:hover,.route a:focus-visible{transform:translateY(-3px);box-shadow:0 8px 22px rgba(60,60,90,.10);outline:none}
+.route .dot{width:34px;height:34px;border-radius:12px;display:grid;place-items:center;font-family:'Sora';font-weight:700;font-size:.9rem}
+.route .t{font-weight:600;font-size:.86rem;line-height:1.3}
+.route .s{font-size:.74rem;color:var(--ink-soft)}
+.route a:nth-child(1) .dot{background:var(--aqua);color:var(--aqua-deep)}
+.route a:nth-child(2) .dot{background:var(--mint);color:var(--mint-deep)}
+.route a:nth-child(3) .dot{background:var(--sky);color:var(--sky-deep)}
+.route a:nth-child(4) .dot{background:var(--lav);color:var(--lav-deep)}
+.route a:nth-child(5) .dot{background:var(--peach);color:var(--peach-deep)}
+.route a:nth-child(6) .dot{background:var(--butter);color:var(--butter-deep)}
+.route a:nth-child(7) .dot{background:var(--rose);color:var(--rose-deep)}
+
+/* ---------- Sticky-Nav ---------- */
+nav{position:sticky;top:0;z-index:50;background:rgba(251,250,247,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);margin-top:26px}
+nav .wrap{max-width:1060px;margin:0 auto;padding:10px 24px;display:flex;gap:8px;overflow-x:auto}
+nav a{white-space:nowrap;text-decoration:none;font-size:.82rem;font-weight:600;color:var(--ink-soft);padding:7px 14px;border-radius:999px;border:1px solid transparent}
+nav a:hover{background:var(--card);border-color:var(--line);color:var(--ink)}
+
+/* ---------- Sektionen ---------- */
+main{max-width:1060px;margin:0 auto;padding:20px 24px 90px}
+section{margin-top:64px}
+.sec-head{display:flex;align-items:center;gap:16px;margin-bottom:8px}
+.badge{width:52px;height:52px;border-radius:16px;display:grid;place-items:center;font-family:'Sora';font-weight:800;font-size:1.25rem;flex-shrink:0}
+section h2{font-size:clamp(1.4rem,3vw,1.9rem);font-weight:700}
+.sec-sub{color:var(--ink-soft);margin-bottom:22px;max-width:720px}
+.aqua .badge{background:var(--aqua);color:var(--aqua-deep)}
+.mint .badge{background:var(--mint);color:var(--mint-deep)}
+.sky .badge{background:var(--sky);color:var(--sky-deep)}
+.lav .badge{background:var(--lav);color:var(--lav-deep)}
+.peach .badge{background:var(--peach);color:var(--peach-deep)}
+.butter .badge{background:var(--butter);color:var(--butter-deep)}
+.rose .badge{background:var(--rose);color:var(--rose-deep)}
+
+/* ---------- Karten & Schritte ---------- */
+.card{background:var(--card);border:1.5px solid var(--line);border-radius:var(--r-lg);padding:26px 28px;margin-bottom:20px}
+.card h3{font-size:1.08rem;margin-bottom:14px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+ol.steps{list-style:none;counter-reset:s;display:flex;flex-direction:column;gap:14px}
+ol.steps li{counter-increment:s;display:grid;grid-template-columns:34px 1fr;gap:14px;align-items:start}
+ol.steps li::before{content:counter(s);width:30px;height:30px;border-radius:10px;display:grid;place-items:center;font-family:'Sora';font-weight:700;font-size:.85rem;margin-top:2px}
+.aqua ol.steps li::before{background:var(--aqua);color:var(--aqua-deep)}
+.mint ol.steps li::before{background:var(--mint);color:var(--mint-deep)}
+.sky ol.steps li::before{background:var(--sky);color:var(--sky-deep)}
+.lav ol.steps li::before{background:var(--lav);color:var(--lav-deep)}
+.peach ol.steps li::before{background:var(--peach);color:var(--peach-deep)}
+.butter ol.steps li::before{background:var(--butter);color:var(--butter-deep)}
+.rose ol.steps li::before{background:var(--rose);color:var(--rose-deep)}
+.steps b{font-weight:600}
+.steps small{display:block;color:var(--ink-soft);font-size:.86rem;margin-top:2px}
+
+ul.clean{list-style:none;display:flex;flex-direction:column;gap:10px}
+ul.clean li{padding-left:24px;position:relative}
+ul.clean li::before{content:"";position:absolute;left:4px;top:.62em;width:9px;height:9px;border-radius:3px;background:var(--line)}
+.aqua ul.clean li::before{background:var(--aqua-deep)}
+.mint ul.clean li::before{background:var(--mint-deep)}
+.sky ul.clean li::before{background:var(--sky-deep)}
+.lav ul.clean li::before{background:var(--lav-deep)}
+.peach ul.clean li::before{background:var(--peach-deep)}
+.butter ul.clean li::before{background:var(--butter-deep)}
+.rose ul.clean li::before{background:var(--rose-deep)}
+
+/* ---------- Code ---------- */
+pre{background:var(--code-bg);color:var(--code-ink);border-radius:var(--r-sm);padding:16px 18px;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:.82rem;line-height:1.6;margin:10px 0}
+code{font-family:'JetBrains Mono',monospace;font-size:.85em;background:#efede7;border-radius:6px;padding:2px 6px}
+pre code{background:none;padding:0;font-size:1em}
+pre .c{color:#9aa3c0}
+
+/* ---------- Hinweisboxen ---------- */
+.note,.warn,.mnemo{border-radius:var(--r-md);padding:14px 18px;margin:14px 0;font-size:.92rem}
+.note{background:var(--sky)}
+.warn{background:var(--rose)}
+.mnemo{background:var(--butter)}
+.note b,.warn b,.mnemo b{font-weight:700}
+.mnemo::before{content:"🧠 Eselsbrücke · ";font-weight:700}
+.warn::before{content:"⚠️ ";font-weight:700}
+
+/* ---------- Tabellen ---------- */
+table{width:100%;border-collapse:separate;border-spacing:0;font-size:.88rem;margin:10px 0}
+th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-family:'Sora';font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft)}
+tr:last-child td{border-bottom:none}
+thead th:first-child{border-top-left-radius:var(--r-sm)}
+thead th:last-child{border-top-right-radius:var(--r-sm)}
+thead{background:var(--paper)}
+
+/* ---------- Details ---------- */
+details{border:1.5px solid var(--line);border-radius:var(--r-md);margin:12px 0;background:var(--card)}
+details summary{cursor:pointer;padding:14px 18px;font-weight:600;font-size:.94rem;list-style:none;display:flex;align-items:center;gap:10px}
+details summary::before{content:"+";font-family:'Sora';font-weight:700;width:24px;height:24px;border-radius:8px;background:var(--paper);display:grid;place-items:center;flex-shrink:0}
+details[open] summary::before{content:"–"}
+details .inner{padding:0 18px 18px}
+summary::-webkit-details-marker{display:none}
+
+/* ---------- DNS-Chips ---------- */
+.chips{display:flex;flex-wrap:wrap;gap:10px;margin:10px 0}
+.chip{background:var(--paper);border:1.5px solid var(--line);border-radius:999px;padding:6px 14px;font-family:'JetBrains Mono';font-size:.8rem}
+
+footer{max-width:1060px;margin:0 auto;padding:30px 24px 60px;color:var(--ink-soft);font-size:.82rem;border-top:1px solid var(--line)}
+
+@media(max-width:820px){
+  .route{grid-template-columns:repeat(2,1fr)}
+  .grid2{grid-template-columns:1fr}
+}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.route a{transition:none}}
+</style>
+</head>
+<body>
+
+<header>
+  <span class="kicker">DO0032 · OpenShift 4.18 · Disconnected</span>
+  <h1>OpenShift ohne Internet:<br>der komplette <span>Fahrplan</span></h1>
+  <p class="lede">Sechs Etappen von der leeren, abgeschotteten Umgebung bis zum aktualisierten Cluster. Jede Etappe zeigt zuerst, <b>was</b> zu tun ist – Details und Befehle klappst du bei Bedarf auf.</p>
+</header>
+
+<div class="route">
+  <a href="#basics"><span class="dot">0</span><span class="t">Grundlagen</span><span class="s">Prozess, Methoden, Topologien</span></a>
+  <a href="#prep"><span class="dot">1</span><span class="t">Vorbereiten</span><span class="s">Mirror, Tools, DNS/DHCP/NTP</span></a>
+  <a href="#sno"><span class="dot">2</span><span class="t">SNO manuell</span><span class="s">Boot-Image + Ignition</span></a>
+  <a href="#agent"><span class="dot">3</span><span class="t">Agent-Installer</span><span class="s">Ein ISO, kein Bootstrap-Host</span></a>
+  <a href="#pxe"><span class="dot">4</span><span class="t">Worker anfügen</span><span class="s">PXE-Boot + CSRs</span></a>
+  <a href="#day1"><span class="dot">5</span><span class="t">Day-1-Konfig</span><span class="s">OLM lokal + LDAP</span></a>
+  <a href="#update"><span class="dot">6</span><span class="t">Updaten</span><span class="s">Mirror → Backup → Upgrade</span></a>
+</div>
+
+<nav><div class="wrap">
+  <a href="#basics">0 · Grundlagen</a>
+  <a href="#prep">1 · Vorbereiten</a>
+  <a href="#sno">2 · SNO manuell</a>
+  <a href="#agent">3 · Agent-Installer</a>
+  <a href="#pxe">4 · Worker (PXE)</a>
+  <a href="#day1">5 · Day-1</a>
+  <a href="#update">6 · Update</a>
+</div></nav>
+
+<main>
+
+<!-- ================= 0 GRUNDLAGEN ================= -->
+<section id="basics" class="aqua">
+  <div class="sec-head"><div class="badge">0</div><h2>Grundlagen: Wie OpenShift installiert wird</h2></div>
+  <p class="sec-sub">Bevor du losbaust: Der Installer ist <b>„opinionated“</b> – er nimmt dir Entscheidungen ab und baut nach Best Practices. Angepasst wird danach (Day 2), nicht während der Installation.</p>
+
+  <div class="card">
+    <h3>Der Bootstrap-Prozess in 8 Schritten</h3>
+    <p>Bild: Der Bootstrap-Node ist das <b>Baugerüst</b> – er hält alles, bis die echte Control-Plane steht, und wird dann abgerissen.</p>
+    <ol class="steps">
+      <li><div><b>Konfiguration liefern</b><small>Du gibst die <code>install-config.yaml</code> vor.</small></div></li>
+      <li><div><b>Ignition-Dateien generieren</b><small>Der Installer erzeugt sie für Bootstrap-, Control-Plane- und Compute-Nodes.</small></div></li>
+      <li><div><b>Bootstrap-Node booten</b><small>Mit der Bootstrap-Ignition-Konfiguration.</small></div></li>
+      <li><div><b>Temporäre Control-Plane</b><small>Der Bootstrap-Node startet ein provisorisches Kubernetes.</small></div></li>
+      <li><div><b>Control-Plane-Nodes booten</b><small>Sie holen ihre Ignition-Konfig vom Bootstrap-Node.</small></div></li>
+      <li><div><b>etcd formiert sich</b><small>Die Control-Plane-Nodes treten bei und bilden den permanenten etcd-Cluster.</small></div></li>
+      <li><div><b>Übergabe &amp; Abriss</b><small>Bootstrap übergibt an die permanente Control-Plane und fährt herunter.</small></div></li>
+      <li><div><b>Compute-Nodes beitreten</b><small>Booten, Konfig holen, Cluster beitreten.</small></div></li>
+    </ol>
+    <p style="font-size:.88rem;color:var(--ink-soft);margin-top:12px"><b>Ignition</b> läuft beim allerersten Boot der RHCOS-Maschinen: formatiert Disks, schreibt Dateien, konfiguriert systemd-Units.</p>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>RHCOS vs. RHEL als Node-OS</h3>
+      <table>
+        <thead><tr><th></th><th>RHCOS</th><th>RHEL</th></tr></thead>
+        <tbody>
+          <tr><td><b>Control-Plane</b></td><td>Pflicht</td><td>nicht unterstützt</td></tr>
+          <tr><td><b>Compute</b></td><td>Standard</td><td>möglich (ab 8.8, als Day-2)</td></tr>
+          <tr><td><b>OS-Updates</b></td><td>automatisch &amp; atomar via MCO</td><td>Admin macht's selbst</td></tr>
+          <tr><td><b>Wofür</b></td><td>immutable, cluster-verwaltet</td><td>eigene Kernel-Module, non-containerized Agents</td></tr>
+        </tbody>
+      </table>
+      <div class="mnemo"><b>RHCOS = Mietwohnung</b> (der Cluster renoviert für dich), <b>RHEL = Eigenheim</b> (volle Freiheit, aber du streichst selbst).</div>
+    </div>
+    <div class="card">
+      <h3>Topologien</h3>
+      <table>
+        <thead><tr><th>Topologie</th><th>Aufbau</th><th>Einsatz</th></tr></thead>
+        <tbody>
+          <tr><td><b>Standard-HA</b></td><td>3 Control-Plane + ≥ 2 Compute</td><td>Produktion, HA, getrennte Rollen</td></tr>
+          <tr><td><b>Compact</b></td><td>3 Nodes = Control-Plane <i>und</i> Compute</td><td>wenig Hardware, trotzdem HA</td></tr>
+          <tr><td><b>Single-Node (SNO)</b></td><td>1 Server für alles</td><td>Edge: wenig Platz &amp; Strom</td></tr>
+        </tbody>
+      </table>
+      <p style="font-size:.88rem;color:var(--ink-soft);margin-top:10px">Disconnected heißt immer: lokale Registry + <code>oc-mirror</code> (→ Etappe 1).</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Die vier Installationswege</h3>
+    <table>
+      <thead><tr><th>Methode</th><th>Kern-Idee</th><th>Wann</th></tr></thead>
+      <tbody>
+        <tr><td><b>Assisted Installer</b></td><td>Web-UI auf console.redhat.com, Discovery-ISO, Prüfung der Voraussetzungen online</td><td>connected; Bare Metal, Nutanix, vSphere (Red-Hat-Empfehlung)</td></tr>
+        <tr><td><b>Agent-based Installer</b></td><td>CLI baut ein autonomes Boot-ISO, keine Console nötig</td><td>Bare Metal, Edge, <b>disconnected</b> (→ Etappe 3)</td></tr>
+        <tr><td><b>Full-stack Automation (IPI)</b></td><td>Installer baut die Infrastruktur selbst (VMs, LB, DNS) über die Plattform-API</td><td>Cloud (AWS/Azure/GCP), vSphere, OpenStack</td></tr>
+        <tr><td><b>Pre-existing Infrastructure (UPI)</b></td><td>Du baust Netz, DNS, LB, Maschinen – der Installer liefert nur Ignition</td><td>Spezial-Anpassungen, strenge Compliance</td></tr>
+      </tbody>
+    </table>
+    <div class="mnemo"><b>IPI = „Installer Packt's Ich-mach-alles“</b>, <b>UPI = „User Packt's Immer-selbst“</b>. Gemeinsam bleibt nur: Ignition erzeugt immer der Installer.</div>
+    <details><summary>IPI vs. UPI im Detail</summary><div class="inner">
+      <table>
+        <thead><tr><th>Aufgabe</th><th>IPI</th><th>UPI</th></tr></thead>
+        <tbody>
+          <tr><td>Netzwerk, Load Balancer, DNS</td><td>Installer</td><td>User</td></tr>
+          <tr><td>Hardware/VMs provisionieren, OS installieren</td><td>Installer</td><td>User</td></tr>
+          <tr><td>Ignition-Dateien</td><td>Installer</td><td>Installer</td></tr>
+          <tr><td>Compute-OS</td><td>RHCOS</td><td>RHCOS oder RHEL</td></tr>
+          <tr><td>Registry-Storage / dynamischer Storage-Provider</td><td>Installer (außer Bare Metal)</td><td>User</td></tr>
+          <tr><td>Node-Provisioning &amp; Autoscaling</td><td>Installer</td><td>nur mit Machine-API-Integration (Bare Metal: nein)</td></tr>
+        </tbody>
+      </table>
+    </div></details>
+    <details><summary>Managed-Angebote (falls du gar nicht selbst installieren willst)</summary><div class="inner">
+      <ul class="clean">
+        <li><b>Red Hat OpenShift Service on AWS</b> – vollständig verwaltet, native AWS-Integration, Pay-as-you-go, eigenes CLI</li>
+        <li><b>Microsoft Azure Red Hat OpenShift</b> – gemeinsam von Microsoft &amp; Red Hat betrieben</li>
+        <li><b>Red Hat OpenShift on IBM Cloud</b> – managed auf IBM Cloud</li>
+        <li><b>Red Hat OpenShift Dedicated</b> – von Red Hat betrieben auf AWS oder GCP</li>
+      </ul>
+      <p style="font-size:.88rem;color:var(--ink-soft);margin-top:10px">Control-Plane- und Infrastruktur-Betrieb liegen bei Red Hat/Cloud-Provider – du kümmerst dich um Apps.</p>
+    </div></details>
+  </div>
+</section>
+
+<!-- ================= 1 VORBEREITEN ================= -->
+<section id="prep" class="mint">
+  <div class="sec-head"><div class="badge">1</div><h2>Disconnected-Installation vorbereiten</h2></div>
+  <p class="sec-sub">Ohne Internet muss alles, was der Cluster braucht, vorher in dein Netz: Images in eine lokale Registry, CLI-Tools auf die Workstation, Infrastrukturdienste ins Netz.</p>
+
+  <div class="card">
+    <h3>Die drei Baustellen im Überblick</h3>
+    <ol class="steps">
+      <li><div><b>Images spiegeln</b><small>Release-Images, Operator-Kataloge und Zusatz-Images per <code>oc-mirror</code> (v2) in eine lokale Registry bringen.</small></div></li>
+      <li><div><b>Tools bereitstellen</b><small><code>oc</code>, <code>openshift-install</code>, <code>butane</code>, <code>coreos-installer</code> + RHCOS-Live-ISO herunterladen.</small></div></li>
+      <li><div><b>Infrastruktur aufsetzen</b><small>NTP, DHCP und DNS im disconnected Netz konfigurieren – ohne sauberes DNS keine Installation.</small></div></li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h3>Spiegeln mit oc-mirror v2</h3>
+    <p>Bild: Die Registry ist dein <b>lokaler Supermarkt</b>. <code>oc-mirror</code> ist der LKW, der ihn von außen befüllt. Die <code>ImageSetConfiguration</code> ist der Einkaufszettel.</p>
+    <ol class="steps">
+      <li><div><b>Registry wählen</b><small>Bestehende private Registry (z. B. Quay) für den Dauerbetrieb – oder die kleine „mirror registry for Red Hat OpenShift“ nur für die Installation.</small></div></li>
+      <li><div><b>oc-mirror installieren</b><small>Von console.redhat.com oder mirror.openshift.com laden, nach <code>/usr/local/bin</code> legen.</small></div></li>
+      <li><div><b>Credentials bündeln</b><small>Pull-Secret nach <code>~/.docker/config.json</code> kopieren, dann <code>podman login --authfile</code> für die lokale Registry – eine Datei, beide Registries.</small></div></li>
+      <li><div><b>Einkaufszettel schreiben</b><small><code>ImageSetConfiguration</code>: Plattform-Channel + Versionsbereich, Operatoren, <code>additionalImages</code> (z. B. support-tools).</small></div></li>
+      <li><div><b>Spiegeln</b><small><code>oc mirror --v2</code> ausführen – immer mit demselben <code>--workspace</code>, denn dort liegen Cache + Metadaten.</small></div></li>
+    </ol>
+    <div class="warn"><b>Platzbedarf:</b> Plattform-Images ≈ 32 GiB. Alle Operatoren eines Releases ≈ 900 GiB. Alle Channels aller Kataloge: mehrere TiB. Filtern lohnt sich.</div>
+    <details><summary>Befehle &amp; Beispiel-Konfiguration</summary><div class="inner">
+<pre><code><span class="c"># Credentials zusammenführen</span>
+cp ~/Downloads/pull-secret ~/.docker/config.json
+podman login --authfile ~/.docker/config.json -u myuser registry.example.com
+
+<span class="c"># Was gibt es? (Releases / Kataloge auflisten)</span>
+oc-mirror list releases --version=4.18
+oc-mirror list operators --catalogs --version=4.18
+
+<span class="c"># Spiegeln (immer --v2, v1 ist deprecated)</span>
+oc mirror --v2 \
+  --config image-set-config.yaml \
+  --workspace file://mirror/ \
+  docker://registry.example.com</code></pre>
+<pre><code>kind: ImageSetConfiguration
+apiVersion: mirror.openshift.io/v2alpha1
+mirror:
+  platform:
+    channels:
+    - name: stable-4.18
+      type: ocp
+      minVersion: 4.18.6
+      maxVersion: 4.18.6
+  operators:
+  - catalog: registry.redhat.io/redhat/redhat-operator-index:v4.18
+    packages:
+    - name: openshift-gitops-operator
+  additionalImages:
+  - name: registry.redhat.io/rhel9/support-tools:latest</code></pre>
+      <p style="font-size:.88rem;color:var(--ink-soft)">Ergebnis im Workspace: u. a. <code>idms-oc-mirror.yaml</code> (ImageDigestMirrorSet) – leitet später Pulls auf die lokale Registry um. Wiederholtes Ausführen spiegelt nur Neues (Cache).</p>
+      <p style="font-size:.88rem;color:var(--ink-soft)">Voll-air-gapped in drei Schritten: <b>mirror-to-disk</b> (online) → <b>Transfer</b> (Datenträger) → <b>disk-to-mirror</b> (offline in die Registry).</p>
+    </div></details>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>Werkzeugkiste</h3>
+      <ul class="clean">
+        <li><b>oc</b> – Cluster installieren &amp; verwalten</li>
+        <li><b>openshift-install</b> – startet &amp; überwacht die Installation</li>
+        <li><b>butane</b> – baut aus Konfig-Dateien MachineConfigs (z. B. lokale NTP-Konfig)</li>
+        <li><b>coreos-installer</b> – bettet Ignition in das RHCOS-Live-ISO ein</li>
+        <li><b>RHCOS-Live-ISO</b> – das Boot-Medium für die Nodes</li>
+        <li><b>SSH-Key + Pull-Secret</b> – Key kommt auf die Nodes; Pull-Secret enthält hier die Zugangsdaten der <i>lokalen</i> Registry</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Infrastrukturdienste</h3>
+      <ul class="clean">
+        <li><b>NTP</b> – lokale Zeitquelle (chrony), sonst kippen TLS-Zertifikate</li>
+        <li><b>DHCP</b> – feste IPs per MAC-Reservierung (Red-Hat-Empfehlung statt Boot-Parametern)</li>
+        <li><b>DNS</b> – Forward- <i>und</i> Reverse-Zone; PTR-Records setzen u. a. die Hostnamen</li>
+      </ul>
+      <p style="margin-top:12px;font-weight:600;font-size:.9rem">Pflicht-Records:</p>
+      <div class="chips">
+        <span class="chip">api.&lt;cluster&gt;.&lt;domain&gt;</span>
+        <span class="chip">api-int.&lt;cluster&gt;.&lt;domain&gt;</span>
+        <span class="chip">*.apps.&lt;cluster&gt;.&lt;domain&gt;</span>
+      </div>
+      <div class="mnemo"><b>„A-A-A“:</b> <b>a</b>pi (extern), <b>a</b>pi-int (intern), <b>a</b>pps (Wildcard für Routen) – plus PTR für jeden Node.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 2 SNO MANUELL ================= -->
+<section id="sno" class="sky">
+  <div class="sec-head"><div class="badge">2</div><h2>Single-Node OpenShift manuell installieren</h2></div>
+  <p class="sec-sub">Der Weg über <code>openshift-install</code> + eigenes Boot-ISO. Die Pipeline ist immer dieselbe: <b>install-config → Manifeste → Ignition → ISO → Boot</b>.</p>
+
+  <div class="card">
+    <h3>Die 7 Schritte</h3>
+    <ol class="steps">
+      <li><div><b>Voraussetzungen erfüllen</b><small>Mirror, Tools, DNS/DHCP/NTP aus Etappe 1. SNO-Minimum: 8 vCPU, 16 GiB RAM, 120 GiB Disk.</small></div></li>
+      <li><div><b>Installationsverzeichnis anlegen</b><small><code>mkdir ocp4-cluster</code> – hier landet alles Generierte.</small></div></li>
+      <li><div><b>install-config.yaml schreiben</b><small>1 Control-Plane, 0 Worker, <code>bootstrapInPlace.installationDisk</code>, plus Disconnected-Extras (siehe unten).</small></div></li>
+      <li><div><b>Manifeste generieren</b><small><code>openshift-install create manifests</code>; eigene MachineConfigs (z. B. chrony via Butane) nach <code>openshift/</code> legen.</small></div></li>
+      <li><div><b>Ignition erzeugen</b><small><code>create single-node-ignition-config</code> → <code>bootstrap-in-place-for-live-iso.ign</code>.</small></div></li>
+      <li><div><b>ISO bauen &amp; booten</b><small>Ignition mit <code>coreos-installer iso ignition embed</code> ins RHCOS-Live-ISO einbetten, Node davon starten (rebootet mehrfach).</small></div></li>
+      <li><div><b>Überwachen &amp; prüfen</b><small><code>openshift-install wait-for install-complete</code>, danach Health-Checks.</small></div></li>
+    </ol>
+    <div class="warn"><b>Zwei Fallen:</b> Der Installer <b>löscht</b> die <code>install-config.yaml</code> beim Verarbeiten – vorher sichern. Und Ignition-Dateien sind nur <b>24 h</b> gültig (Zertifikate) – bei Fehlschlag Verzeichnis löschen und aus dem Backup neu generieren.</div>
+    <div class="mnemo"><b>„KIMII“</b> für die Pipeline: <b>K</b>onfig → <b>M</b>anifeste → <b>I</b>gnition → <b>I</b>SO → <b>I</b>nstallation.</div>
+  </div>
+
+  <div class="card">
+    <h3>Disconnected-Extras in der install-config.yaml</h3>
+    <ul class="clean">
+      <li><b>pullSecret</b> – Zugangsdaten der <i>lokalen</i> Registry (nicht mehr das Red-Hat-Secret)</li>
+      <li><b>imageDigestSources</b> – Mapping „Red-Hat-Registry → lokaler Mirror“; passt die Image-Quelle eines Pods, wird vom Mirror gezogen</li>
+      <li><b>additionalTrustBundle</b> – CA-Zertifikat deiner Registry, damit der Cluster ihr vertraut</li>
+    </ul>
+    <details><summary>Beispiel install-config.yaml (SNO, disconnected)</summary><div class="inner">
+<pre><code>apiVersion: v1
+metadata:
+  name: mycluster
+baseDomain: myorg.com          <span class="c"># Clusterdomain: mycluster.myorg.com</span>
+bootstrapInPlace:
+  installationDisk: /dev/sda
+compute:
+- name: worker
+  replicas: 0
+controlPlane:
+  name: master
+  replicas: 1
+networking:
+  clusterNetwork:
+  - cidr: 10.128.0.0/14
+    hostPrefix: 23
+  serviceNetwork:
+  - 172.30.0.0/16
+  networkType: OVNKubernetes
+platform:
+  none: {}
+sshKey: 'ssh-rsa AAAA...'
+pullSecret: '{"auths":{"myregistry.example.com":{"auth":...}}}'
+imageDigestSources:
+- mirrors:
+  - myregistry.example.com/openshift/release
+  source: quay.io/openshift-release-dev/ocp-v4.0-art-dev
+additionalTrustBundle: |
+  -----BEGIN CERTIFICATE-----
+  ...</code></pre>
+      <p style="font-size:.88rem;color:var(--ink-soft)">Feld unklar? <code>openshift-install explain installconfig.networking.serviceNetwork</code></p>
+    </div></details>
+    <details><summary>Chrony-MachineConfig mit Butane</summary><div class="inner">
+<pre><code><span class="c"># chrony-master.bu</span>
+variant: openshift
+version: 4.18.0
+metadata:
+  name: 99-master-chrony
+  labels:
+    machineconfiguration.openshift.io/role: master
+storage:
+  files:
+  - path: /etc/chrony.conf
+    mode: 0644
+    overwrite: true
+    contents:
+      inline: |
+        server 192.168.50.254 iburst
+        driftfile /var/lib/chrony/drift
+        makestep 1.0 3
+        rtcsync
+
+<span class="c"># konvertieren, direkt ins openshift/-Verzeichnis</span>
+butane chrony-master.bu --output ocp4-cluster/openshift/99_chrony_master.yaml</code></pre>
+    </div></details>
+    <details><summary>ISO bauen &amp; Installation verfolgen</summary><div class="inner">
+<pre><code><span class="c"># ISO-URL herausfinden</span>
+openshift-install coreos print-stream-json | grep -F .iso
+
+<span class="c"># Ignition einbetten</span>
+coreos-installer iso ignition embed --force \
+  --ignition-file ocp4-cluster/bootstrap-in-place-for-live-iso.ign \
+  --output sno.iso rhcos-...-live.x86_64.iso
+
+<span class="c"># beobachten (startet nichts, schaut nur zu!)</span>
+openshift-install wait-for install-complete --dir ocp4-cluster --log-level debug
+
+<span class="c"># parallel per oc</span>
+export KUBECONFIG=~/ocp4-cluster/auth/kubeconfig
+watch 'oc get clusterversion; oc get clusteroperators; oc get nodes'
+oc get events -A --field-selector 'type!=Normal' --watch</code></pre>
+      <p style="font-size:.88rem;color:var(--ink-soft)"><code>kubeconfig</code> und <code>kubeadmin-password</code> liegen in <code>ocp4-cluster/auth/</code> – Admin-Rechte, sicher verwahren.</p>
+    </div></details>
+  </div>
+
+  <div class="card">
+    <h3>Troubleshooting entlang der 5 Phasen</h3>
+    <p>Bild: Der Node baut sich sein Haus selbst – erst <b>Bauleitung im Zelt</b> (temporäre Control-Plane), dann zieht er ins fertige Haus ein.</p>
+    <table>
+      <thead><tr><th>Phase</th><th>Was passiert</th><th>Debug-Werkzeug</th></tr></thead>
+      <tbody>
+        <tr><td><b>Bootkube</b></td><td><code>release-image</code>-Service zieht Images, <code>bootkube</code> startet die temporäre Control-Plane</td><td>SSH als <code>core</code> → <code>journalctl -b -f -u release-image.service -u bootkube.service</code>, <code>crictl pods</code></td></tr>
+        <tr><td><b>Temp. Control-Plane</b></td><td>Manifeste werden verarbeitet, am Ende entsteht <code>master.ign</code></td><td>weiter <code>journalctl</code>; remote: <code>openshift-install gather bootstrap</code></td></tr>
+        <tr><td><b>RHCOS auf Disk</b></td><td><code>install-to-disk</code> schreibt System + Ignition, Reboot</td><td>–</td></tr>
+        <tr><td><b>Konfig &amp; Update</b></td><td>Ignition wird angewandt, MCO aktualisiert &amp; rebootet</td><td><code>podman ps</code> / <code>podman logs --latest</code> auf dem Node</td></tr>
+        <tr><td><b>Prod. Control-Plane</b></td><td>CVO installiert alle Operatoren</td><td><code>oc adm node-logs --unit crio|kubelet</code>, <code>oc debug node/…</code></td></tr>
+      </tbody>
+    </table>
+    <p style="font-size:.88rem;color:var(--ink-soft)">Typischer Fehler in Phase 1: Node kommt nicht an die Images (Auth/Netz zur Registry).</p>
+  </div>
+
+  <div class="card">
+    <h3>Health-Check nach der Installation</h3>
+    <ol class="steps">
+      <li><div><b>NTP</b> – <code>chronyc sources</code> auf jedem Node (via <code>oc debug node/…</code>)</div></li>
+      <li><div><b>Nodes</b> – alle <code>Ready</code>? <code>oc get nodes</code> · Metriken: <code>oc adm top node</code></div></li>
+      <li><div><b>CSRs</b> – nichts <code>Pending</code>: <code>oc get csr | grep Pending</code></div></li>
+      <li><div><b>Version &amp; Operatoren</b> – <code>oc get clusterversion</code> / <code>oc get clusteroperators</code> (alle Available, nicht Degraded)</div></li>
+      <li><div><b>etcd</b> – <code>oc rsh -n openshift-etcd etcd-… </code> → <code>etcdctl endpoint health --cluster</code></div></li>
+      <li><div><b>API &amp; Console</b> – <code>curl -k https://api…:6443/version</code>, Console-Route per <code>curl -kIs</code></div></li>
+      <li><div><b>Registry &amp; Ingress</b> – Deployments <code>image-registry</code> und <code>router-default</code> ready, Pods auf verschiedenen Nodes</div></li>
+    </ol>
+    <details><summary>Support-Daten sammeln (must-gather / sos)</summary><div class="inner">
+<pre><code>oc adm must-gather --dest-dir must-gather-data
+oc get clusterversion -o jsonpath='{.items[].spec.clusterID}{"\n"}'
+tar cvaf must-gather-&lt;datum&gt;-&lt;cluster-id&gt;.tar.gz ./must-gather-data
+
+<span class="c"># SOS-Report von Nodes (nutzt registry.redhat.io/rhel8/support-tools – vorher spiegeln!)</span>
+sos collect --no-local</code></pre>
+    </div></details>
+  </div>
+</section>
+
+<!-- ================= 3 AGENT ================= -->
+<section id="agent" class="lav">
+  <div class="sec-head"><div class="badge">3</div><h2>SNO mit dem Agent-based Installer</h2></div>
+  <p class="sec-sub">Der bequemere Weg für Bare-Metal, Edge und disconnected: Alles steckt in <b>einem</b> bootfähigen ISO. Ein Node – der <b>Rendezvous-Host</b> – spielt Bauleiter und wird danach selbst Cluster-Node.</p>
+
+  <div class="card">
+    <h3>Manuell vs. Agent-based</h3>
+    <table>
+      <thead><tr><th></th><th>Manuell</th><th>Agent-based</th></tr></thead>
+      <tbody>
+        <tr><td><b>Bootstrap</b></td><td>eigener Bootstrap-Host (außer SNO)</td><td>in-place: Rendezvous-Host wird Cluster-Node</td></tr>
+        <tr><td><b>Konfig-Dateien</b></td><td>install-config + Ignition</td><td>install-config + <b>agent-config</b></td></tr>
+        <tr><td><b>Netzwerk</b></td><td>meist DHCP / manuell</td><td>deklarativ per <b>Nmstate</b> – ideal für statische IPs</td></tr>
+        <tr><td><b>Medium</b></td><td>RHCOS-ISO + Ignition selbst kombinieren</td><td>ein generiertes <code>agent.x86_64.iso</code></td></tr>
+        <tr><td><b>Orchestrierung</b></td><td>bootkube</td><td><b>assisted</b>-Service (Podman-Pod) + <b>agent</b> (systemd) auf jedem Node</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>Ablauf</h3>
+    <ol class="steps">
+      <li><div><b>install-config.yaml anpassen</b><small>Wie in Etappe 2, aber: <b>kein</b> <code>bootstrapInPlace</code>, dafür <code>networking.machineNetwork</code> (bei SNO die Node-IP als /32).</small></div></li>
+      <li><div><b>agent-config.yaml schreiben</b><small><code>rendezvousIP</code> (bei SNO = Node-IP), <code>additionalNTPSources</code>, <code>hosts</code> mit <code>rootDeviceHints</code>, Interfaces und Nmstate-<code>networkConfig</code>.</small></div></li>
+      <li><div><b>Optional: Custom-Manifeste</b><small>MachineConfigs (z. B. chrony) ins <code>openshift/</code>-Unterverzeichnis.</small></div></li>
+      <li><div><b>ISO bauen</b><small><code>openshift-install agent create image --dir ocp4-cluster</code> → <code>agent.x86_64.iso</code>.</small></div></li>
+      <li><div><b>Booten &amp; zurücklehnen</b><small>Node(s) vom ISO starten; assisted-Service validiert, installiert, rebootet – vollautomatisch.</small></div></li>
+    </ol>
+    <div class="note"><b>Merke:</b> <code>additionalNTPSources</code> gilt nur für die Live-Umgebung <i>während</i> der Installation. Für den fertigen Cluster brauchst du weiterhin die chrony-MachineConfig.</div>
+    <div class="mnemo"><b>Rendezvous</b> = Treffpunkt: Alle Agents „treffen sich“ beim Rendezvous-Host, der die Installation dirigiert – und am Ende selbst beitritt.</div>
+    <details><summary>Beispiel agent-config.yaml (mit statischem Netz)</summary><div class="inner">
+<pre><code>apiVersion: v1alpha1
+kind: AgentConfig
+metadata:
+  name: agent-sno
+rendezvousIP: 192.168.50.10
+additionalNTPSources:
+- 192.168.50.254
+hosts:
+- hostname: master02
+  rootDeviceHints:
+    deviceName: /dev/sda
+  interfaces:
+  - name: eth0
+    macAddress: 52:54:00:00:32:0a
+  networkConfig:              <span class="c"># Nmstate-Format</span>
+    interfaces:
+    - name: eth0
+      type: ethernet
+      state: up
+      mac-address: 52:54:00:00:32:0a
+      ipv4:
+        enabled: true
+        address:
+        - ip: 192.168.50.10
+          prefix-length: 24
+        dhcp: false
+    dns-resolver:
+      config:
+        server:
+        - 192.168.50.254
+    routes:
+      config:
+      - destination: 0.0.0.0/0
+        next-hop-address: 192.168.50.254
+        next-hop-interface: eth0</code></pre>
+    </div></details>
+    <details><summary>Die Phasen bei Multi-Node (3 Master)</summary><div class="inner">
+      <ol class="steps">
+        <li><div><b>Boot &amp; Preflight</b> – alle Nodes booten vom ISO, konfigurieren ihr Netz, prüfen den Registry-Zugriff; Agents melden Hardware an den assisted-Service.</div></li>
+        <li><div><b>Temporäre Control-Plane</b> – Rendezvous-Host startet sie; alle <i>anderen</i> Nodes schreiben RHCOS auf Disk und rebooten.</div></li>
+        <li><div><b>Beitritt</b> – die Nodes bilden den Cluster; zuletzt rebootet der Rendezvous-Host selbst und wird regulärer Control-Plane-Node.</div></li>
+      </ol>
+    </div></details>
+  </div>
+</section>
+
+<!-- ================= 4 PXE ================= -->
+<section id="pxe" class="peach">
+  <div class="sec-head"><div class="badge">4</div><h2>Compute-Nodes per PXE hinzufügen</h2></div>
+  <p class="sec-sub">SNO nachträglich erweitern – ohne ISO anstecken, rein übers Netz. Empfehlung: <b>max. 2 Worker</b>, sonst überfordert die Ein-Node-Control-Plane.</p>
+
+  <div class="card">
+    <h3>Die vier Netzwerkdienste für PXE</h3>
+    <table>
+      <thead><tr><th>Dienst</th><th>Rolle</th></tr></thead>
+      <tbody>
+        <tr><td><b>DHCP</b></td><td>IP + Verweis auf TFTP-Server (<code>next-server</code>) und Bootloader (<code>filename</code>)</td></tr>
+        <tr><td><b>TFTP</b></td><td>liefert Bootloader + MAC-spezifische Boot-Konfig (<code>pxelinux.cfg/01-&lt;mac&gt;</code>)</td></tr>
+        <tr><td><b>HTTP</b></td><td>liefert die großen Dateien: Kernel, initramfs, rootfs, Ignition</td></tr>
+        <tr><td><b>DNS</b></td><td>neuer Node ↔ Cluster müssen sich gegenseitig auflösen (Forward + Reverse)</td></tr>
+      </tbody>
+    </table>
+    <div class="mnemo"><b>PXE-Staffellauf:</b> DHCP gibt die Adresse, TFTP den Startschuss (Bootloader), HTTP trägt das Gepäck (Kernel/rootfs/Ignition), DNS kennt alle Namen.</div>
+  </div>
+
+  <div class="card">
+    <h3>Ablauf</h3>
+    <ol class="steps">
+      <li><div><b>Boot-Artefakte erzeugen</b><small><code>openshift-install agent create pxe-files --dir ocp4-cluster</code> → Kernel, initrd, rootfs + Kernel-Parameter. Achtung: Wurde das Verzeichnis schon fürs ISO benutzt, sind die Konfig-Dateien weg → frisches Verzeichnis mit den Originaldateien.</small></div></li>
+      <li><div><b>Worker-Ignition aus dem Cluster ziehen</b><small>Liegt als Secret <code>worker-user-data-managed</code> in <code>openshift-machine-api</code>: <code>oc extract … --keys userData --to - &gt; compute.ign</code></small></div></li>
+      <li><div><b>DHCP + DNS ergänzen</b><small>Statische Reservierung (MAC → IP, Hostname, Domain) und Forward-/Reverse-Records für den neuen Node.</small></div></li>
+      <li><div><b>Artefakte auf Webserver, TFTP-Konfig anlegen</b><small>Datei <code>pxelinux.cfg/01-&lt;mac-mit-bindestrichen&gt;</code> („01“ = ARP-Typ Ethernet), verweist per HTTP auf Kernel, initrd, rootfs, <code>compute.ign</code> und Zieldisk.</small></div></li>
+      <li><div><b>Booten</b><small>Maschine startet: DHCP → TFTP-Bootloader → Downloads via HTTP → RHCOS-Install mit Ignition → Reboot → Beitrittsversuch.</small></div></li>
+      <li><div><b>2 CSRs genehmigen</b><small><code>oc get csr</code> → <code>oc adm certificate approve &lt;csr&gt; …</code> – manueller Sicherheits-Check, ohne den kein Beitritt.</small></div></li>
+      <li><div><b>Prüfen</b><small><code>oc get nodes</code> – neuer Node <code>Ready</code> mit Rolle <code>worker</code>.</small></div></li>
+    </ol>
+    <div class="note"><b>Warum zwei CSRs?</b> ① <b>Client</b>-Zertifikat: Kubelet darf mit dem API-Server reden (registrieren, Heartbeats, Pod-Status). ② <b>Serving</b>-Zertifikat: der API-Server darf mit dem Kubelet reden (Logs, exec, Port-Forward, Metriken). Merksatz: <i>erst reden dürfen, dann angesprochen werden</i>.</div>
+    <details><summary>Beispiel: dhcpd.conf + PXE-Boot-Datei</summary><div class="inner">
+<pre><code><span class="c"># /etc/dhcp/dhcpd.conf – Reservierung</span>
+subnet 192.168.50.0 netmask 255.255.255.0 {
+  next-server 192.168.50.254;
+  filename "pxelinux.0";
+  host compute01.mycluster.myorg.com {
+    hardware ethernet 52:54:00:00:32:0D;
+    fixed-address 192.168.50.13;
+    option host-name "compute01";
+    option domain-name "mycluster.myorg.com";
+  }
+}</code></pre>
+<pre><code><span class="c"># /var/lib/tftpboot/pxelinux.cfg/01-52-54-00-00-32-0d</span>
+DEFAULT pxeboot
+TIMEOUT 20
+PROMPT 0
+LABEL pxeboot
+  KERNEL http://192.168.50.254/boot-artifacts/agent.x86_64-vmlinuz
+  APPEND initrd=http://192.168.50.254/boot-artifacts/agent.x86_64-initrd.img \
+    coreos.live.rootfs_url=http://192.168.50.254/boot-artifacts/agent.x86_64-rootfs.img \
+    coreos.inst.ignition_url=http://192.168.50.254/compute.ign \
+    coreos.inst.install_dev=/dev/sda \
+    rw ignition.firstboot ignition.platform.id=metal</code></pre>
+<pre><code><span class="c"># Ignition extrahieren &amp; CSRs freigeben</span>
+oc extract -n openshift-machine-api secret/worker-user-data-managed \
+  --keys userData --to - &gt; compute.ign
+oc get csr
+oc adm certificate approve csr-6wxpj csr-k7ckz
+oc get nodes</code></pre>
+    </div></details>
+  </div>
+</section>
+
+<!-- ================= 5 DAY-1 ================= -->
+<section id="day1" class="butter">
+  <div class="sec-head"><div class="badge">5</div><h2>Day-1: OLM lokal &amp; LDAP-Login</h2></div>
+  <p class="sec-sub">Der Cluster läuft – jetzt anschließen: OperatorHub auf die lokale Registry umbiegen und echte Benutzer statt <code>kubeadmin</code> zulassen.</p>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>OLM für disconnected</h3>
+      <ol class="steps">
+        <li><div><b>Default-Kataloge abschalten</b><small>Sonst versucht OLM vergeblich, ins Internet zu telefonieren.</small></div></li>
+        <li><div><b>Lokale CatalogSource anlegen</b><small>Zeigt auf das gespiegelte Index-Image – <code>oc-mirror</code> hat die YAML schon generiert.</small></div></li>
+      </ol>
+<pre><code>oc patch OperatorHub cluster --type json \
+  -p '[{"op":"add","path":"/spec/disableAllDefaultSources","value":true}]'</code></pre>
+<pre><code>apiVersion: operators.coreos.com/v1alpha1
+kind: CatalogSource
+metadata:
+  name: cs-redhat-operator-index-v4-18
+  namespace: openshift-marketplace
+spec:
+  image: registry.example.com/redhat/redhat-operator-index:v4.18
+  sourceType: grpc</code></pre>
+      <p style="font-size:.88rem;color:var(--ink-soft)">Danach zeigt der OperatorHub in der Console nur noch lokal verfügbare Operatoren.</p>
+    </div>
+
+    <div class="card">
+      <h3>LDAP-Identity-Provider (z. B. IdM)</h3>
+      <ol class="steps">
+        <li><div><b>Vorbereiten</b><small>LDAP-FQDN, Base-DN, Attribut-Mapping, Netzweg (389/636), CA-Zertifikat des LDAP-Servers, Service-Account mit minimalen Rechten (+ dessen DN).</small></div></li>
+        <li><div><b>CA als ConfigMap</b><small><code>oc create configmap idm-ca --from-file ca.crt=… -n openshift-config</code></small></div></li>
+        <li><div><b>Bind-Passwort als Secret</b><small><code>oc create secret generic idm-bind-password --from-literal bindPassword=… -n openshift-config</code></small></div></li>
+        <li><div><b>OAuth-Ressource konfigurieren</b><small>IdP-Name, Attribut-Mapping, bindDN, Verweise auf Secret + ConfigMap, LDAP-URL.</small></div></li>
+        <li><div><b>Warten &amp; testen</b><small>Auth-Operator rollt neu aus; der IdP erscheint als Option auf der Login-Seite.</small></div></li>
+      </ol>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Die LDAP-URL entschlüsselt</h3>
+<pre><code>ldaps://host:636/basedn?attribut?scope?filter
+        └─────┘ └────┘ └──────┘ └───┘ └────┘
+         wo?    ab wo   Login-   wie   wen?
+                suchen  Attribut tief  (optional)</code></pre>
+    <div class="mnemo"><b>„Wo – ab wo – wer – wie tief – wen“</b>: Host, Base-DN, Login-Attribut (meist <code>uid</code>), Scope (<code>sub</code>/<code>one</code>), Filter. Beim Login baut OpenShift daraus <code>(&amp;(filter)(attribut=benutzername))</code>.</div>
+    <details><summary>Beispiel: OAuth-Spec für LDAP</summary><div class="inner">
+<pre><code>spec:
+  identityProviders:
+  - name: my-idm                 <span class="c"># erscheint auf der Login-Seite</span>
+    mappingMethod: claim
+    type: LDAP
+    ldap:
+      attributes:
+        id: [dn]
+        email: [mail]
+        name: [cn]
+        preferredUsername: [uid]
+      bindDN: uid=rhocp-svc,cn=users,cn=accounts,dc=idm,dc=example,dc=com
+      bindPassword:
+        name: idm-bind-password
+      ca:
+        name: idm-ca
+      insecure: false
+      url: ldaps://idm.example.com:636/cn=users,cn=accounts,dc=idm,dc=example,dc=com?uid?sub?(uid=*)</code></pre>
+    </div></details>
+  </div>
+</section>
+
+<!-- ================= 6 UPDATE ================= -->
+<section id="update" class="rose">
+  <div class="sec-head"><div class="badge">6</div><h2>Disconnected-Cluster updaten</h2></div>
+  <p class="sec-sub">Normalerweise fragt der Cluster den OpenShift Update Service (OSUS) im Internet nach gültigen Pfaden. Offline gibt es zwei Wege: einen <b>lokalen OSUS</b> betreiben – oder <b>manuell</b> updaten (hier beschrieben).</p>
+
+  <div class="card">
+    <h3>Die 6 Schritte zum manuellen Update</h3>
+    <ol class="steps">
+      <li><div><b>Update-Pfad prüfen</b><small>Update-Graph-Tool (access.redhat.com/labs/ocpupgradegraph): Nicht jeder Sprung ist erlaubt – manchmal braucht es Zwischenversionen, manche darf man überspringen.</small></div></li>
+      <li><div><b>Ziel-Release spiegeln</b><small><code>oc mirror --v2</code> mit ImageSet für die Zielversion; <code>graph: true</code> nur, wenn du einen lokalen OSUS betreibst.</small></div></li>
+      <li><div><b>Signatur-ConfigMap anwenden</b><small>Aus dem Workspace: <code>signature-configmap.yaml</code> – damit kann der Cluster das Release-Image verifizieren. <b>Vor</b> dem Update einspielen.</small></div></li>
+      <li><div><b>etcd sichern</b><small><code>oc debug --as-root node/master01</code> → <code>chroot /host</code> → <code>cluster-backup.sh /home/core/assets/backup</code>; Backup extern ablegen.</small></div></li>
+      <li><div><b>PodDisruptionBudgets prüfen</b><small>PDBs können das Node-Draining blockieren → mit den Entwicklern ein Update-Fenster planen, PDB ggf. temporär entfernen.</small></div></li>
+      <li><div><b>Update starten</b><small>Digest aus der lokalen Registry holen, dann explizit updaten (siehe unten); Fortschritt via <code>oc get clusterversion</code> / <code>clusteroperators</code> oder Console → Cluster Settings.</small></div></li>
+    </ol>
+    <div class="warn"><b>SNO-Besonderheit:</b> Beim Update ist der ganze Cluster samt Workloads offline – ein Node, ein Reboot, alles weg. Wartungsfenster einplanen.</div>
+    <div class="mnemo"><b>„Pfad – Spiegel – Signatur – Sicherung – Budgets – Start“</b> – die sechs S-Stationen vor jedem Offline-Update (gut: erst 4× absichern, dann starten).</div>
+    <details><summary>Befehle</summary><div class="inner">
+<pre><code><span class="c"># ImageSet für das Ziel-Release</span>
+kind: ImageSetConfiguration
+apiVersion: mirror.openshift.io/v2alpha1
+mirror:
+  platform:
+    channels:
+    - name: stable-4.18
+      type: ocp
+      minVersion: 4.18.8
+      maxVersion: 4.18.8
+      graph: true      <span class="c"># nur für lokalen OSUS nötig (Default: false)</span></code></pre>
+<pre><code>oc mirror --v2 --config image-set-config.yaml \
+  --workspace file://mirror/ docker://registry.example.com
+
+<span class="c"># Digest des gespiegelten Releases</span>
+oc adm release info -o 'jsonpath={.digest}{"\n"}' \
+  myregistry.example.com/openshift/release-images:4.18.8-x86_64
+
+<span class="c"># explizites Update auf das Image (per Digest!)</span>
+oc adm upgrade --allow-explicit-upgrade-to-image \
+  myregistry.example.com/openshift/release-images@sha256:5098...2690</code></pre>
+    </div></details>
+  </div>
+</section>
+
+</main>
+
+<footer>Zusammengefasst aus DO0032l-4.18, Kapitel 1 (Red Hat Learning): Lektionen ch01 · s03 · s05 · s07 · s09 · s11 · s13. Kein Ersatz für die offizielle Doku – Versionsdetails vor Produktionseinsatz gegen docs.redhat.com prüfen.</footer>
+
+</body>
+</html>
