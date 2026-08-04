@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenShift 4.18 – Installationsvorbereitung Disconnected</title>
+<meta name="rezept-kategorie"    content="cluster-ops">
+<meta name="rezept-beschreibung" content="Was Kunde und Umgebung vor einer Disconnected-Installation liefern müssen: DNS, Netzwerk, Registry, Zugänge und Abnahme – entlang des Vorbereitungsformulars.">
+<meta name="rezept-stand"        content="OpenShift 4.18 · 08/2026">
+<meta name="rezept-suche"        content="disconnected air-gapped agent-based installer vorbereitung formular mirror registry dns ptr reverse-zone ntp dhcp pull-secret additionalTrustBundle sshKey osus sno etcd-backup ldap">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#33394a;
+  --ink-soft:#5c6376;
+  --paper:#fbfaf7;
+  --card:#ffffff;
+  --line:#e9e6df;
+  --code-bg:#31364a;
+  --code-ink:#e8eaf2;
+
+  --mint:#d9f2e4;   --mint-deep:#2f8f6b;
+  --sky:#dcebf9;    --sky-deep:#2d6fa8;
+  --lav:#e7e2f7;    --lav-deep:#6b5bb5;
+  --peach:#fbe6d7;  --peach-deep:#c2703d;
+  --butter:#faf0cf; --butter-deep:#a5842a;
+  --rose:#f9e0e6;   --rose-deep:#b34f6d;
+  --aqua:#d7eff0;   --aqua-deep:#2b8288;
+
+  --r-lg:26px; --r-md:18px; --r-sm:12px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:90px}
+body{
+  font-family:'Inter',sans-serif;font-size:16px;line-height:1.65;
+  color:var(--ink);background:var(--paper);
+}
+h1,h2,h3{font-family:'Sora',sans-serif;line-height:1.25}
+b{font-weight:600}
+code{font-family:'JetBrains Mono',monospace;font-size:.88em;background:#eef0f5;
+  padding:1px 6px;border-radius:6px}
+pre{background:var(--code-bg);color:var(--code-ink);border-radius:var(--r-md);
+  padding:16px 20px;overflow-x:auto;margin:14px 0;font-size:.86rem;line-height:1.6}
+pre code{background:none;padding:0;color:inherit;font-size:inherit}
+pre .c{color:#8b93ad}
+
+header{max-width:1000px;margin:0 auto;padding:64px 24px 28px}
+.kicker{font-family:'JetBrains Mono',monospace;font-size:.78rem;font-weight:500;
+  letter-spacing:.12em;text-transform:uppercase;color:var(--mint-deep)}
+header h1{font-size:clamp(1.9rem,4.5vw,3rem);font-weight:800;margin:14px 0 16px}
+header h1 span{color:var(--mint-deep)}
+.lede{max-width:640px;color:var(--ink-soft);font-size:1.05rem}
+
+.route{max-width:1000px;margin:26px auto 10px;padding:0 24px;display:grid;
+  grid-template-columns:repeat(7,1fr);gap:10px}
+.route a{background:var(--card);border:1px solid var(--line);border-radius:var(--r-md);
+  padding:14px 12px;text-decoration:none;color:var(--ink);display:flex;
+  flex-direction:column;gap:4px;transition:transform .15s ease,box-shadow .15s ease}
+.route a:hover{transform:translateY(-3px);box-shadow:0 8px 22px rgba(51,57,74,.08)}
+.route .dot{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;
+  justify-content:center;font-family:'Sora',sans-serif;font-weight:700;font-size:.85rem}
+.route a:nth-child(1) .dot{background:var(--aqua);color:var(--aqua-deep)}
+.route a:nth-child(2) .dot{background:var(--mint);color:var(--mint-deep)}
+.route a:nth-child(3) .dot{background:var(--sky);color:var(--sky-deep)}
+.route a:nth-child(4) .dot{background:var(--lav);color:var(--lav-deep)}
+.route a:nth-child(5) .dot{background:var(--peach);color:var(--peach-deep)}
+.route a:nth-child(6) .dot{background:var(--butter);color:var(--butter-deep)}
+.route a:nth-child(7) .dot{background:var(--rose);color:var(--rose-deep)}
+.route .t{font-family:'Sora',sans-serif;font-weight:700;font-size:.92rem;margin-top:4px}
+.route .s{font-size:.78rem;color:var(--ink-soft)}
+@media(max-width:900px){.route{grid-template-columns:repeat(2,1fr)}}
+
+nav{position:sticky;top:0;z-index:50;background:rgba(251,250,247,.92);
+  backdrop-filter:blur(8px);border-bottom:1px solid var(--line);margin-top:18px}
+nav .wrap{max-width:1000px;margin:0 auto;padding:10px 24px;display:flex;gap:18px;
+  overflow-x:auto;white-space:nowrap}
+nav a{font-family:'Sora',sans-serif;font-size:.82rem;font-weight:600;color:var(--ink-soft);
+  text-decoration:none;padding:4px 0}
+nav a:hover{color:var(--ink)}
+
+main{max-width:1000px;margin:0 auto;padding:10px 24px 40px}
+section{padding:38px 0 10px;border-bottom:1px solid var(--line)}
+section:last-of-type{border-bottom:none}
+.sec-head{display:flex;align-items:center;gap:14px;margin-bottom:8px}
+.badge{width:40px;height:40px;border-radius:var(--r-sm);display:flex;align-items:center;
+  justify-content:center;font-family:'Sora',sans-serif;font-weight:800;font-size:1.05rem;
+  flex-shrink:0}
+section.aqua .badge{background:var(--aqua);color:var(--aqua-deep)}
+section.mint .badge{background:var(--mint);color:var(--mint-deep)}
+section.sky .badge{background:var(--sky);color:var(--sky-deep)}
+section.lav .badge{background:var(--lav);color:var(--lav-deep)}
+section.peach .badge{background:var(--peach);color:var(--peach-deep)}
+section.butter .badge{background:var(--butter);color:var(--butter-deep)}
+section.rose .badge{background:var(--rose);color:var(--rose-deep)}
+section h2{font-size:clamp(1.4rem,3vw,1.9rem);font-weight:700}
+.sec-sub{color:var(--ink-soft);max-width:720px;margin-bottom:20px}
+
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);
+  padding:22px 24px;margin:16px 0}
+.card h3{font-size:1.08rem;margin-bottom:10px}
+.card p{margin-bottom:10px}
+.card p:last-child{margin-bottom:0}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.grid2 .card{margin:16px 0 0}
+@media(max-width:820px){.grid2{grid-template-columns:1fr}}
+
+ol.steps{list-style:none;counter-reset:step;display:flex;flex-direction:column;gap:12px;
+  margin:12px 0}
+ol.steps li{counter-increment:step;display:grid;grid-template-columns:34px 1fr;gap:12px;
+  align-items:start}
+ol.steps li::before{content:counter(step);width:30px;height:30px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;font-family:'Sora',sans-serif;
+  font-weight:700;font-size:.85rem;background:var(--mint);color:var(--mint-deep)}
+section.aqua ol.steps li::before{background:var(--aqua);color:var(--aqua-deep)}
+section.sky ol.steps li::before{background:var(--sky);color:var(--sky-deep)}
+section.lav ol.steps li::before{background:var(--lav);color:var(--lav-deep)}
+section.peach ol.steps li::before{background:var(--peach);color:var(--peach-deep)}
+section.butter ol.steps li::before{background:var(--butter);color:var(--butter-deep)}
+section.rose ol.steps li::before{background:var(--rose);color:var(--rose-deep)}
+ol.steps small{display:block;color:var(--ink-soft);font-size:.88rem}
+
+ul.clean{list-style:none;margin:10px 0}
+ul.clean li{padding-left:22px;position:relative;margin-bottom:8px}
+ul.clean li::before{content:"";width:8px;height:8px;border-radius:50%;
+  background:var(--mint-deep);position:absolute;left:2px;top:.55em}
+section.aqua ul.clean li::before{background:var(--aqua-deep)}
+section.sky ul.clean li::before{background:var(--sky-deep)}
+section.lav ul.clean li::before{background:var(--lav-deep)}
+section.peach ul.clean li::before{background:var(--peach-deep)}
+section.butter ul.clean li::before{background:var(--butter-deep)}
+section.rose ul.clean li::before{background:var(--rose-deep)}
+
+table{width:100%;border-collapse:collapse;margin:14px 0;background:var(--card);
+  border:1px solid var(--line);border-radius:var(--r-md);overflow:hidden;font-size:.92rem}
+th{font-family:'Sora',sans-serif;font-size:.8rem;text-transform:uppercase;
+  letter-spacing:.06em;text-align:left;padding:10px 14px;background:var(--paper);
+  border-bottom:1px solid var(--line);color:var(--ink-soft)}
+td{padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+tr:last-child td{border-bottom:none}
+
+.note,.warn,.mnemo{border-radius:var(--r-md);padding:14px 18px;margin:14px 0;
+  font-size:.94rem}
+.note{background:var(--sky);color:var(--sky-deep)}
+.warn{background:var(--rose);color:var(--rose-deep)}
+.warn::before{content:"⚠️ "}
+.mnemo{background:var(--butter);color:var(--butter-deep)}
+.mnemo::before{content:"🧠 Eselsbrücke · "}
+
+details{background:var(--card);border:1px solid var(--line);border-radius:var(--r-md);
+  margin:12px 0;overflow:hidden}
+summary{font-family:'Sora',sans-serif;font-weight:600;font-size:.95rem;padding:14px 18px;
+  cursor:pointer;list-style:none;display:flex;justify-content:space-between;
+  align-items:center;gap:12px}
+summary::-webkit-details-marker{display:none}
+summary::after{content:"+";font-weight:700;color:var(--ink-soft)}
+details[open] summary::after{content:"–"}
+details .inner{padding:0 18px 16px;border-top:1px solid var(--line);padding-top:14px}
+
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}
+.chip{font-family:'JetBrains Mono',monospace;font-size:.8rem;background:var(--card);
+  border:1px solid var(--line);border-radius:999px;padding:5px 12px}
+
+footer{max-width:1000px;margin:0 auto;padding:26px 24px 60px;color:var(--ink-soft);
+  font-size:.85rem;border-top:1px solid var(--line)}
+</style>
+</head>
+<body>
+
+<header>
+  <span class="kicker">OpenShift 4.18 · Disconnected · Installationsvorbereitung</span>
+  <h1>Disconnected-Installation vorbereiten:<br>was vor dem Termin <span>stehen muss</span></h1>
+  <p class="lede">Sieben Abschnitte entlang des Vorbereitungsformulars: Eckdaten, Nodes, DNS, Registry, Zugänge und Abnahme. <b>Jeder Punkt, der am Installationstag fehlt, kostet den Termin</b> – diese Seite erklärt, warum die Punkte gebraucht werden und wo es still schiefgeht.</p>
+</header>
+
+<div class="route">
+  <a href="#basics"><span class="dot">0</span><span class="t">Überblick</span><span class="s">Zweck · Clusterdomain · Rollen</span></a>
+  <a href="#cluster"><span class="dot">1</span><span class="t">Eckdaten</span><span class="s">Topologie · Methode · Umgebung</span></a>
+  <a href="#nodes"><span class="dot">2</span><span class="t">Nodes</span><span class="s">Hardware · MAC · Install-Disk</span></a>
+  <a href="#network"><span class="dot">3</span><span class="t">Netzwerk</span><span class="s">DNS · Reverse-Zone · NTP</span></a>
+  <a href="#registry"><span class="dot">4</span><span class="t">Registry</span><span class="s">Mirror · CA · Pull-Secret</span></a>
+  <a href="#ops"><span class="dot">5</span><span class="t">Betrieb</span><span class="s">Firewall · LDAP · Updates</span></a>
+  <a href="#checklist"><span class="dot">6</span><span class="t">Checkliste</span><span class="s">Reihenfolge · Abnahme</span></a>
+</div>
+
+<nav><div class="wrap">
+  <a href="#basics">0 · Überblick</a>
+  <a href="#cluster">1 · Eckdaten</a>
+  <a href="#nodes">2 · Nodes</a>
+  <a href="#network">3 · Netzwerk</a>
+  <a href="#registry">4 · Registry</a>
+  <a href="#ops">5 · Betrieb</a>
+  <a href="#checklist">6 · Checkliste</a>
+</div></nav>
+
+<main>
+
+<!-- ==================== 0 ==================== -->
+<section id="basics" class="aqua">
+  <div class="sec-head"><div class="badge">0</div><h2>Überblick: Zweck des Formulars</h2></div>
+  <p class="sec-sub">Bei einer Disconnected-Installation gibt es kein Internet als Rückfallebene. Alles, was der Cluster braucht, muss der Kunde vorher bereitstellen – das Formular sammelt genau diese Punkte ein.</p>
+
+  <div class="card">
+    <h3>Warum die Vorbereitung hier alles ist</h3>
+    <p>Bei einer connected Installation zieht sich OpenShift Images, Updates und Kataloge selbst aus dem Internet. Disconnected fällt das weg: <b>DNS, NTP, Registry, Zertifikate und Zugangsdaten müssen vor dem Installationstermin stehen und getestet sein.</b> Das Formular ist deshalb zweigeteilt – der Kunde füllt aus bzw. hakt ab, der System Engineer (SE) prüft technisch und gibt frei.</p>
+    <ol class="steps">
+      <li><div><b>Ausfüllen</b><small>Kunde trägt Eckdaten, Nodes, Netzwerk und Registry ein (Abschnitte B–H des Formulars).</small></div></li>
+      <li><div><b>Abhaken</b><small>Kunde bestätigt getestete Voraussetzungen: DNS in beide Richtungen, NTP erreichbar, Reservierungen angelegt.</small></div></li>
+      <li><div><b>Freigeben</b><small>SE prüft technisch, beide unterschreiben (Abschnitt M) – erst dann steht der Installationstermin.</small></div></li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h3>Die Clusterdomain als Fundament</h3>
+    <p>Aus <b>Cluster-Name</b> und <b>Base Domain</b> entsteht die Clusterdomain: <code>&lt;Cluster-Name&gt;.&lt;Base Domain&gt;</code>, z. B. <code>mycluster.myorg.com</code>. Alle DNS-Records in Abschnitt 3 leiten sich daraus ab – wer diese beiden Werte spät ändert, muss DNS, Zertifikate und Konfiguration neu machen.</p>
+    <div class="chips">
+      <span class="chip">api.mycluster.myorg.com</span>
+      <span class="chip">api-int.mycluster.myorg.com</span>
+      <span class="chip">*.apps.mycluster.myorg.com</span>
+    </div>
+  </div>
+
+  <div class="mnemo"><b>Clusterdomain = Straßenname</b> – alle Hausnummern (DNS-Records) hängen daran. Wird die Straße umbenannt, stimmt keine einzige Adresse mehr.</div>
+</section>
+
+<!-- ==================== 1 ==================== -->
+<section id="cluster" class="mint">
+  <div class="sec-head"><div class="badge">1</div><h2>Cluster-Eckdaten: Topologie, Methode, Umgebung</h2></div>
+  <p class="sec-sub">Drei Entscheidungen bestimmen den gesamten Rest: Wie viele Nodes, welche Installationsmethode, wie disconnected ist die Umgebung wirklich.</p>
+
+  <div class="card">
+    <h3>Topologie</h3>
+    <table>
+      <thead><tr><th>Variante</th><th>Nodes</th><th>Wofür</th></tr></thead>
+      <tbody>
+        <tr><td><b>Single-Node (SNO)</b></td><td>1</td><td>Edge, kleine Standorte – keine Redundanz</td></tr>
+        <tr><td><b>Compact</b></td><td>3</td><td>Master und Worker auf denselben drei Nodes</td></tr>
+        <tr><td><b>Standard-HA</b></td><td>3 + n</td><td>3 Master plus separate Worker</td></tr>
+      </tbody>
+    </table>
+    <div class="warn"><b>Achtung:</b> Bei SNO ist während eines Updates der <b>gesamte Cluster inkl. Workloads nicht verfügbar</b> – ein Node, ein Reboot. Das muss der Kunde vor der Topologie-Entscheidung wissen, nicht beim ersten Update.</div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>Installationsmethode</h3>
+      <ul class="clean">
+        <li><b>Agent-based Installer</b> – Empfehlung, disconnected-fähig</li>
+        <li><b>Manuell / UPI</b> – Boot-Image, PXE, maximale Kontrolle</li>
+        <li><b>Assisted Installer</b> – Web-UI, aber <b>nur connected</b></li>
+        <li><b>IPI</b> – Full-stack Automation, braucht passende Plattform</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Umgebung</h3>
+      <ul class="clean">
+        <li><b>Vollständig disconnected</b> (air-gapped) – Transfer nur per Datenträger</li>
+        <li><b>Eingeschränkt</b> – Proxy oder Bastion-Host mit Internetzugang spiegelt direkt in die lokale Registry</li>
+      </ul>
+      <p>Die Antwort entscheidet über den Spiegel-Weg in Abschnitt 4.</p>
+    </div>
+  </div>
+
+  <div class="warn"><b>Achtung:</b> „Wir sind disconnected, aber der Assisted Installer wäre so bequem" – geht nicht. Der Assisted Installer braucht die Red-Hat-Cloud. Wer disconnected ist, landet beim Agent-based Installer oder UPI.</div>
+</section>
+
+<!-- ==================== 2 ==================== -->
+<section id="nodes" class="sky">
+  <div class="sec-head"><div class="badge">2</div><h2>Hardware und Nodes</h2></div>
+  <p class="sec-sub">Pro Node eine Zeile im Formular: Hostname, Rolle, MAC, IP, Install-Disk. Jede dieser Angaben wird beim Boot wirklich gebraucht.</p>
+
+  <div class="card">
+    <h3>Was pro Node feststehen muss</h3>
+    <table>
+      <thead><tr><th>Feld</th><th>Wozu</th></tr></thead>
+      <tbody>
+        <tr><td><b>Hostname (FQDN)</b></td><td>Muss zu den DNS-Records aus Abschnitt 3 passen</td></tr>
+        <tr><td><b>Rolle</b></td><td>master oder worker</td></tr>
+        <tr><td><b>MAC-Adresse</b></td><td>Für DHCP-Reservierungen bzw. Node-Zuordnung im Installer</td></tr>
+        <tr><td><b>IP-Adresse</b></td><td>Fest – per DHCP-Reservierung oder statisch</td></tr>
+        <tr><td><b>Install-Disk</b></td><td>Ziel-Device für RHCOS, z. B. <code>/dev/sda</code></td></tr>
+      </tbody>
+    </table>
+    <p>SNO-Minimum laut Formular: <b>8 vCPU, 16 GiB RAM, 120 GiB Disk</b>.</p>
+  </div>
+
+  <div class="warn"><b>Achtung:</b> Die Install-Disk wird beim Schreiben von RHCOS überschrieben. Bei Nodes mit mehreren Platten zeigt ein falsches Device (<code>/dev/sda</code> statt <code>/dev/sdb</code>) auf die falsche Platte – die Installation läuft trotzdem sauber durch, nur eben auf dem falschen Datenträger.</div>
+
+  <div class="note"><b>Hinweis:</b> Am Installationstag muss Boot per ISO oder PXE über Remote-Konsole/BMC möglich sein – das gehört zur Checkliste in Abschnitt 6, wird aber gern vergessen, weil es „nur" Hardware-Zugang ist.</div>
+</section>
+
+<!-- ==================== 3 ==================== -->
+<section id="network" class="lav">
+  <div class="sec-head"><div class="badge">3</div><h2>Netzwerk, DNS und Zeit</h2></div>
+  <p class="sec-sub">Diese Dienste müssen vor der Installation stehen – der Installer richtet sie nicht ein, er setzt sie voraus.</p>
+
+  <div class="card">
+    <h3>Netzwerk-Basisdaten</h3>
+    <ul class="clean">
+      <li><b>Machine-Network (CIDR)</b>, Default Gateway, ggf. VLAN</li>
+      <li><b>DNS-Server</b> und <b>NTP-Server</b> (IP bzw. FQDN) – NTP muss von allen Cluster-Nodes erreichbar sein</li>
+      <li><b>IP-Vergabe</b>: DHCP mit statischen MAC-Reservierungen (Empfehlung) oder statisch per Nmstate</li>
+    </ul>
+    <p>Falls DHCP: Reservierungen für <b>alle</b> Nodes aus Abschnitt 2 müssen vor dem Termin angelegt sein.</p>
+  </div>
+
+  <div class="card">
+    <h3>Die drei Pflicht-Records</h3>
+    <table>
+      <thead><tr><th>Record</th><th>Zweck</th></tr></thead>
+      <tbody>
+        <tr><td><b>api.&lt;cluster&gt;.&lt;domain&gt;</b></td><td>Kubernetes-API, extern und intern erreichbar</td></tr>
+        <tr><td><b>api-int.&lt;cluster&gt;.&lt;domain&gt;</b></td><td>Interne API, von allen Cluster-Nodes erreichbar</td></tr>
+        <tr><td><b>*.apps.&lt;cluster&gt;.&lt;domain&gt;</b></td><td>Wildcard für Ingress/Routen – Console und Apps</td></tr>
+      </tbody>
+    </table>
+    <p>Dazu kommen <b>A-Records für alle Nodes</b> (Forward) und <b>PTR-Records in der Reverse-Zone</b>. Beides ist Pflicht, beides muss vor dem Termin mit <code>dig</code>/<code>nslookup</code> in beide Richtungen getestet sein.</p>
+  </div>
+
+  <div class="warn"><b>Achtung:</b> Die Reverse-Zone ist der Klassiker unter den stillen Fehlern. Ohne PTR-Records bootet erstmal alles – aber die Nodes bekommen u. a. ihre Hostnamen über PTR gesetzt, und die Auflösung wird für TLS genutzt. Symptome zeigen sich erst später und sehen nach allem Möglichen aus, nur nicht nach DNS.</div>
+
+  <div class="mnemo"><b>Forward-Zone = Telefonbuch, Reverse-Zone = Rückwärtssuche</b> – der Cluster braucht beide Richtungen. Nur Namen nachschlagen können reicht nicht, er muss auch zur Nummer den Namen finden.</div>
+</section>
+
+<!-- ==================== 4 ==================== -->
+<section id="registry" class="peach">
+  <div class="sec-head"><div class="badge">4</div><h2>Lokale Registry und Mirror-Host</h2></div>
+  <p class="sec-sub">Die lokale Registry ersetzt die Red-Hat-Registries im Internet. Ohne sie gibt es keine Images – sie ist das Herzstück jeder Disconnected-Installation.</p>
+
+  <div class="card">
+    <h3>Registry klären</h3>
+    <ul class="clean">
+      <li><b>Produkt und URL</b> – Quay, Harbor, mirror-registry o. ä.; vorhanden, vom Kunden bereitgestellt oder vom SE aufzusetzen</li>
+      <li><b>Speicherplatz</b> – mindestens <b>32 GiB für die Plattform</b>, mit Operator-Katalogen je nach Auswahl <b>bis ~900 GiB</b></li>
+      <li><b>Zertifikat</b> – kommt das Registry-Zertifikat von einer firmeneigenen CA, muss das CA-Zertifikat dem SE bereitgestellt werden (<code>additionalTrustBundle</code>)</li>
+      <li><b>Zugangsdaten</b> – Push und Pull, Übergabe über sicheren Kanal (Passwort-Manager, verschlüsselte Mail)</li>
+    </ul>
+  </div>
+
+  <div class="warn"><b>Achtung:</b> „32 GiB reichen" stimmt nur für die nackte Plattform. Wer Operator-Kataloge spiegelt, liegt schnell im dreistelligen GiB-Bereich – bis ~900 GiB. Läuft die Registry beim Spiegeln voll, bricht der Mirror-Vorgang mittendrin ab und der Installationstermin platzt.</div>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>Spiegel-Weg</h3>
+      <ul class="clean">
+        <li><b>Bastion-Host</b> – hat Internet und Zugriff auf die Registry, spiegelt direkt</li>
+        <li><b>Air-gapped</b> – mirror-to-disk auf einen Datenträger, dann physischer Transfer</li>
+      </ul>
+      <p>Im Formular festhalten: Bastion-/Mirror-Host (Hostname/IP, OS) und wer den Transfer verantwortet – Kunde oder SE.</p>
+    </div>
+    <div class="card">
+      <h3>Zugänge</h3>
+      <ul class="clean">
+        <li><b>Red-Hat-Pull-Secret</b> – von console.redhat.com, vorhanden oder vom SE mitgebracht</li>
+        <li><b>SSH-Public-Key des SE</b> – darf auf den Cluster-Nodes hinterlegt werden (<code>sshKey</code>)</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="mnemo"><b>Registry = Vorratskammer</b> – disconnected liefert kein Supermarkt mehr. Was am Installationstag nicht in der Kammer liegt, kann nicht gekocht werden; und die Kammer muss groß genug für den ganzen Einkauf sein.</div>
+</section>
+
+<!-- ==================== 5 ==================== -->
+<section id="ops" class="butter">
+  <div class="sec-head"><div class="badge">5</div><h2>Firewall, LDAP und Betrieb</h2></div>
+  <p class="sec-sub">Erreichbarkeiten für den Installationstag, optionale LDAP-Anbindung ab Day 1 und die Absprachen für den späteren Betrieb.</p>
+
+  <div class="card">
+    <h3>Firewall-Freigaben</h3>
+    <table>
+      <thead><tr><th>Verbindung</th><th>Port</th></tr></thead>
+      <tbody>
+        <tr><td><b>Alle Nodes → lokale Registry</b></td><td>443 bzw. registrierter Port</td></tr>
+        <tr><td><b>Admin-Workstation SE → API-Endpunkt</b></td><td>6443</td></tr>
+        <tr><td><b>SE → Nodes (während der Installation)</b></td><td>22 (SSH)</td></tr>
+        <tr><td><b>Cluster → LDAP-Server (falls LDAP)</b></td><td>636 (LDAPS) bzw. 389</td></tr>
+      </tbody>
+    </table>
+    <p>Besonderheiten wie Proxy, spezielle Freigabeprozesse oder Sicherheitsauflagen (z. B. BSI) gehören ins Formular – <b>vor</b> dem Termin, nicht als Überraschung währenddessen.</p>
+  </div>
+
+  <details>
+    <summary>Optional: LDAP-Anbindung ab Day 1</summary>
+    <div class="inner">
+      <p>Nur relevant, wenn Benutzer-Login über LDAP/IdM gewünscht ist. Der Service-Account braucht ausschließlich Leserechte – mehr Rechte sind ein unnötiges Risiko.</p>
+      <ul class="clean">
+        <li><b>LDAP-Server</b> (FQDN) und Port – Standard LDAPS: 636</li>
+        <li><b>Base-DN</b> – Benutzer-Suchbasis</li>
+        <li><b>Bind-DN</b> des Service-Accounts, Passwort über sicheren Kanal</li>
+        <li><b>Login-Attribut</b> – meist <code>uid</code></li>
+        <li><b>CA-Zertifikat</b> des LDAP-Servers wird bereitgestellt</li>
+      </ul>
+    </div>
+  </details>
+
+  <div class="card">
+    <h3>Updates und Wartung</h3>
+    <ul class="clean">
+      <li><b>Wartungsfenster</b> festlegen (z. B. Sa 22–02 Uhr) und klären, wer Updates verantwortet – Kunde, SE oder gemeinsam</li>
+      <li><b>etcd-Backups</b> brauchen einen externen Ablageort – ein Backup, das nur auf dem Cluster liegt, ist keins</li>
+      <li><b>Updates disconnected</b>: entweder lokaler OpenShift Update Service (OSUS) oder manuelle Updates per Digest</li>
+    </ul>
+  </div>
+
+  <div class="note"><b>Hinweis:</b> Ohne OSUS zeigt die Console keinen Update-Pfad an – manuelle Updates per Digest sind der Normalfall im Disconnected-Betrieb, kein Fehlerbild.</div>
+</section>
+
+<!-- ==================== 6 ==================== -->
+<section id="checklist" class="rose">
+  <div class="sec-head"><div class="badge">6</div><h2>Checkliste vor dem Installationstermin</h2></div>
+  <p class="sec-sub">Die Punkte aus dem Formular in sinnvoller Reihenfolge. Alles muss abgehakt sein, bevor der Termin bestätigt wird – die Unterschrift beider Seiten macht es verbindlich.</p>
+
+  <div class="card">
+    <h3>Die drei Phasen auf einen Blick</h3>
+    <ol class="steps">
+      <li><div><b>Phase A · Festlegen</b><small>Schritte 1–2: Eckdaten und Hardware final.</small></div></li>
+      <li><div><b>Phase B · Bereitstellen</b><small>Schritte 3–5: DNS, Netzwerk und Registry stehen und sind getestet.</small></div></li>
+      <li><div><b>Phase C · Übergeben</b><small>Schritte 6–7: Zugänge sicher übergeben, Freigabe unterschreiben.</small></div></li>
+    </ol>
+  </div>
+
+  <h3 style="margin:26px 0 6px;font-size:1.15rem">Phase A · Festlegen</h3>
+
+  <details>
+    <summary>Schritt 1 · Formularabschnitte B–H vollständig und geprüft</summary>
+    <div class="inner">
+      <p>Cluster-Name, Base Domain und Zielversion sind das Fundament – spätere Änderungen ziehen DNS und Zertifikate nach sich. Topologie und Methode müssen zur Umgebung passen (disconnected → Agent-based oder UPI).</p>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 2 · Hardware steht, Boot per ISO/PXE möglich</summary>
+    <div class="inner">
+      <p>Pro Node: Hostname, Rolle, MAC, IP, Install-Disk. Zusätzlich muss der Zugang über Remote-Konsole/BMC funktionieren – ohne Boot-Möglichkeit beginnt die Installation gar nicht erst.</p>
+    </div>
+  </details>
+
+  <h3 style="margin:26px 0 6px;font-size:1.15rem">Phase B · Bereitstellen</h3>
+
+  <details>
+    <summary>Schritt 3 · DNS-Records angelegt und in beide Richtungen getestet</summary>
+    <div class="inner">
+      <p>api, api-int, *.apps plus A- und PTR-Records aller Nodes. Der Test in beide Richtungen ist der wichtigste Einzelpunkt der ganzen Liste – fehlende PTR-Records fallen sonst erst nach der Installation auf.</p>
+      <pre><code><span class="c"># Forward und Reverse für jeden Node prüfen</span>
+dig api.mycluster.myorg.com
+dig -x &lt;node_ip&gt;</code></pre>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 4 · NTP erreichbar, IP-Vergabe final</summary>
+    <div class="inner">
+      <p>Der lokale NTP-Server muss von allen Cluster-Nodes erreichbar sein – ohne saubere Zeit scheitern Zertifikatsprüfungen. DHCP-Reservierungen bzw. statische IP-Daten sind final, keine „klären wir noch"-Einträge.</p>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 5 · Registry erreichbar, Speicherplatz und CA geklärt</summary>
+    <div class="inner">
+      <p>Alle Nodes erreichen die Registry auf Port 443. Speicherplatz ist gegen die Operator-Auswahl gerechnet (32 GiB bis ~900 GiB), das CA-Zertifikat liegt dem SE vor. Der Spiegel-Weg (Bastion oder mirror-to-disk) ist entschieden und der Transfer-Verantwortliche benannt.</p>
+    </div>
+  </details>
+
+  <h3 style="margin:26px 0 6px;font-size:1.15rem">Phase C · Übergeben</h3>
+
+  <details>
+    <summary>Schritt 6 · Zugangsdaten und Pull-Secret sicher übergeben</summary>
+    <div class="inner">
+      <p>Registry-Credentials, Pull-Secret und ggf. LDAP-Service-Account-Passwort gehen über den vereinbarten sicheren Kanal – nie per unverschlüsselter Mail. Der SSH-Key des SE ist zur Hinterlegung freigegeben.</p>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 7 · Freigabe unterschreiben</summary>
+    <div class="inner">
+      <p>Kunde bestätigt die Richtigkeit der Angaben, SE die technische Prüfung (Abschnitt M des Formulars). Offene Punkte und Abweichungen stehen in den Bemerkungen – nicht im Kopf einzelner Beteiligter.</p>
+    </div>
+  </details>
+
+  <div class="warn"><b>Achtung:</b> Ein Termin mit „das DNS machen wir am Morgen der Installation fertig" ist kein vorbereiteter Termin. Alles auf dieser Liste ist Voraussetzung, nichts davon ist Tagesgeschäft des Installationstags.</div>
+</section>
+
+</main>
+
+<footer>Zusammengefasst aus dem Formular „Vorbereitung OpenShift-Installation (Disconnected)" (OpenShift 4.18, Abschnitte A–M). Kein Ersatz für die offizielle Doku – Versionsdetails vor Produktionseinsatz gegen docs.redhat.com prüfen.</footer>
+
+</body>
+</html>
