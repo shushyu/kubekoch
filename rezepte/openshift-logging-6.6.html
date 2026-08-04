@@ -1,0 +1,1096 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenShift Logging 6.6 – Installation: Der Fahrplan</title>
+<meta name="rezept-kategorie" content="observability">
+<meta name="rezept-beschreibung" content="Drei Operatoren, zwei Speicherarten, eine goldene Regel: erst planen, dann installieren. Inklusive der stillen Fehler rund um LokiStack.">
+<meta name="rezept-stand" content="Logging 6.6 · 07/2026">
+<meta name="rezept-suche" content="loki lokistack vector clusterlogforwarder coo object storage s3 logs">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#33394a;
+  --ink-soft:#5c6376;
+  --paper:#fbfaf7;
+  --card:#ffffff;
+  --line:#e9e6df;
+  --code-bg:#31364a;
+  --code-ink:#e8eaf2;
+  --mint:#d9f2e4;      --mint-deep:#2f8f6b;
+  --sky:#dcebf9;       --sky-deep:#2d6fa8;
+  --lav:#e7e2f7;       --lav-deep:#6b5bb5;
+  --peach:#fbe6d7;     --peach-deep:#c2703d;
+  --butter:#faf0cf;    --butter-deep:#a5842a;
+  --rose:#f9e0e6;      --rose-deep:#b34f6d;
+  --aqua:#d7eff0;      --aqua-deep:#2b8288;
+  --r-lg:26px; --r-md:18px; --r-sm:12px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;scroll-padding-top:90px}
+body{font-family:'Inter',sans-serif;background:var(--paper);color:var(--ink);line-height:1.65;font-size:16px}
+h1,h2,h3,h4{font-family:'Sora',sans-serif;line-height:1.2}
+
+/* ---------- Kopf ---------- */
+header{max-width:1060px;margin:0 auto;padding:56px 24px 8px}
+.kicker{display:inline-block;background:var(--lav);color:var(--lav-deep);font-weight:600;font-size:.8rem;letter-spacing:.08em;text-transform:uppercase;padding:6px 14px;border-radius:999px;margin-bottom:18px}
+header h1{font-size:clamp(1.9rem,4.5vw,3rem);font-weight:800;letter-spacing:-.02em}
+header h1 span{color:var(--mint-deep)}
+.lede{color:var(--ink-soft);max-width:640px;margin-top:14px;font-size:1.05rem}
+
+/* ---------- Fahrplan ---------- */
+.route{max-width:1060px;margin:34px auto 10px;padding:0 24px;display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.route a{display:flex;flex-direction:column;gap:8px;text-decoration:none;color:var(--ink);background:var(--card);border:1.5px solid var(--line);border-radius:var(--r-md);padding:16px 14px;transition:transform .15s ease,box-shadow .15s ease}
+.route a:hover,.route a:focus-visible{transform:translateY(-3px);box-shadow:0 8px 22px rgba(60,60,90,.10);outline:none}
+.route .dot{width:34px;height:34px;border-radius:12px;display:grid;place-items:center;font-family:'Sora';font-weight:700;font-size:.9rem}
+.route .t{font-weight:600;font-size:.86rem;line-height:1.3}
+.route .s{font-size:.74rem;color:var(--ink-soft)}
+.route a:nth-child(1) .dot{background:var(--aqua);color:var(--aqua-deep)}
+.route a:nth-child(2) .dot{background:var(--mint);color:var(--mint-deep)}
+.route a:nth-child(3) .dot{background:var(--sky);color:var(--sky-deep)}
+.route a:nth-child(4) .dot{background:var(--lav);color:var(--lav-deep)}
+.route a:nth-child(5) .dot{background:var(--peach);color:var(--peach-deep)}
+.route a:nth-child(6) .dot{background:var(--butter);color:var(--butter-deep)}
+.route a:nth-child(7) .dot{background:var(--rose);color:var(--rose-deep)}
+.route a:nth-child(8) .dot{background:var(--mint);color:var(--mint-deep)}
+
+/* ---------- Sticky-Nav ---------- */
+nav{position:sticky;top:0;z-index:50;background:rgba(251,250,247,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);margin-top:26px}
+nav .wrap{max-width:1060px;margin:0 auto;padding:10px 24px;display:flex;gap:8px;overflow-x:auto}
+nav a{white-space:nowrap;text-decoration:none;font-size:.82rem;font-weight:600;color:var(--ink-soft);padding:7px 14px;border-radius:999px;border:1px solid transparent}
+nav a:hover{background:var(--card);border-color:var(--line);color:var(--ink)}
+
+/* ---------- Sektionen ---------- */
+main{max-width:1060px;margin:0 auto;padding:20px 24px 90px}
+section{margin-top:64px}
+.sec-head{display:flex;align-items:center;gap:16px;margin-bottom:8px}
+.badge{width:52px;height:52px;border-radius:16px;display:grid;place-items:center;font-family:'Sora';font-weight:800;font-size:1.25rem;flex-shrink:0}
+section h2{font-size:clamp(1.4rem,3vw,1.9rem);font-weight:700}
+.sec-sub{color:var(--ink-soft);margin-bottom:22px;max-width:720px}
+.aqua .badge{background:var(--aqua);color:var(--aqua-deep)}
+.mint .badge{background:var(--mint);color:var(--mint-deep)}
+.sky .badge{background:var(--sky);color:var(--sky-deep)}
+.lav .badge{background:var(--lav);color:var(--lav-deep)}
+.peach .badge{background:var(--peach);color:var(--peach-deep)}
+.butter .badge{background:var(--butter);color:var(--butter-deep)}
+.rose .badge{background:var(--rose);color:var(--rose-deep)}
+
+/* ---------- Karten & Schritte ---------- */
+.card{background:var(--card);border:1.5px solid var(--line);border-radius:var(--r-lg);padding:26px 28px;margin-bottom:20px}
+.card h3{font-size:1.08rem;margin-bottom:14px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+ol.steps{list-style:none;counter-reset:s;display:flex;flex-direction:column;gap:14px}
+ol.steps li{counter-increment:s;display:grid;grid-template-columns:34px 1fr;gap:14px;align-items:start}
+ol.steps li::before{content:counter(s);width:30px;height:30px;border-radius:10px;display:grid;place-items:center;font-family:'Sora';font-weight:700;font-size:.85rem;margin-top:2px}
+.aqua ol.steps li::before{background:var(--aqua);color:var(--aqua-deep)}
+.mint ol.steps li::before{background:var(--mint);color:var(--mint-deep)}
+.sky ol.steps li::before{background:var(--sky);color:var(--sky-deep)}
+.lav ol.steps li::before{background:var(--lav);color:var(--lav-deep)}
+.peach ol.steps li::before{background:var(--peach);color:var(--peach-deep)}
+.butter ol.steps li::before{background:var(--butter);color:var(--butter-deep)}
+.rose ol.steps li::before{background:var(--rose);color:var(--rose-deep)}
+.steps b{font-weight:600}
+.steps small{display:block;color:var(--ink-soft);font-size:.86rem;margin-top:2px}
+
+ul.clean{list-style:none;display:flex;flex-direction:column;gap:10px}
+ul.clean li{padding-left:24px;position:relative}
+ul.clean li::before{content:"";position:absolute;left:4px;top:.62em;width:9px;height:9px;border-radius:3px;background:var(--line)}
+.aqua ul.clean li::before{background:var(--aqua-deep)}
+.mint ul.clean li::before{background:var(--mint-deep)}
+.sky ul.clean li::before{background:var(--sky-deep)}
+.lav ul.clean li::before{background:var(--lav-deep)}
+.peach ul.clean li::before{background:var(--peach-deep)}
+.butter ul.clean li::before{background:var(--butter-deep)}
+.rose ul.clean li::before{background:var(--rose-deep)}
+
+/* ---------- Code ---------- */
+pre{background:var(--code-bg);color:var(--code-ink);border-radius:var(--r-sm);padding:16px 18px;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:.82rem;line-height:1.6;margin:10px 0}
+code{font-family:'JetBrains Mono',monospace;font-size:.85em;background:#efede7;border-radius:6px;padding:2px 6px}
+pre code{background:none;padding:0;font-size:1em}
+pre .c{color:#9aa3c0}
+
+/* ---------- Hinweisboxen ---------- */
+.note,.warn,.mnemo{border-radius:var(--r-md);padding:14px 18px;margin:14px 0;font-size:.92rem}
+.note{background:var(--sky)}
+.warn{background:var(--rose)}
+.mnemo{background:var(--butter)}
+.note b,.warn b,.mnemo b{font-weight:700}
+.mnemo::before{content:"🧠 Eselsbrücke · ";font-weight:700}
+.warn::before{content:"⚠️ ";font-weight:700}
+
+/* ---------- Tabellen ---------- */
+table{width:100%;border-collapse:separate;border-spacing:0;font-size:.88rem;margin:10px 0}
+th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-family:'Sora';font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft)}
+tr:last-child td{border-bottom:none}
+thead th:first-child{border-top-left-radius:var(--r-sm)}
+thead th:last-child{border-top-right-radius:var(--r-sm)}
+thead{background:var(--paper)}
+
+/* ---------- Details ---------- */
+details{border:1.5px solid var(--line);border-radius:var(--r-md);margin:12px 0;background:var(--card)}
+details summary{cursor:pointer;padding:14px 18px;font-weight:600;font-size:.94rem;list-style:none;display:flex;align-items:center;gap:10px}
+details summary::before{content:"+";font-family:'Sora';font-weight:700;width:24px;height:24px;border-radius:8px;background:var(--paper);display:grid;place-items:center;flex-shrink:0}
+details[open] summary::before{content:"–"}
+details .inner{padding:0 18px 18px}
+summary::-webkit-details-marker{display:none}
+
+/* ---------- Chips ---------- */
+.chips{display:flex;flex-wrap:wrap;gap:10px;margin:10px 0}
+.chip{background:var(--paper);border:1.5px solid var(--line);border-radius:999px;padding:6px 14px;font-family:'JetBrains Mono';font-size:.8rem}
+
+footer{max-width:1060px;margin:0 auto;padding:30px 24px 60px;color:var(--ink-soft);font-size:.82rem;border-top:1px solid var(--line)}
+
+@media(max-width:820px){
+  .route{grid-template-columns:repeat(2,1fr)}
+  .grid2{grid-template-columns:1fr}
+}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.route a{transition:none}}
+</style>
+</head>
+<body>
+
+<header>
+  <span class="kicker">Red Hat OpenShift Logging 6.6 · Installation</span>
+  <h1>Logging-Stack installieren:<br>der komplette <span>Fahrplan</span></h1>
+  <p class="lede">Drei Operatoren, zwei Speicherarten, eine goldene Regel: <b>erst planen, dann installieren</b>. Die häufigsten Ausfälle sind <b>stille Fehler</b> – LokiStack meldet <code>Ready</code>, aber es kommen keine Logs an. Dieser Fahrplan zeigt, wie du sie vermeidest.</p>
+</header>
+
+
+<div class="route">
+  <a href="#overview"><span class="dot">0</span><span class="t">Überblick</span><span class="s">3 Operatoren, Workflow</span></a>
+  <a href="#prereq"><span class="dot">1</span><span class="t">Voraussetzungen</span><span class="s">2 Speicherarten prüfen</span></a>
+  <a href="#storage"><span class="dot">2</span><span class="t">Object Storage</span><span class="s">Backend, S3-Rechte, TLS-CA</span></a>
+  <a href="#sizing"><span class="dot">3</span><span class="t">Sizing</span><span class="s">1x.demo bis 1x.medium</span></a>
+  <a href="#loki"><span class="dot">4</span><span class="t">Loki Operator</span><span class="s">Log-Store + LokiStack CR</span></a>
+  <a href="#logging"><span class="dot">5</span><span class="t">Logging Operator</span><span class="s">Collector + Forwarder</span></a>
+  <a href="#coo"><span class="dot">6</span><span class="t">COO &amp; Zugriff</span><span class="s">Konsole, RBAC, Debugging</span></a>
+  <a href="#howto"><span class="dot">7</span><span class="t">Schritt für Schritt</span><span class="s">Chronologische Anleitung</span></a>
+</div>
+
+
+<main>
+
+<!-- ================= 0 ÜBERBLICK ================= -->
+<section id="overview" class="aqua">
+  <div class="sec-head"><div class="badge">0</div><h2>Überblick: Drei Operatoren, drei Schichten</h2></div>
+  <p class="sec-sub">Bild: eine <b>Poststelle</b>. Der Collector ist der <b>Briefträger</b> (sammelt ein), LokiStack das <b>Archiv</b> (lagert), die Konsole das <b>Lesezimmer</b> (anschauen). Jede Schicht hat ihren eigenen Operator.</p>
+
+  <div class="card">
+    <h3>Wer macht was – und wo er wohnt</h3>
+    <table>
+      <thead><tr><th>Operator</th><th>Namespace</th><th>Aufgabe</th><th>Steuernde CR</th></tr></thead>
+      <tbody>
+        <tr><td><b>Loki Operator</b></td><td><code>openshift-operators-redhat</code></td><td>Log-Store: empfängt, indiziert, speichert in S3-kompatiblem Object Storage</td><td><code>LokiStack</code></td></tr>
+        <tr><td><b>Red Hat OpenShift Logging Operator</b></td><td><code>openshift-logging</code></td><td>Sammeln &amp; Weiterleiten: Vector-Collector tailt Container-Logs</td><td><code>ClusterLogForwarder</code></td></tr>
+        <tr><td><b>Cluster Observability Operator (COO)</b></td><td><code>openshift-operators</code></td><td>Visualisierung: Logs-Tab unter <b>Observe → Logs</b> in der Web-Konsole</td><td><code>UIPlugin</code></td></tr>
+      </tbody>
+    </table>
+    <div class="mnemo"><b>L-L-C wie „Lagern, Liefern, Checken“</b> – Loki lagert, Logging liefert, COO checkt (zeigt an). Installationsreihenfolge: Loki → Logging → COO.</div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>Welche Operatoren brauchst du?</h3>
+      <ul class="clean">
+        <li><b>Nur weiterleiten</b> (externes Log-Ziel): nur der Logging Operator. Kein Cluster-Storage nötig.</li>
+        <li><b>Speichern im Cluster</b> (Abfrage per Grafana/logcli): Loki Operator + Logging Operator.</li>
+        <li><b>Voller Stack mit Konsolen-Ansicht</b>: alle drei Operatoren.</li>
+        <li>Kombinierbar: z.&nbsp;B. im Cluster speichern <i>und</i> parallel extern archivieren (Compliance).</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Der Installations-Workflow</h3>
+      <ol class="steps">
+        <li><div><b>Planen &amp; vorbereiten</b><small>StorageClass prüfen, Object Storage + TLS einrichten, Initialgröße wählen, Cluster-Kapazität checken.</small></div></li>
+        <li><div><b>Operatoren installieren</b><small>Loki Operator → Logging Operator → COO (falls Konsole gewünscht).</small></div></li>
+        <li><div><b>Konfigurieren &amp; deployen</b><small>LokiStack CR, dann ClusterLogForwarder CR, dann verifizieren.</small></div></li>
+        <li><div><b>Nach 24h optimieren</b><small>Echte Ingestion-Rate messen, Größe anpassen, Ressourcen beobachten.</small></div></li>
+      </ol>
+    </div>
+  </div>
+
+  <div class="warn"><b>Versionskopplung:</b> Loki Operator und Logging Operator müssen dieselbe Major.Minor-Version fahren – beide auf <code>stable-6.6</code>. Und: Loki Operator <b>vor</b> dem Logging Operator konfigurieren. <i>Hinweis: Die 6.6-Doku zeigt in den Beispielen noch <code>stable-6.5</code> – offensichtlich ein Doku-Überbleibsel. Verfügbare Kanäle prüfen: <code>oc get packagemanifest loki-operator -n openshift-marketplace</code>.</i></div>
+  <div class="note"><b>Multi-Cluster:</b> Eine LokiStack-Instanz speichert nur Logs des eigenen Clusters. Cluster-übergreifende Aggregation in eine LokiStack ist nicht unterstützt – pro Cluster eine LokiStack deployen oder an ein zentrales externes System forwarden.</div>
+</section>
+
+<!-- ================= 1 VORAUSSETZUNGEN ================= -->
+<section id="prereq" class="mint">
+  <div class="sec-head"><div class="badge">1</div><h2>Voraussetzungen: Zwei Speicherarten – beide Pflicht</h2></div>
+  <p class="sec-sub">Der wichtigste Punkt der ganzen Doku. LokiStack braucht <b>Blockspeicher</b> (StorageClass, für interne PVCs) <b>und</b> <b>Object Storage</b> (S3-kompatibel, für die Log-Daten). Fehlt eins, scheitert das Deployment – oft still.</p>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>Blockspeicher = Werkbank</h3>
+      <p>PVCs für WAL (Write-Ahead-Log), Index-Cache und Compactor-Arbeitsfläche. Das ist die <b>Werkbank</b>, auf der aktiv gearbeitet wird.</p>
+      <ul class="clean" style="margin-top:12px">
+        <li>Dynamisches Provisioning, <code>ReadWriteOnce</code></li>
+        <li>Muss nicht die Default-StorageClass sein – aber genug Kapazität haben</li>
+        <li>Block statt Filesystem (<code>volumeMode: Block</code>) – Filesystem bremst Loki spürbar, nicht produktionsempfohlen</li>
+        <li>Das Feld <code>storageClassName</code> in der LokiStack-CR meint <b>diesen</b> Speicher, nicht das S3</li>
+      </ul>
+      <pre><code>oc get storageclass</code></pre>
+    </div>
+    <div class="card">
+      <h3>Object Storage = Lagerhalle</h3>
+      <p>Hier landen die eigentlichen Log-Chunks und Indizes – die <b>Lagerhalle</b> für alles Fertige.</p>
+      <ul class="clean" style="margin-top:12px">
+        <li>S3-kompatibel: AWS S3, GCS, Azure Blob, StorageGRID &amp; Co., Ceph RGW/ODF, Swift</li>
+        <li>Konfiguriert über das Secret in <code>spec.storage.secret.name</code></li>
+        <li>Kapazität vorab nicht seriös schätzbar – mit z.&nbsp;B. 1&nbsp;TB starten und Verbrauch beobachten</li>
+        <li>Erreichbarkeit von allen Nodes testen (gerade air-gapped)</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="mnemo"><b>Werkbank &amp; Lagerhalle:</b> StorageClass = Werkbank (schnell, klein, lokal), Object Storage = Lagerhalle (groß, dauerhaft). Loki braucht immer beides – wer nur die Lagerhalle baut, hat nichts zum Arbeiten; wer nur die Werkbank hat, nichts zum Ablegen.</div>
+
+  <div class="card">
+    <h3>Die stillen Fehler – warum vorher prüfen</h3>
+    <table>
+      <thead><tr><th>Fehlt…</th><th>Was du siehst</th><th>Was wirklich passiert</th></tr></thead>
+      <tbody>
+        <tr><td>StorageClass</td><td>Operatoren installieren sauber, LokiStack <code>Ready</code></td><td>PVCs bleiben <code>Pending</code>, Pods starten nie, keine Logs</td></tr>
+        <tr><td>Object Storage / CA-Bundle</td><td>Operatoren installieren sauber, LokiStack <code>Ready</code></td><td>Logs werden <b>still verworfen</b> – kein Fehler in der Konsole</td></tr>
+        <tr><td><code>s3:DeleteObject</code>-Recht</td><td>LokiStack <code>Ready</code>, Retention konfiguriert</td><td>Compactor kann nicht löschen – Bucket wächst unbegrenzt</td></tr>
+      </tbody>
+    </table>
+    <div class="warn"><b>„Ready“ ist keine Erfolgsmeldung.</b> Die häufigsten Support-Fälle entstehen, weil Operatoren vor den Prüfungen installiert wurden. <code>Ready</code> heißt nur: die Konfiguration ist formal gültig – nicht, dass Logs fließen.</div>
+  </div>
+
+  <div class="card">
+    <h3>Checkliste vor der Installation (nur bei LokiStack nötig)</h3>
+    <ol class="steps">
+      <li><div><b>StorageClass verfügbar</b><small>Mit ausreichender Kapazität für die gewählte Größe.</small></div></li>
+      <li><div><b>Object Storage angelegt</b><small>Bucket erstellt, Zugangsdaten mit allen sechs S3-Rechten.</small></div></li>
+      <li><div><b>TLS-CA-Bundle konfiguriert</b><small>Bei Self-Signed / interner CA – sonst stiller Log-Verlust.</small></div></li>
+      <li><div><b>Initialgröße gewählt</b><small>1x.demo / pico / extra-small / small / medium – nach Clustergröße, nicht nach geratenem Log-Volumen.</small></div></li>
+      <li><div><b>Cluster-Kapazität geprüft</b><small>Beispiel: 1x.medium mit Ruler braucht 70 vCPUs und 171 GiB RAM.</small></div></li>
+      <li><div><b>Netzwerk getestet</b><small>Cluster ↔ Storage-Endpoint, IAM-Rollen/Service-Accounts korrekt.</small></div></li>
+    </ol>
+    <p style="font-size:.88rem;color:var(--ink-soft);margin-top:12px">Bei reinem Forwarding ohne LokiStack entfällt die Checkliste – stattdessen Auth, Verschlüsselung und CA-Zertifikate des Ziels prüfen.</p>
+  </div>
+
+  <details>
+    <summary>Single-Node / Edge ohne StorageClass: Local Storage Operator</summary>
+    <div class="inner">
+      <p>SNO- und Edge-Cluster haben oft keine StorageClass. Lösung: Local Storage Operator (oder LVM Storage) macht aus rohen Block-Devices eine StorageClass.</p>
+      <pre><code>oc adm new-project openshift-local-storage</code></pre>
+      <pre><code>apiVersion: local.storage.openshift.io/v1
+kind: LocalVolume
+metadata:
+  name: local-block
+  namespace: openshift-local-storage
+spec:
+  nodeSelector:
+    nodeSelectorTerms:
+    - matchExpressions:
+      - key: kubernetes.io/hostname
+        operator: In
+        values:
+        - &lt;node_name&gt;
+  storageClassDevices:
+  - storageClassName: local-block   <span class="c"># wird deine neue StorageClass</span>
+    volumeMode: Block               <span class="c"># Block empfohlen für Loki</span>
+    devicePaths:
+    - /dev/disk/by-id/&lt;device_id&gt;   <span class="c"># stabile by-id-Pfade nutzen</span>
+    fsType: ""</code></pre>
+      <p>Danach: <code>oc get storageclass local-block</code> und nach LokiStack-Erstellung <code>oc get pvc -n openshift-logging</code> – PVCs müssen binden.</p>
+    </div>
+  </details>
+</section>
+
+<!-- ================= 2 OBJECT STORAGE ================= -->
+<section id="storage" class="sky">
+  <div class="sec-head"><div class="badge">2</div><h2>Object Storage konfigurieren</h2></div>
+  <p class="sec-sub">Backend wählen, S3-Rechte sicherstellen, Secret anlegen – und bei Self-Signed-Zertifikaten zwingend das CA-Bundle. Alles <b>vor</b> der LokiStack-CR.</p>
+
+  <div class="card">
+    <h3>Backend-Wahl nach Umgebung</h3>
+    <table>
+      <thead><tr><th>Umgebung</th><th>Empfohlenes Backend</th><th>Secret-<code>type</code></th><th>CA-Bundle?</th></tr></thead>
+      <tbody>
+        <tr><td>AWS / GCP / Azure</td><td>S3 / GCS / Azure Blob</td><td><code>s3</code> / <code>gcs</code> / <code>azure</code></td><td>Nur bei Custom-/VPC-Endpoints mit eigenen Zertifikaten</td></tr>
+        <tr><td>On-Prem</td><td>ODF Ceph RGW oder S3-kompatibel (StorageGRID, Cloudian, HCP …)</td><td><code>s3</code></td><td>Bei Self-Signed / interner CA: ja</td></tr>
+        <tr><td>OpenStack</td><td>Swift</td><td><code>swift</code></td><td>Bei Self-Signed / interner CA: ja</td></tr>
+        <tr><td>Edge / SNO</td><td>Forwarding an zentralen Hub</td><td>–</td><td>–</td></tr>
+      </tbody>
+    </table>
+    <p style="font-size:.88rem;color:var(--ink-soft)">Namenskonvention für das Secret: <code>logging-loki-&lt;provider&gt;</code>. Ceph RGW heißt in Rook-Deployments auch NooBaa.</p>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>Die sechs S3-Rechte</h3>
+      <div class="chips">
+        <span class="chip">s3:ListBucket</span>
+        <span class="chip">s3:PutObject</span>
+        <span class="chip">s3:GetObject</span>
+        <span class="chip">s3:DeleteObject</span>
+        <span class="chip">s3:GetObjectTagging</span>
+        <span class="chip">s3:PutObjectTagging</span>
+      </div>
+      <ul class="clean" style="margin-top:12px">
+        <li><b>List/Get</b>: Abfragen und Compaction</li>
+        <li><b>Put</b>: Ingestion (Chunks + Index schreiben)</li>
+        <li><b>Delete</b>: Compactor löscht abgelaufene Logs</li>
+        <li><b>Tagging (Get/Put)</b>: Retention &amp; Lifecycle</li>
+      </ul>
+      <div class="warn"><b>Ohne <code>s3:DeleteObject</code></b> greift keine Retention: der Bucket wächst endlos, obwohl alles <code>Ready</code> meldet.</div>
+    </div>
+    <div class="card">
+      <h3>Beispiel: Secret für S3-kompatiblen Storage</h3>
+      <pre><code>oc create secret generic logging-loki-s3 \
+  -n openshift-logging \
+  --from-literal=bucketnames="&lt;bucket&gt;" \
+  --from-literal=endpoint="https://s3.example.com:9000" \
+  --from-literal=access_key_id="&lt;key&gt;" \
+  --from-literal=access_key_secret="&lt;secret&gt;" \
+  --from-literal=forcepathstyle="true"</code></pre>
+      <ul class="clean" style="margin-top:10px">
+        <li><code>endpoint</code>: volle URL mit Protokoll und Port – <b>ohne</b> Bucket-Namen</li>
+        <li><code>forcepathstyle="true"</code>: Pflicht für S3-kompatible Anbieter, <b>nicht</b> für AWS</li>
+        <li>Kein <code>region</code>-Parameter bei S3-kompatiblem Storage – das ist AWS-spezifisch</li>
+        <li>Feldnamen (<code>access_key_id</code> …) sind Loki-Operator-eigen, nicht die AWS-SDK-Namen</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>TLS-CA-Bundle – der Klassiker unter den stillen Fehlern</h3>
+    <p>Self-Signed oder interne CA am Storage-Endpoint, aber kein CA-Bundle konfiguriert? Dann: LokiStack <code>Ready</code>, Logs weg, kein Fehler in der UI. In den Pod-Logs steht dafür:</p>
+    <pre><code>x509: certificate signed by unknown authority</code></pre>
+    <ol class="steps">
+      <li><div><b>CA extrahieren</b><small><code>openssl s_client -connect &lt;endpoint&gt;:&lt;port&gt; -showcerts &lt;/dev/null | openssl x509 -out storage-ca.crt</code></small></div></li>
+      <li><div><b>ConfigMap anlegen</b><small><code>oc create configmap loki-s3-ca-bundle -n openshift-logging --from-file=ca-bundle.crt=./storage-ca.crt</code></small></div></li>
+      <li><div><b>In der LokiStack-CR referenzieren</b><small>Unter <code>spec.storage.tls.caName: loki-s3-ca-bundle</code>.</small></div></li>
+      <li><div><b>Verifizieren</b><small><code>oc logs &lt;ingester_pod&gt; -n openshift-logging | grep -i "x509\|certificate"</code> – muss leer bleiben.</small></div></li>
+    </ol>
+    <div class="note"><b>ODF/NooBaa:</b> Beim Default-Ceph-RGW-Endpoint ggf. das <code>service-ca.crt</code> aus der ConfigMap <code>openshift-service-ca.crt</code> verwenden.</div>
+  </div>
+
+  <details>
+    <summary>Provider-Details: AWS, GCS, Azure, Ceph RGW (ODF), Swift</summary>
+    <div class="inner">
+      <p><b>AWS S3:</b> Secret mit <code>bucketnames</code>, <code>endpoint</code> (<code>https://s3.&lt;region&gt;.amazonaws.com</code>), <code>access_key_id</code>, <code>access_key_secret</code>, <code>region</code>. Bei STS stattdessen <code>bucketnames</code>, <code>region</code>, <code>audience</code>.</p>
+      <p><b>GCS:</b> Service-Account-Key als Datei: <code>--from-literal=bucketname=… --from-file=key.json=./key.json</code>.</p>
+      <p><b>Azure Blob:</b> <code>container</code>, <code>environment</code> (AzureGlobal, AzureChinaCloud, AzureGermanCloud, AzureUSGovernment), <code>account_name</code>, <code>account_key</code>; bei Entra Workload ID ohne <code>account_key</code>.</p>
+      <p><b>Ceph RGW (ODF):</b> Erst <code>ObjectBucketClaim</code> im Namespace <code>openshift-logging</code> mit <code>storageClassName: openshift-storage.ceph.rbd</code>, dann Credentials aus zugehöriger ConfigMap/Secret ins <code>logging-loki-s3</code>-Secret übernehmen (<code>forcepathstyle="true"</code>).</p>
+      <p><b>Swift:</b> Secret <code>logging-loki-swift</code> mit <code>auth_url</code>, Benutzer-/Domain-Feldern, <code>password</code>, <code>container_name</code>; optional Projekt-/Region-Parameter. In der LokiStack-CR dann <code>type: swift</code>.</p>
+    </div>
+  </details>
+</section>
+
+<!-- ================= 3 SIZING ================= -->
+<section id="sizing" class="lav">
+  <div class="sec-head"><div class="badge">3</div><h2>Sizing: erst schätzen, nach 24 Stunden messen</h2></div>
+  <p class="sec-sub">Log-Volumen ist vor der Installation <b>nicht</b> vorhersagbar: ein einzelner Pod kann 100&nbsp;GB/Tag produzieren, journald- und Audit-Logs kommen obendrauf. Deshalb: Baseline nach Clustergröße wählen, später anhand echter Metriken nachjustieren.</p>
+
+  <div class="card">
+    <h3>Größenübersicht (1x.&lt;size&gt; – die „1x“ ist fix)</h3>
+    <table>
+      <thead><tr><th></th><th>1x.demo</th><th>1x.pico</th><th>1x.extra-small</th><th>1x.small</th><th>1x.medium</th></tr></thead>
+      <tbody>
+        <tr><td><b>Ingestion</b></td><td>nur Demo</td><td>50 GB/Tag</td><td>100 GB/Tag</td><td>500 GB/Tag</td><td>2 TB/Tag</td></tr>
+        <tr><td><b>QPS (200 ms)</b></td><td>nur Demo</td><td>1–25</td><td>1–25</td><td>25–50</td><td>25–75</td></tr>
+        <tr><td><b>Replikation</b></td><td>keine</td><td>2</td><td>2</td><td>2</td><td>2</td></tr>
+        <tr><td><b>vCPU (mit Ruler)</b></td><td>–</td><td>7 (8)</td><td>14 (16)</td><td>34 (42)</td><td>54 (70)</td></tr>
+        <tr><td><b>RAM (mit Ruler)</b></td><td>–</td><td>17 Gi (18)</td><td>31 Gi (35)</td><td>67 Gi (83)</td><td>139 Gi (171)</td></tr>
+        <tr><td><b>Disk (mit Ruler)</b></td><td>40 Gi (60)</td><td>590 Gi (910)</td><td>430 Gi (750)</td><td>430 Gi (750)</td><td>590 Gi (910)</td></tr>
+      </tbody>
+    </table>
+    <p style="font-size:.88rem;color:var(--ink-soft)">Disk-Requests sind über die Größen ähnlich – verschiedene Größen lassen sich so gefahrlos testen. Produktionsgrößen laut CR-Doku: extra-small, small, medium; 1x.pico gibt es ab Logging 6.1. 1x.pico: HA für alle Komponenten, für Deployments ohne Single-Replication/Auto-Compaction.</p>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>Startgrößen-Faustregel</h3>
+      <ul class="clean">
+        <li><b>≤ 10 Nodes:</b> 1x.extra-small</li>
+        <li><b>&gt; 10 Nodes:</b> 1x.medium</li>
+        <li><b>SNO/Edge:</b> 1x.pico (minimal lauffähig); Edge alternativ 1x.extra-small mit kurzer Retention (7–14 Tage)</li>
+        <li><b>Edge mit knapper Kapazität:</b> statt lokaler LokiStack an zentralen Hub forwarden</li>
+      </ul>
+      <div class="mnemo"><b>Kleider kauft man nach Anprobe:</b> erst die Konfektionsgröße nach Statur (Clustergröße), nach 24&nbsp;h Tragen (Metriken) wird umgetauscht (resized).</div>
+    </div>
+    <div class="card">
+      <h3>Nach 24 h: echte Rate messen</h3>
+      <pre><code>sum by (component_name) (
+  rate(vector_component_sent_bytes_total{
+    component_type="loki",
+    component_kind="sink"}[5m])
+)</code></pre>
+      <p style="font-size:.88rem">Bytes/s × 86400 ÷ 1073741824 = GB/Tag. Beispiel: 5 242 880 B/s ≈ 421 GB/Tag → 1x.small (500 GB/Tag). Dann in der CR <code>spec.size</code> anpassen.</p>
+      <div class="warn"><b>Resize = Rolling Restart</b> aller Komponenten. In ein Wartungsfenster legen.</div>
+    </div>
+  </div>
+
+  <details>
+    <summary>Was treibt die Größe? QPS, Volumen, Retention, Ruler</summary>
+    <div class="inner">
+      <ul class="clean">
+        <li><b>QPS:</b> Konsolen-Abfragen, Dashboard-Refreshes, Alert-Evaluierungen, API-Abfragen. Ein einzelner Nutzer mit mehreren Dashboards erzeugt schon 10–20 QPS.</li>
+        <li><b>Ingestion (GB/Tag):</b> treibt Ingester-CPU/RAM.</li>
+        <li><b>Retention:</b> treibt Object-Storage-Bedarf (100 GB/Tag × 30 Tage = 3 TB).</li>
+        <li><b>Abfrage-Zeitraum:</b> treibt Querier-Ressourcen.</li>
+        <li><b>Ruler (optional):</b> wertet Alerting-/Retention-Regeln aus, skaliert mit Tenants × Regeln × Datenvolumen. Laut Tabelle 1x.medium: +16 vCPU, +32 Gi RAM, +Disk. (Der Fließtext der 6.6-Doku nennt für 1x.medium 34→42 vCPU – das sind laut Tabelle die Werte von 1x.small; die Tabelle gilt.) Nur einplanen, wenn Alerting/Recording Rules genutzt werden.</li>
+        <li>Requests sind garantierte Minima – reale Last kann darüber liegen.</li>
+      </ul>
+    </div>
+  </details>
+</section>
+
+<!-- ================= 4 LOKI OPERATOR ================= -->
+<section id="loki" class="peach">
+  <div class="sec-head"><div class="badge">4</div><h2>Loki Operator installieren &amp; LokiStack anlegen</h2></div>
+  <p class="sec-sub">Der Lagerverwalter zieht ein: Namespace <code>openshift-operators-redhat</code>, Kanal <code>stable-6.6</code>, Quelle <code>redhat-operators</code>. Danach Namespace <code>openshift-logging</code>, Storage-Secret, LokiStack-CR.</p>
+
+  <div class="card">
+    <h3>CLI-Installation in 5 Schritten</h3>
+    <ol class="steps">
+      <li><div><b>Namespace <code>openshift-operators-redhat</code></b><small>Mit Label <code>openshift.io/cluster-monitoring: "true"</code>. Nicht <code>openshift-operators</code> – dort lauern Community-Operatoren mit Metrik-Namenskonflikten.</small></div></li>
+      <li><div><b>OperatorGroup <code>loki-operator</code></b><small>Im selben Namespace, <code>upgradeStrategy: Default</code>.</small></div></li>
+      <li><div><b>Subscription</b><small><code>channel: stable-6.6</code>, <code>source: redhat-operators</code>, <code>installPlanApproval: Automatic</code> (oder Manual). Disconnected: Name der eigenen CatalogSource.</small></div></li>
+      <li><div><b>Prüfen</b><small><code>oc get csv -n openshift-operators-redhat</code> → <code>loki-operator.v6.6.0 … Succeeded</code>.</small></div></li>
+      <li><div><b>Namespace <code>openshift-logging</code> anlegen</b><small>Ebenfalls mit Cluster-Monitoring-Label – hier laufen LokiStack und alle Logging-Workloads.</small></div></li>
+    </ol>
+    <div class="warn"><b>Community-Falle:</b> Es gibt einen <code>loki-operator</code> auch im Community-Katalog – anderer Kanalname, kein Support. Immer <code>source: redhat-operators</code>. Bei <code>ResolutionFailed</code>: <code>oc get packagemanifest loki-operator -n openshift-marketplace</code> und Kanal/Quelle prüfen.</div>
+  </div>
+
+  <div class="card">
+    <h3>LokiStack-CR – das Herzstück</h3>
+    <pre><code>apiVersion: loki.grafana.com/v1
+kind: LokiStack
+metadata:
+  name: logging-loki                <span class="c"># fester Name</span>
+  namespace: openshift-logging
+spec:
+  size: 1x.small                    <span class="c"># Initialgröße</span>
+  storage:
+    schemas:
+    - effectiveDate: '2023-10-15'
+      version: v13
+    secret:
+      name: logging-loki-s3         <span class="c"># dein Storage-Secret</span>
+      type: s3                      <span class="c"># s3 | gcs | azure | swift</span>
+    tls:
+      caName: loki-s3-ca-bundle     <span class="c"># bei Self-Signed-Storage</span>
+  storageClassName: &lt;storage_class&gt; <span class="c"># BLOCKspeicher, nicht S3!</span>
+  tenants:
+    mode: openshift-logging</code></pre>
+    <ul class="clean" style="margin-top:10px">
+      <li><code>credentialMode</code> (optional): <code>static</code> (Default, Secret-Credentials), <code>token</code> (kurzlebige Tokens), <code>token-cco</code> (Default bei STS/WIF mit CCO)</li>
+      <li>Loki ist hier als <b>Kurzzeit-Store</b> ausgelegt: getestet/supportet bis max. <b>30 Tage</b> Retention. Langzeit-Archiv → externes System.</li>
+    </ul>
+    <div class="mnemo"><b>„storageClassName ≠ S3“:</b> das Feld klingt nach Speicher-Backend, meint aber die Werkbank (Block-PVCs). Die Lagerhalle (S3) steckt im <code>secret</code>.</div>
+  </div>
+</section>
+
+<!-- ================= 5 LOGGING OPERATOR ================= -->
+<section id="logging" class="butter">
+  <div class="sec-head"><div class="badge">5</div><h2>Logging Operator, RBAC &amp; ClusterLogForwarder</h2></div>
+  <p class="sec-sub">Der Briefträger braucht drei Dinge: einen Dienstausweis (ServiceAccount), Zutrittsrechte (ClusterRoles) und eine Routenkarte (ClusterLogForwarder). <b>Reihenfolge ist hier sicherheitskritisch.</b></p>
+
+  <div class="card">
+    <h3>Installation &amp; Collector-Setup</h3>
+    <ol class="steps">
+      <li><div><b>Operator installieren</b><small>OperatorGroup + Subscription <code>cluster-logging</code> in <code>openshift-logging</code>, Kanal <code>stable-6.6</code> (gleich wie Loki!), Quelle <code>redhat-operators</code>. Check: <code>oc get csv -n openshift-logging</code>.</small></div></li>
+      <li><div><b>ServiceAccount anlegen</b><small><code>oc create sa logging-collector -n openshift-logging</code></small></div></li>
+      <li><div><b>ClusterRoles binden – VOR der CLF-CR</b><small><code>logging-collector-logs-writer</code> (in LokiStack schreiben), <code>collect-application-logs</code>, <code>collect-infrastructure-logs</code>; für Audit zusätzlich <code>collect-audit-logs</code>.</small></div></li>
+      <li><div><b>ClusterLogForwarder-CR anlegen</b><small>Name <code>instance</code>, Output-Typ <code>lokiStack</code>, Pipelines mit <code>inputRefs</code>.</small></div></li>
+      <li><div><b>Status prüfen</b><small><code>oc get clusterlogforwarder instance -n openshift-logging -o yaml</code> → Conditions <code>Authorized</code>, <code>Valid</code>, <code>Ready</code>.</small></div></li>
+    </ol>
+    <div class="warn"><b>RBAC zuerst!</b> Fügst du einen Input-Typ in die CLF-CR ein, ohne dass das passende ClusterRoleBinding existiert, wird das <b>gesamte Collector-DaemonSet zerstört</b> – die komplette Log-Sammlung fällt aus.</div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>ClusterLogForwarder – Minimalbeispiel</h3>
+      <pre><code>apiVersion: observability.openshift.io/v1
+kind: ClusterLogForwarder
+metadata:
+  name: instance
+  namespace: openshift-logging
+spec:
+  serviceAccount:
+    name: logging-collector
+  outputs:
+  - name: lokistack-out
+    type: lokiStack
+    lokiStack:
+      target:
+        name: logging-loki
+        namespace: openshift-logging
+      authentication:
+        token:
+          from: serviceAccount
+    tls:                              <span class="c"># PFLICHT!</span>
+      ca:
+        key: service-ca.crt
+        configMapName: openshift-service-ca.crt
+  pipelines:
+  - name: infra-app-logs
+    inputRefs: [application, infrastructure]
+    outputRefs: [lokistack-out]</code></pre>
+      <div class="warn"><b>Ohne den <code>tls.ca</code>-Block</b> scheitern die Collector-Pods mit <code>certificate verify failed</code> – der CLF-Status kann trotzdem <code>Ready: True</code> zeigen.</div>
+    </div>
+    <div class="card">
+      <h3>Verifikation &amp; LogFileMetricExporter</h3>
+      <ul class="clean">
+        <li><code>oc get pods -n openshift-logging -l app.kubernetes.io/component=collector</code> → ein Pod pro Node</li>
+        <li><code>oc logs … --tail=20</code> → gesund sind nur WARN-Meldungen über kleine Dateien</li>
+        <li>Konsole: <b>Observe → Logs</b>, Query <code>{log_type="infrastructure"}</code></li>
+      </ul>
+      <p style="margin-top:12px"><b>LogFileMetricExporter</b> (optional, aber sonst zeigt „Produced Logs“ im Dashboard <i>No datapoints found</i>): Singleton-CR <code>openshift-logging/instance</code>, Kind <code>LogFileMetricExporter</code> (<code>logging.openshift.io/v1alpha1</code>) mit optionalen <code>nodeSelector</code>/<code>resources</code>/<code>tolerations</code>. Läuft danach als Pod parallel zum Collector auf jedem Node.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 6 COO & ZUGRIFF ================= -->
+<section id="coo" class="rose">
+  <div class="sec-head"><div class="badge">6</div><h2>COO, UIPlugin, Log-Zugriff &amp; Troubleshooting</h2></div>
+  <p class="sec-sub">Das Lesezimmer ist optional: sammeln, speichern und forwarden geht ohne COO. Wer den Logs-Tab in der Konsole will, braucht <b>beides</b> – COO <b>und</b> UIPlugin-CR.</p>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>COO installieren</h3>
+      <ul class="clean">
+        <li>Subscription <code>cluster-observability-operator</code> in <code>openshift-operators</code> (bestehende OperatorGroup, nichts extra anlegen)</li>
+        <li>Kanal: <code>development</code> · Quelle: <code>redhat-operators</code></li>
+        <li>Check: <code>oc get csv -n openshift-operators | grep cluster-observability</code> → <code>Succeeded</code></li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>UIPlugin – schaltet den Logs-Tab frei</h3>
+      <pre><code>apiVersion: observability.openshift.io/v1alpha1
+kind: UIPlugin
+metadata:
+  name: logging            <span class="c"># muss "logging" heißen</span>
+spec:
+  type: Logging
+  logging:
+    lokiStack:
+      name: logging-loki   <span class="c"># = LokiStack-Name</span>
+    logsLimit: 50
+    timeout: 30s
+    schema: otel           <span class="c"># otel | viaq | select</span></code></pre>
+      <p style="font-size:.88rem;color:var(--ink-soft)">Bekannte Einschränkungen (OU-587): Schema-Feature erst ab OCP 4.15; Nicht-Admins können mit Logging 5.8–6.2 nicht per otel-Attribut abfragen (LOG-6589). Default-Schema ist viaq.</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Fein granularer Log-Zugriff (Loki)</h3>
+    <p>Der Logging Operator gibt <b>keinem</b> Nutzer automatisch Log-Zugriff. Drei ClusterRoles stehen bereit:</p>
+    <div class="chips">
+      <span class="chip">cluster-logging-application-view</span>
+      <span class="chip">cluster-logging-infrastructure-view</span>
+      <span class="chip">cluster-logging-audit-view</span>
+    </div>
+    <ul class="clean" style="margin-top:12px">
+      <li><b>Clusterweit:</b> ClusterRoleBinding auf die View-Rolle (z. B. für <code>system:authenticated</code>).</li>
+      <li><b>Pro Namespace:</b> RoleBinding + ClusterRole im Ziel-Namespace; Nutzer müssen beim Abfragen den Namespace angeben. ServiceAccounts brauchen zusätzlich Projekt-List-Rechte (z. B. <code>self-provisioner</code>).</li>
+      <li><b>Admin-Gruppen:</b> <code>spec.tenants.openshift.adminGroups</code> in der LokiStack-CR (nur Modus <code>openshift-logging</code>); überschreibt die Defaults <code>system:cluster-admins</code>, <code>cluster-admin</code>, <code>dedicated-admin</code>; <code>[]</code> deaktiviert. SA-Gruppen: <code>system:serviceaccount:&lt;ns&gt;:&lt;name&gt;</code>.</li>
+      <li>Nach Upgrades sorgt <code>logging-application-logs-reader</code> + Binding für Abwärtskompatibilität (jeder authentifizierte Nutzer liest die eigenen Namespaces).</li>
+    </ul>
+    <div class="note"><b>cluster-admin &amp; viele Namespaces:</b> Übersteigt die Zeichensumme aller Namespaces 5120, gibt es <i>Parse error: input size too long</i>. Abhilfe: Gruppe <code>cluster-admin</code> anlegen (<code>oc adm groups new cluster-admin</code>), Nutzer hinzufügen, Rolle an die Gruppe binden.</div>
+  </div>
+
+  <div class="card">
+    <h3>Troubleshooting-Spickzettel</h3>
+    <table>
+      <thead><tr><th>Symptom</th><th>Ursache / Lösung</th></tr></thead>
+      <tbody>
+        <tr><td><code>certificate verify failed</code> im Collector</td><td><code>tls.ca</code>-Block im CLF-Output ergänzen (<code>openshift-service-ca.crt</code> / <code>service-ca.crt</code>)</td></tr>
+        <tr><td><code>x509: unknown authority</code> in Loki-Pods</td><td>CA-Bundle für den Object Storage fehlt → ConfigMap + <code>spec.storage.tls.caName</code></td></tr>
+        <tr><td><code>429 Too Many Requests</code></td><td>Normal beim Erst-Ingest (Backlog-Flush), löst sich in Minuten</td></tr>
+        <tr><td>Kein Logs-Tab unter Observe</td><td>COO <b>und</b> UIPlugin nötig – beides prüfen</td></tr>
+        <tr><td>CLF <code>Ready: True</code>, aber keine Logs</td><td>Collector-Pod-Logs lesen; Validation prüft die Verbindung nicht. Häufigste Ursache: fehlende TLS-CA</td></tr>
+        <tr><td><code>ResolutionFailed</code> bei Subscription</td><td>Kanal/Quelle prüfen: <code>redhat-operators</code>, nicht Community-Katalog</td></tr>
+        <tr><td>PVCs <code>Pending</code></td><td>Keine passende StorageClass – nachrüsten (ggf. Local Storage Operator)</td></tr>
+        <tr><td>Bucket wächst trotz Retention</td><td><code>s3:DeleteObject</code>-Recht fehlt dem Storage-Account</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ================= 7 SCHRITT FÜR SCHRITT ================= -->
+<section id="howto" class="mint">
+  <div class="sec-head"><div class="badge">7</div><h2>Die komplette Anleitung: chronologisch, Schritt für Schritt</h2></div>
+  <p class="sec-sub">Ziel: voller Stack (LokiStack + Collector + Konsolen-Ansicht) mit S3-kompatiblem On-Prem-Storage. Jeder Schritt: erst <b>was</b> und <b>warum</b>, Code zum Aufklappen. Reihenfolge einhalten – sie ist der halbe Erfolg.</p>
+
+  <div class="card">
+    <h3>Die vier Phasen auf einen Blick</h3>
+    <ol class="steps">
+      <li><div><b>Phase A · Vorbereiten</b><small>Schritte 1–4: StorageClass, Bucket + Rechte, Größe, Kapazität. Noch kein Operator!</small></div></li>
+      <li><div><b>Phase B · Log-Store</b><small>Schritte 5–9: Loki Operator, Namespaces, Secret, CA-Bundle, LokiStack-CR.</small></div></li>
+      <li><div><b>Phase C · Collector</b><small>Schritte 10–13: Logging Operator, ServiceAccount + RBAC, ClusterLogForwarder, Verifikation.</small></div></li>
+      <li><div><b>Phase D · Konsole &amp; Feinschliff</b><small>Schritte 14–17: COO, UIPlugin, Nutzer-Zugriff, Nachmessen &amp; Resize.</small></div></li>
+    </ol>
+  </div>
+
+  <h3 style="margin:26px 0 6px;font-size:1.15rem">Phase A · Vorbereiten (kein Operator anfassen!)</h3>
+
+  <details>
+    <summary>Schritt 1 · StorageClass prüfen (Blockspeicher für interne PVCs)</summary>
+    <div class="inner">
+      <p>LokiStack braucht dynamisch provisionierten <code>ReadWriteOnce</code>-Blockspeicher für WAL, Index-Cache und Compactor. Ohne StorageClass bleiben PVCs <code>Pending</code> und kein Pod startet – bei trotzdem grünem LokiStack-Status.</p>
+      <pre><code><span class="c"># Alle StorageClasses auflisten</span>
+oc get storageclass
+
+<span class="c"># Default-StorageClass ermitteln</span>
+oc get storageclass -o=jsonpath='{.items[?(@.metadata.annotations.storageclass\.kubernetes\.io/is-default-class=="true")].metadata.name}'</code></pre>
+      <p>Auf den Provisioner achten (z.&nbsp;B. <code>ebs.csi.aws.com</code>, <code>csi.vsphere.vmware.com</code>, <code>openshift-storage.ceph.rbd</code>) – Blockspeicher bevorzugen, Filesystem bremst Loki. Kapazität gegen die Sizing-Tabelle prüfen (1x.medium mit Ruler: 910 Gi über alle PVCs).</p>
+      <p><b>SNO/Edge ohne StorageClass:</b> Local Storage Operator installieren und aus rohen Devices eine StorageClass bauen:</p>
+      <pre><code>oc adm new-project openshift-local-storage
+<span class="c"># Local Storage Operator via OperatorHub oder Subscription (stable) installieren, dann:</span>
+cat &lt;&lt;'EOF' | oc apply -f -
+apiVersion: local.storage.openshift.io/v1
+kind: LocalVolume
+metadata:
+  name: local-block
+  namespace: openshift-local-storage
+spec:
+  nodeSelector:
+    nodeSelectorTerms:
+    - matchExpressions:
+      - key: kubernetes.io/hostname
+        operator: In
+        values:
+        - &lt;your_node_name&gt;
+  storageClassDevices:
+  - storageClassName: local-block
+    volumeMode: Block
+    devicePaths:
+    - /dev/disk/by-id/&lt;device_id&gt;
+    fsType: ""
+EOF
+oc get storageclass local-block</code></pre>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 2 · Object Storage anlegen: Bucket + Credentials mit den sechs S3-Rechten</summary>
+    <div class="inner">
+      <p>Bucket auf dem S3-kompatiblen Storage anlegen (StorageGRID, Cloudian, Ceph RGW, MinIO-artige …) und einen Account mit genau diesen Rechten ausstatten: <code>ListBucket</code>, <code>PutObject</code>, <code>GetObject</code>, <code>DeleteObject</code>, <code>GetObjectTagging</code>, <code>PutObjectTagging</code>. Ohne <code>DeleteObject</code> läuft der Bucket trotz Retention voll.</p>
+      <pre><code><span class="c"># Referenz-IAM-Policy (AWS-Syntax, sinngemäß auf den Provider übertragen)</span>
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    { "Effect": "Allow",
+      "Action": ["s3:ListBucket"],
+      "Resource": "arn:aws:s3:::&lt;bucket_name&gt;" },
+    { "Effect": "Allow",
+      "Action": ["s3:PutObject","s3:GetObject","s3:DeleteObject",
+                 "s3:GetObjectTagging","s3:PutObjectTagging"],
+      "Resource": "arn:aws:s3:::&lt;bucket_name&gt;/*" }
+  ]
+}</code></pre>
+      <p>Kapazität nicht überplanen – vorab nicht schätzbar. Mit ~1 TB starten, nach Deployment beobachten. Erreichbarkeit des Endpoints von den Cluster-Nodes testen (gerade air-gapped).</p>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 3 · Initialgröße wählen</summary>
+    <div class="inner">
+      <p>Log-Volumen ist vor der Installation nicht vorhersagbar – deshalb nach <b>Clustergröße</b> wählen, nicht raten:</p>
+      <pre><code>≤ 10 Nodes                → 1x.extra-small
+&gt; 10 Nodes                → 1x.medium
+SNO/Edge                  → 1x.pico (minimal lauffähig)
+Edge, knappe Kapazität    → Forwarding an zentralen Hub</code></pre>
+      <p>Größe notieren – sie kommt in Schritt 9 in die LokiStack-CR und wird in Schritt 17 gegen echte Messwerte geprüft.</p>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 4 · Cluster-Kapazität gegenchecken</summary>
+    <div class="inner">
+      <p>Die gewählte Größe muss ins Cluster passen (siehe Sizing-Tabelle in Etappe 3). Beispiele der Gesamt-Requests:</p>
+      <pre><code>1x.extra-small : 14 vCPU / 31 Gi RAM / 430 Gi Disk   (mit Ruler: 16 / 35 Gi / 750 Gi)
+1x.small       : 34 vCPU / 67 Gi RAM / 430 Gi        (mit Ruler: 42 / 83 Gi / 750 Gi)
+1x.medium      : 54 vCPU / 139 Gi RAM / 590 Gi         (mit Ruler: 70 / 171 Gi / 910 Gi)</code></pre>
+      <p>Ruler nur einrechnen, wenn Alerting-/Recording-Rules geplant sind.</p>
+    </div>
+  </details>
+
+  <h3 style="margin:26px 0 6px;font-size:1.15rem">Phase B · Log-Store aufbauen</h3>
+
+  <details>
+    <summary>Schritt 5 · Loki Operator installieren (Namespace → OperatorGroup → Subscription)</summary>
+    <div class="inner">
+      <p>Der Loki Operator gehört nach <code>openshift-operators-redhat</code> – nicht nach <code>openshift-operators</code> (Community-Metrik-Konflikte). Quelle zwingend <code>redhat-operators</code>: im Community-Katalog liegt ein gleichnamiger, nicht supporteter Operator mit anderen Kanälen.</p>
+      <pre><code>cat &lt;&lt;'EOF' | oc apply -f -
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openshift-operators-redhat
+  labels:
+    openshift.io/cluster-monitoring: "true"
+---
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: loki-operator
+  namespace: openshift-operators-redhat
+spec:
+  upgradeStrategy: Default
+---
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: loki-operator
+  namespace: openshift-operators-redhat
+spec:
+  channel: stable-6.6
+  installPlanApproval: Automatic
+  name: loki-operator
+  source: redhat-operators        # disconnected: eigene CatalogSource
+  sourceNamespace: openshift-marketplace
+EOF</code></pre>
+      <pre><code><span class="c"># Verifizieren – muss Succeeded zeigen</span>
+oc get csv -n openshift-operators-redhat
+<span class="c"># NAME                   DISPLAY         VERSION   PHASE</span>
+<span class="c"># loki-operator.v6.6.0   Loki Operator   6.6.0     Succeeded</span></code></pre>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 6 · Namespace openshift-logging anlegen</summary>
+    <div class="inner">
+      <p>Hier laufen LokiStack, Collector und alle Logging-Workloads. Das Monitoring-Label sorgt dafür, dass Cluster-Monitoring die Metriken scrapt.</p>
+      <pre><code>cat &lt;&lt;'EOF' | oc apply -f -
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openshift-logging
+  labels:
+    openshift.io/cluster-monitoring: "true"
+EOF</code></pre>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 7 · Object-Storage-Secret erstellen</summary>
+    <div class="inner">
+      <p>Das Secret verbindet LokiStack mit der Lagerhalle. Name nach Konvention <code>logging-loki-s3</code>, im Namespace <code>openshift-logging</code>. S3-kompatibel: <code>forcepathstyle="true"</code> Pflicht, kein <code>region</code>, Endpoint ohne Bucket-Namen.</p>
+      <pre><code><span class="c"># S3-kompatibler On-Prem-Storage</span>
+oc create secret generic logging-loki-s3 \
+  -n openshift-logging \
+  --from-literal=bucketnames="&lt;bucket_name&gt;" \
+  --from-literal=endpoint="https://s3.example.com:9000" \
+  --from-literal=access_key_id="&lt;access_key&gt;" \
+  --from-literal=access_key_secret="&lt;secret_key&gt;" \
+  --from-literal=forcepathstyle="true"
+
+<span class="c"># Kontrolle</span>
+oc get secret logging-loki-s3 -n openshift-logging</code></pre>
+      <pre><code><span class="c"># Alternative AWS S3 (Standard-Auth)</span>
+oc create secret generic logging-loki-s3 \
+  -n openshift-logging \
+  --from-literal=bucketnames="&lt;bucket_name&gt;" \
+  --from-literal=endpoint="https://s3.&lt;region&gt;.amazonaws.com" \
+  --from-literal=access_key_id="&lt;aws_access_key_id&gt;" \
+  --from-literal=access_key_secret="&lt;aws_access_key_secret&gt;" \
+  --from-literal=region="&lt;aws_region&gt;"</code></pre>
+      <p>GCS/Azure/Swift/ODF: siehe Provider-Aufklapper in Etappe 2.</p>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 8 · Nur bei Self-Signed/interner CA: TLS-CA-Bundle konfigurieren</summary>
+    <div class="inner">
+      <p>Pflicht bei On-Prem-Storage mit eigener CA – sonst werden Logs <b>still verworfen</b>, obwohl alles <code>Ready</code> meldet.</p>
+      <pre><code><span class="c"># 1. CA-Zertifikat vom Storage-Endpoint ziehen</span>
+openssl s_client -connect &lt;storage_endpoint&gt;:&lt;port&gt; -showcerts &lt;/dev/null 2&gt;/dev/null \
+  | openssl x509 -out storage-ca.crt
+
+<span class="c"># 2. ConfigMap im Logging-Namespace anlegen</span>
+oc create configmap loki-s3-ca-bundle \
+  -n openshift-logging \
+  --from-file=ca-bundle.crt=./storage-ca.crt</code></pre>
+      <p>Die Referenz (<code>spec.storage.tls.caName</code>) kommt im nächsten Schritt in die LokiStack-CR. ODF/NooBaa: ggf. <code>service-ca.crt</code> aus der ConfigMap <code>openshift-service-ca.crt</code> nutzen.</p>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 9 · LokiStack-CR anlegen und Start prüfen</summary>
+    <div class="inner">
+      <p>Jetzt kommt alles zusammen: Größe (Schritt 3), Secret (Schritt 7), CA-Bundle (Schritt 8), StorageClass (Schritt 1). Merken: <code>storageClassName</code> = Blockspeicher, das S3 steckt im Secret.</p>
+      <pre><code>cat &lt;&lt;'EOF' | oc apply -f -
+apiVersion: loki.grafana.com/v1
+kind: LokiStack
+metadata:
+  name: logging-loki
+  namespace: openshift-logging
+spec:
+  size: 1x.small                     # aus Schritt 3
+  storage:
+    schemas:
+    - effectiveDate: '2023-10-15'
+      version: v13
+    secret:
+      name: logging-loki-s3          # aus Schritt 7
+      type: s3
+    tls:
+      caName: loki-s3-ca-bundle      # aus Schritt 8, sonst Block weglassen
+  storageClassName: &lt;storage_class&gt;  # aus Schritt 1
+  tenants:
+    mode: openshift-logging
+EOF</code></pre>
+      <pre><code><span class="c"># PVCs müssen binden, Pods laufen</span>
+oc get pvc -n openshift-logging
+oc get pods -n openshift-logging | grep lokistack
+
+<span class="c"># Keine Zertifikatsfehler? Muss leer bleiben:</span>
+oc logs -n openshift-logging &lt;lokistack_ingester_pod&gt; | grep -i "x509\|certificate"</code></pre>
+    </div>
+  </details>
+
+  <h3 style="margin:26px 0 6px;font-size:1.15rem">Phase C · Collector aufsetzen</h3>
+
+  <details>
+    <summary>Schritt 10 · Logging Operator installieren</summary>
+    <div class="inner">
+      <p>Gleicher Kanal wie der Loki Operator (<code>stable-6.6</code>) – die Versionen müssen zusammenpassen. Namespace ist hier <code>openshift-logging</code>.</p>
+      <pre><code>cat &lt;&lt;'EOF' | oc apply -f -
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: cluster-logging
+  namespace: openshift-logging
+spec:
+  upgradeStrategy: Default
+---
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: cluster-logging
+  namespace: openshift-logging
+spec:
+  channel: stable-6.6
+  installPlanApproval: Automatic
+  name: cluster-logging
+  source: redhat-operators
+  sourceNamespace: openshift-marketplace
+EOF
+
+oc get csv -n openshift-logging
+<span class="c"># cluster-logging.v6.6.0   Red Hat OpenShift Logging   6.6.0   Succeeded</span></code></pre>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 11 · ServiceAccount anlegen und RBAC binden – zwingend VOR der CLF-CR</summary>
+    <div class="inner">
+      <p>Kritischste Reihenfolge im ganzen Ablauf: fehlt beim Anlegen der ClusterLogForwarder-CR ein Binding für einen genutzten Input-Typ, wird das <b>komplette Collector-DaemonSet zerstört</b>.</p>
+      <pre><code>oc create sa logging-collector -n openshift-logging
+
+oc adm policy add-cluster-role-to-user logging-collector-logs-writer \
+  -z logging-collector -n openshift-logging
+oc adm policy add-cluster-role-to-user collect-application-logs \
+  -z logging-collector -n openshift-logging
+oc adm policy add-cluster-role-to-user collect-infrastructure-logs \
+  -z logging-collector -n openshift-logging
+
+<span class="c"># Nur wenn Audit-Logs gesammelt werden sollen:</span>
+oc adm policy add-cluster-role-to-user collect-audit-logs \
+  -z logging-collector -n openshift-logging</code></pre>
+      <p>Rollen: <code>logging-collector-logs-writer</code> schreibt in die LokiStack, <code>collect-application-logs</code> / <code>collect-infrastructure-logs</code> lesen die jeweiligen Container-Logs.</p>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 12 · ClusterLogForwarder-CR anlegen (mit Pflicht-tls.ca-Block!)</summary>
+    <div class="inner">
+      <p>Die Routenkarte des Briefträgers: welche Inputs in welchen Output. Der <code>tls.ca</code>-Block ist Pflicht – ohne ihn scheitern die Collector-Pods mit <code>certificate verify failed</code>, während der CLF-Status trotzdem <code>Ready: True</code> zeigen kann.</p>
+      <pre><code>cat &lt;&lt;'EOF' | oc apply -f -
+apiVersion: observability.openshift.io/v1
+kind: ClusterLogForwarder
+metadata:
+  name: instance
+  namespace: openshift-logging
+spec:
+  serviceAccount:
+    name: logging-collector          # aus Schritt 11
+  outputs:
+  - name: lokistack-out
+    type: lokiStack
+    lokiStack:
+      target:
+        name: logging-loki           # aus Schritt 9
+        namespace: openshift-logging
+      authentication:
+        token:
+          from: serviceAccount
+    tls:                             # PFLICHT
+      ca:
+        key: service-ca.crt
+        configMapName: openshift-service-ca.crt
+  pipelines:
+  - name: infra-app-logs
+    inputRefs:
+    - application
+    - infrastructure                 # audit nur mit RBAC aus Schritt 11!
+    outputRefs:
+    - lokistack-out
+EOF</code></pre>
+      <pre><code>oc get clusterlogforwarder instance -n openshift-logging -o yaml
+<span class="c"># Erwartete Conditions: observability.openshift.io/Authorized,</span>
+<span class="c"># observability.openshift.io/Valid, Ready</span></code></pre>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 13 · Pipeline verifizieren + optional LogFileMetricExporter</summary>
+    <div class="inner">
+      <pre><code><span class="c"># Ein Collector-Pod pro Node</span>
+oc get pods -n openshift-logging -l app.kubernetes.io/component=collector
+
+<span class="c"># Logs prüfen: gesund = nur WARN über kleine Dateien.</span>
+<span class="c"># "certificate verify failed" → tls.ca-Block in Schritt 12 prüfen.</span>
+<span class="c"># "429 Too Many Requests" → normal beim Erst-Ingest, legt sich in Minuten.</span>
+oc logs -n openshift-logging -l app.kubernetes.io/component=collector --tail=20</code></pre>
+      <p>Optional, damit das Konsolen-Dashboard „Produced Logs“ Daten zeigt (Singleton – Operator akzeptiert nur <code>openshift-logging/instance</code>):</p>
+      <pre><code>cat &lt;&lt;'EOF' | oc apply -f -
+apiVersion: logging.openshift.io/v1alpha1
+kind: LogFileMetricExporter
+metadata:
+  name: instance
+  namespace: openshift-logging
+spec:
+  nodeSelector: {}
+  resources:
+    limits:
+      cpu: 500m
+      memory: 256Mi
+    requests:
+      cpu: 200m
+      memory: 128Mi
+  tolerations: []
+EOF
+
+oc get pods -l app.kubernetes.io/component=logfilesmetricexporter -n openshift-logging</code></pre>
+    </div>
+  </details>
+
+  <h3 style="margin:26px 0 6px;font-size:1.15rem">Phase D · Konsole, Zugriff &amp; Feinschliff</h3>
+
+  <details>
+    <summary>Schritt 14 · COO installieren (nur für den Logs-Tab in der Konsole)</summary>
+    <div class="inner">
+      <p>Optional: Sammeln, Speichern und Forwarden funktionieren ohne COO. Der COO wandert nach <code>openshift-operators</code> (bestehende OperatorGroup, nichts extra anlegen), Kanal <code>development</code>.</p>
+      <pre><code>cat &lt;&lt;'EOF' | oc apply -f -
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: cluster-observability-operator
+  namespace: openshift-operators
+spec:
+  channel: development
+  installPlanApproval: Automatic
+  name: cluster-observability-operator
+  source: redhat-operators
+  sourceNamespace: openshift-marketplace
+EOF
+
+oc get csv -n openshift-operators | grep cluster-observability
+<span class="c"># cluster-observability-operator.v0.4.2 … Succeeded</span></code></pre>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 15 · UIPlugin-CR anlegen → Logs-Tab erscheint</summary>
+    <div class="inner">
+      <p>COO allein reicht nicht – erst die UIPlugin-CR schaltet <b>Observe → Logs</b> frei. Name muss <code>logging</code> sein, <code>lokiStack.name</code> muss zur LokiStack passen.</p>
+      <pre><code>cat &lt;&lt;'EOF' | oc apply -f -
+apiVersion: observability.openshift.io/v1alpha1
+kind: UIPlugin
+metadata:
+  name: logging
+spec:
+  type: Logging
+  logging:
+    lokiStack:
+      name: logging-loki             # aus Schritt 9
+    logsLimit: 50
+    timeout: 30s
+    schema: otel                     # otel | viaq | select (Default: viaq)
+EOF</code></pre>
+      <p>Danach Web-Konsole neu laden, <b>Observe → Logs</b> öffnen und testen:</p>
+      <pre><code>{log_type="infrastructure"}</code></pre>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 16 · Nutzern Log-Zugriff geben (Loki-RBAC)</summary>
+    <div class="inner">
+      <p>Ohne explizite Bindings sieht kein normaler Nutzer Logs. Rollen: <code>cluster-logging-application-view</code>, <code>cluster-logging-infrastructure-view</code>, <code>cluster-logging-audit-view</code>.</p>
+      <pre><code><span class="c"># Variante A: App-Logs clusterweit für alle authentifizierten Nutzer</span>
+cat &lt;&lt;'EOF' | oc apply -f -
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: logging-all-application-logs-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-logging-application-view
+subjects:
+- kind: Group
+  name: system:authenticated
+  apiGroup: rbac.authorization.k8s.io
+EOF</code></pre>
+      <pre><code><span class="c"># Variante B: nur ein Namespace für einen Nutzer</span>
+cat &lt;&lt;'EOF' | oc apply -f -
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: allow-read-logs
+  namespace: log-test-0
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-logging-application-view
+subjects:
+- kind: User
+  apiGroup: rbac.authorization.k8s.io
+  name: testuser-0
+EOF</code></pre>
+      <p>ServiceAccounts brauchen bei Namespace-Zugriff zusätzlich Projekt-List-Rechte (z.&nbsp;B. <code>self-provisioner</code>). Admin-Gruppen: <code>spec.tenants.openshift.adminGroups</code> in der LokiStack-CR. cluster-admin mit vielen Namespaces (Parse error &gt; 5120 Zeichen):</p>
+      <pre><code>oc adm groups new cluster-admin
+oc adm groups add-users cluster-admin &lt;username&gt;
+oc adm policy add-cluster-role-to-group cluster-admin cluster-admin</code></pre>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 17 · Nach 24 Stunden: messen, vergleichen, ggf. resizen</summary>
+    <div class="inner">
+      <p>Erst jetzt ist das echte Log-Volumen sichtbar. Ingestion-Rate per Prometheus abfragen, in GB/Tag umrechnen, gegen die Sizing-Tabelle halten:</p>
+      <pre><code>sum by (component_name) (
+  rate(vector_component_sent_bytes_total{
+    component_type="loki",
+    component_kind="sink"}[5m])
+)
+
+<span class="c"># Bytes/s × 86400 ÷ 1073741824 = GB/Tag</span>
+<span class="c"># Beispiel: 5 242 880 B/s ≈ 421 GB/Tag → 1x.small (500 GB/Tag)</span></code></pre>
+      <pre><code><span class="c"># Größe in der LokiStack-CR anpassen (Wartungsfenster! Rolling Restart)</span>
+oc patch lokistack logging-loki -n openshift-logging \
+  --type=merge -p '{"spec":{"size":"1x.small"}}'</code></pre>
+      <p>Danach CPU-/RAM-Auslastung weiter beobachten – Requests sind Minima, reale Last kann darüber liegen.</p>
+    </div>
+  </details>
+
+  <div class="mnemo"><b>A-B-C-D wie „Ausmessen, Bauen, Collector, Dashboard“:</b> erst die Umgebung ausmessen (Phase A), dann den Store bauen (B), den Collector anschließen (C), zuletzt Dashboard und Zugriff (D). Wer bei B anfängt, landet beim stillen Fehler.</div>
+</section>
+
+</main>
+
+<footer>
+  Zusammenfassung von „Red Hat OpenShift Logging 6.6 – Installing logging“ (Stand 2026-07-22): Loki Operator, Red Hat OpenShift Logging Operator, Cluster Observability Operator. Kernbotschaft: Voraussetzungen (Block- <b>und</b> Object-Storage, CA-Bundle, S3-Rechte, RBAC) vor der Installation abhaken – „Ready“ allein beweist nichts.
+</footer>
+
+</body>
+</html>
