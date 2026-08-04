@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HTTP-Fehler-Triage – Der Fahrplan</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#33394a;
+  --ink-soft:#5c6376;
+  --paper:#fbfaf7;
+  --card:#ffffff;
+  --line:#e9e6df;
+  --code-bg:#31364a;
+  --code-ink:#e8eaf2;
+  --mint:#d9f2e4;      --mint-deep:#2f8f6b;
+  --sky:#dcebf9;       --sky-deep:#2d6fa8;
+  --lav:#e7e2f7;       --lav-deep:#6b5bb5;
+  --peach:#fbe6d7;     --peach-deep:#c2703d;
+  --butter:#faf0cf;    --butter-deep:#a5842a;
+  --rose:#f9e0e6;      --rose-deep:#b34f6d;
+  --aqua:#d7eff0;      --aqua-deep:#2b8288;
+  --r-lg:26px; --r-md:18px; --r-sm:12px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',system-ui,sans-serif;background:var(--paper);color:var(--ink);line-height:1.65;font-size:16px}
+h1,h2,h3{font-family:'Sora',system-ui,sans-serif;line-height:1.2}
+:focus-visible{outline:2px solid var(--sky-deep);outline-offset:2px}
+
+/* ---------- Kopf ---------- */
+header{max-width:1060px;margin:0 auto;padding:52px 24px 4px}
+.kicker{display:inline-block;background:var(--lav);color:var(--lav-deep);font-weight:600;font-size:.8rem;letter-spacing:.08em;text-transform:uppercase;padding:6px 14px;border-radius:999px;margin-bottom:18px}
+header h1{font-size:clamp(1.9rem,4.5vw,3rem);font-weight:800;letter-spacing:-.02em}
+header h1 span{color:var(--rose-deep)}
+.lede{color:var(--ink-soft);max-width:640px;margin-top:14px;font-size:1.05rem}
+
+/* ---------- Steuerleiste ---------- */
+.controls{position:sticky;top:0;z-index:50;background:rgba(251,250,247,.94);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);margin-top:28px}
+.controls .wrap{max-width:1060px;margin:0 auto;padding:12px 24px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.search{position:relative;flex:1 1 260px}
+.search input{width:100%;font-family:'JetBrains Mono',monospace;font-size:.86rem;color:var(--ink);background:var(--card);border:1.5px solid var(--line);border-radius:999px;padding:10px 16px 10px 40px}
+.search input::placeholder{color:var(--ink-soft);opacity:.7}
+.search input:focus{border-color:var(--sky-deep);outline:none}
+.search::before{content:"/";position:absolute;left:17px;top:50%;transform:translateY(-50%);font-family:'JetBrains Mono',monospace;font-size:.86rem;color:var(--ink-soft);pointer-events:none}
+.seg{display:flex;gap:6px}
+.seg button{font-family:'Inter',sans-serif;font-size:.82rem;font-weight:600;color:var(--ink-soft);background:var(--card);border:1.5px solid var(--line);border-radius:999px;padding:8px 16px;cursor:pointer;transition:background .15s,color .15s,border-color .15s}
+.seg button:hover{color:var(--ink);border-color:var(--ink-soft)}
+.seg button[aria-pressed="true"]{background:var(--lav);border-color:var(--lav);color:var(--lav-deep)}
+.seg.cli button[aria-pressed="true"]{background:var(--mint);border-color:var(--mint);color:var(--mint-deep)}
+
+/* ---------- Hop-Leiste ---------- */
+.route{max-width:1060px;margin:26px auto 0;padding:0 24px;display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
+.route button{display:flex;flex-direction:column;gap:8px;text-align:left;color:var(--ink);background:var(--card);border:1.5px solid var(--line);border-radius:var(--r-md);padding:14px;cursor:pointer;font-family:'Inter',sans-serif;transition:transform .15s ease,box-shadow .15s ease,border-color .15s}
+.route button:hover{transform:translateY(-3px);box-shadow:0 8px 22px rgba(60,60,90,.10)}
+.route .dot{width:34px;height:34px;border-radius:12px;display:grid;place-items:center;font-family:'Sora';font-weight:700;font-size:.9rem}
+.route .t{font-weight:600;font-size:.86rem;line-height:1.3}
+.route .s{font-size:.74rem;color:var(--ink-soft)}
+.route button:nth-child(1) .dot{background:var(--aqua);color:var(--aqua-deep)}
+.route button:nth-child(2) .dot{background:var(--mint);color:var(--mint-deep)}
+.route button:nth-child(3) .dot{background:var(--sky);color:var(--sky-deep)}
+.route button:nth-child(4) .dot{background:var(--lav);color:var(--lav-deep)}
+.route button:nth-child(5) .dot{background:var(--peach);color:var(--peach-deep)}
+.route button[aria-pressed="true"]{border-color:var(--ink-soft)}
+.route button.lit{border-color:var(--sky-deep);box-shadow:0 8px 22px rgba(45,111,168,.14)}
+
+/* ---------- Liste ---------- */
+main{max-width:1060px;margin:0 auto;padding:8px 24px 70px}
+.count{font-family:'Sora';font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft);margin:30px 0 12px}
+.row{background:var(--card);border:1.5px solid var(--line);border-radius:var(--r-lg);margin-bottom:14px;overflow:hidden;transition:border-color .15s,box-shadow .15s}
+.row.sel{border-color:var(--sky-deep);box-shadow:0 8px 22px rgba(45,111,168,.10)}
+.row-head{width:100%;display:flex;align-items:center;gap:16px;background:none;border:0;padding:18px 24px;cursor:pointer;text-align:left;color:inherit;font-family:'Inter',sans-serif}
+.badge{width:60px;height:44px;border-radius:14px;display:grid;place-items:center;font-family:'Sora';font-weight:800;font-size:1.05rem;flex-shrink:0}
+.rose .badge{background:var(--rose);color:var(--rose-deep)}
+.peach .badge{background:var(--peach);color:var(--peach-deep)}
+.aqua .badge{background:var(--aqua);color:var(--aqua-deep)}
+.name{flex:1}
+.name b{display:block;font-family:'Sora';font-weight:700;font-size:1rem}
+.name small{display:block;color:var(--ink-soft);font-size:.84rem;margin-top:2px}
+.pill{font-family:'JetBrains Mono',monospace;font-size:.72rem;padding:4px 11px;border-radius:999px;white-space:nowrap}
+.rose .pill{background:var(--rose);color:var(--rose-deep)}
+.peach .pill{background:var(--peach);color:var(--peach-deep)}
+.aqua .pill{background:var(--aqua);color:var(--aqua-deep)}
+.plus{font-family:'Sora';font-weight:700;width:26px;height:26px;border-radius:8px;background:var(--paper);display:grid;place-items:center;flex-shrink:0;color:var(--ink-soft)}
+.row .plus::after{content:"+"}
+.row.open .plus::after{content:"–"}
+.body{display:none;padding:0 24px 22px}
+.row.open .body{display:block}
+h3.lbl{font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft);font-weight:700;margin:14px 0 10px}
+ul.clean{list-style:none;display:flex;flex-direction:column;gap:9px}
+ul.clean li{padding-left:24px;position:relative;font-size:.95rem}
+ul.clean li::before{content:"";position:absolute;left:4px;top:.62em;width:9px;height:9px;border-radius:3px;background:var(--line)}
+.rose ul.clean li::before{background:var(--rose-deep)}
+.peach ul.clean li::before{background:var(--peach-deep)}
+.aqua ul.clean li::before{background:var(--aqua-deep)}
+
+/* ---------- Kommandos ---------- */
+.cmd{position:relative;margin:10px 0}
+.cmd pre{background:var(--code-bg);color:var(--code-ink);border-radius:var(--r-sm);padding:15px 100px 15px 18px;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:.82rem;line-height:1.6}
+.copy{position:absolute;top:9px;right:10px;font-family:'JetBrains Mono',monospace;font-size:.72rem;color:var(--code-ink);background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.22);border-radius:999px;padding:4px 12px;cursor:pointer}
+.copy:hover{background:rgba(255,255,255,.20)}
+.copy.done{background:var(--mint);border-color:var(--mint);color:var(--mint-deep)}
+.empty{background:var(--card);border:1.5px solid var(--line);border-radius:var(--r-lg);padding:34px 28px;color:var(--ink-soft)}
+.empty code{font-family:'JetBrains Mono',monospace;background:#efede7;border-radius:6px;padding:2px 6px;font-size:.85em}
+
+/* ---------- Durchfragen ---------- */
+.step{background:var(--card);border:1.5px solid var(--line);border-radius:var(--r-lg);padding:28px 30px}
+.sec-head{display:flex;align-items:center;gap:16px;margin-bottom:10px}
+.num{width:52px;height:52px;border-radius:16px;background:var(--sky);color:var(--sky-deep);display:grid;place-items:center;font-family:'Sora';font-weight:800;font-size:1.2rem;flex-shrink:0}
+.step h2{font-size:clamp(1.25rem,3vw,1.6rem);font-weight:700}
+.hint{color:var(--ink-soft);max-width:720px;font-size:.95rem}
+.answers{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
+.ans{font-family:'Inter',sans-serif;font-size:.95rem;font-weight:600;color:var(--ink);background:var(--card);border:1.5px solid var(--line);border-radius:999px;padding:10px 22px;cursor:pointer;transition:transform .15s,box-shadow .15s}
+.ans:hover{transform:translateY(-2px);box-shadow:0 8px 22px rgba(60,60,90,.10)}
+.ans kbd{font-family:'JetBrains Mono',monospace;font-size:.72rem;color:var(--ink-soft);margin-left:9px;border:1px solid var(--line);border-radius:5px;padding:1px 5px}
+.verdict .num{background:var(--rose);color:var(--rose-deep);font-size:1.5rem}
+.verdict.v4 .num{background:var(--peach);color:var(--peach-deep)}
+.verdict.vu .num{background:var(--aqua);color:var(--aqua-deep)}
+.trail{list-style:none;margin-top:20px;border-top:1px solid var(--line);padding-top:14px;display:flex;flex-direction:column;gap:5px}
+.trail li{font-size:.84rem;color:var(--ink-soft);font-family:'JetBrains Mono',monospace}
+.trail li b{color:var(--ink);font-weight:500}
+.restart{margin-top:18px;font-family:'Inter',sans-serif;font-size:.88rem;font-weight:600;color:var(--ink-soft);background:var(--paper);border:1.5px solid var(--line);border-radius:999px;padding:9px 20px;cursor:pointer}
+.restart:hover{color:var(--ink);border-color:var(--ink-soft)}
+
+.mnemo{background:var(--butter);border-radius:var(--r-md);padding:14px 18px;margin:24px 0 0;font-size:.92rem}
+.mnemo::before{content:"🧠 Eselsbrücke · ";font-weight:700}
+.mnemo b{font-weight:700}
+
+footer{max-width:1060px;margin:0 auto;padding:26px 24px 60px;border-top:1px solid var(--line);display:flex;gap:10px;flex-wrap:wrap}
+.chip{background:var(--card);border:1.5px solid var(--line);border-radius:999px;padding:6px 14px;font-family:'JetBrains Mono',monospace;font-size:.76rem;color:var(--ink-soft)}
+.chip b{color:var(--ink);font-weight:500}
+.hidden{display:none}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+@media (max-width:820px){.route{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:560px){.route{grid-template-columns:1fr}.row-head{gap:12px;padding:16px}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+
+<header>
+  <span class="kicker">Ingress → Service → Pod</span>
+  <h1>HTTP-Fehler: <span>die Triage</span></h1>
+  <p class="lede">Vom Statuscode zum Kommando. Tippen filtert, die Stationen filtern nach Hop – oder lass dich durch den 5xx-Pfad durchfragen.</p>
+</header>
+
+<div class="controls">
+  <div class="wrap">
+    <div class="search">
+      <input id="q" type="search" placeholder="502, timeout, selector …" autocomplete="off" aria-label="Fehler filtern">
+    </div>
+    <div class="seg" role="group" aria-label="Ansicht">
+      <button id="m-ref" aria-pressed="true">Nachschlagen</button>
+      <button id="m-walk" aria-pressed="false">Durchfragen</button>
+    </div>
+    <div class="seg cli" role="group" aria-label="Kommandozeile">
+      <button id="cli-oc" aria-pressed="true">oc</button>
+      <button id="cli-k" aria-pressed="false">kubectl</button>
+    </div>
+  </div>
+</div>
+
+<div class="route" id="rail"></div>
+
+<main>
+  <section id="ref">
+    <p class="count" id="count"></p>
+    <div id="list"></div>
+    <div class="mnemo"><b>4xx = du hast Mist gebaut, 5xx = ich habe Mist gebaut.</b> Die erste Ziffer sagt dir, auf welcher Seite des Kabels der Server das Problem sieht.</div>
+  </section>
+
+  <section id="walk" class="hidden"></section>
+</main>
+
+<footer>
+  <span class="chip"><b>/</b> filtern</span>
+  <span class="chip"><b>↑ ↓</b> auswählen</span>
+  <span class="chip"><b>Enter</b> aufklappen</span>
+  <span class="chip"><b>c</b> Kommando kopieren</span>
+  <span class="chip"><b>j / n</b> ja / nein</span>
+  <span class="chip"><b>Esc</b> zurücksetzen</span>
+</footer>
+
+<div class="sr" id="live" role="status" aria-live="polite"></div>
+
+<script>
+const HOPS = [
+  {id:"client", n:"Client / DNS",    s:"Auflösung, TLS",       k:"1"},
+  {id:"lb",     n:"Load Balancer",   s:"MetalLB, F5, Cloud",   k:"2"},
+  {id:"ing",    n:"Ingress / Route", s:"nginx, HAProxy",       k:"3"},
+  {id:"svc",    n:"Service",         s:"Selector, Endpoints",  k:"4"},
+  {id:"pod",    n:"Pod / App",       s:"Container, Sidecar",   k:"5"}
+];
+
+const E = [
+  {c:"400", n:"Bad Request", hop:"ing", cls:"peach", tag:"4xx", why:[
+    "Malformed Header oder ungültige Query-Parameter",
+    "Klartext-HTTP an einen TLS-Port geschickt",
+    "Proxy setzt einen Header, den das Backend ablehnt"
+  ], cmd:[
+    "oc logs -n $NS deploy/$APP --tail=100 | grep -i 'bad request'",
+    "curl -vk https://$HOST/$PATH 2>&1 | head -40"
+  ]},
+  {c:"401", n:"Unauthorized", hop:"pod", cls:"peach", tag:"4xx", why:[
+    "Token abgelaufen oder falscher Issuer",
+    "Auth-Header wird vom Proxy nicht durchgereicht",
+    "OAuth-Proxy-Sidecar hat keine gültige Session"
+  ], cmd:[
+    "oc get ingress $ING -n $NS -o yaml | grep -A5 auth",
+    "curl -sI -H \"Authorization: Bearer $TOKEN\" https://$HOST/$PATH"
+  ]},
+  {c:"403", n:"Forbidden", hop:"ing", cls:"peach", tag:"4xx", why:[
+    "auth-url oder auth-signin Annotation lehnt ab",
+    "WAF oder ModSecurity greift",
+    "NetworkPolicy blockt den Controller-Namespace",
+    "RBAC im Backend, nicht am Ingress"
+  ], cmd:[
+    "oc get ingress $ING -n $NS -o jsonpath='{.metadata.annotations}' | tr ',' '\\n'",
+    "oc get networkpolicy -n $NS",
+    "oc logs -n openshift-ingress deploy/router-default --tail=50"
+  ]},
+  {c:"404", n:"Not Found", hop:"ing", cls:"peach", tag:"4xx", why:[
+    "Host oder Path im Ingress passt nicht",
+    "pathType Prefix und Exact verwechselt",
+    "Rewrite-Target frisst den Pfad weg",
+    "Falsche ingressClassName oder falscher Namespace"
+  ], cmd:[
+    "oc get ingress -A -o wide | grep $HOST",
+    "oc describe ingress $ING -n $NS",
+    "oc exec -n $NS deploy/$APP -- curl -sI localhost:8080/$PATH"
+  ]},
+  {c:"405", n:"Method Not Allowed", hop:"pod", cls:"peach", tag:"4xx", why:[
+    "Backend akzeptiert die Methode nicht",
+    "Redirect 301/302 wandelt POST in GET",
+    "force-ssl-redirect greift vor dem POST"
+  ], cmd:[
+    "curl -X POST -sI https://$HOST/$PATH",
+    "oc get ingress $ING -n $NS -o yaml | grep -i redirect"
+  ]},
+  {c:"408", n:"Request Timeout", hop:"lb", cls:"rose", tag:"5xx-nah", why:[
+    "Client sendet zu langsam",
+    "Keepalive am LB kürzer als am Controller — Klassiker bei Cloud-LBs"
+  ], cmd:[
+    "oc get ingresscontroller default -n openshift-ingress-operator -o yaml | grep -i timeout"
+  ]},
+  {c:"413", n:"Payload Too Large", hop:"ing", cls:"peach", tag:"4xx", why:[
+    "proxy-body-size — Default 1M bei nginx-ingress",
+    "Upload größer als das Limit am vorgelagerten LB"
+  ], cmd:[
+    "oc annotate ingress $ING -n $NS nginx.ingress.kubernetes.io/proxy-body-size=50m --overwrite"
+  ]},
+  {c:"429", n:"Too Many Requests", hop:"ing", cls:"peach", tag:"4xx", why:[
+    "limit-rps oder limit-connections Annotation",
+    "Upstream-Quota oder API-Server-Throttling",
+    "Retry-Storm eines Clients, der sein Limit selbst auslöst"
+  ], cmd:[
+    "oc get ingress $ING -n $NS -o yaml | grep -i limit",
+    "oc logs -n openshift-ingress deploy/router-default --tail=200 | grep ' 429 '"
+  ]},
+  {c:"431", n:"Header Fields Too Large", hop:"ing", cls:"peach", tag:"4xx", why:[
+    "Zu viele Cookies oder ein riesiger JWT",
+    "large-client-header-buffers zu klein",
+    "Jeder Auth-Hop hängt weitere Header an"
+  ], cmd:[
+    "oc logs -n openshift-ingress deploy/router-default --tail=200 | grep ' 431 '"
+  ]},
+  {c:"499", n:"Client Closed Request", hop:"ing", cls:"aqua", tag:"nur Log", why:[
+    "Client bricht ab, weil das Backend zu lange braucht",
+    "Nur im nginx-Log sichtbar, nie beim Client — dahinter steckt fast immer ein 504",
+    "Kurzer Client-Timeout bei langem Job"
+  ], cmd:[
+    "oc logs -n openshift-ingress deploy/router-default --tail=300 | grep ' 499 '"
+  ]},
+  {c:"500", n:"Internal Server Error", hop:"pod", cls:"rose", tag:"5xx", why:[
+    "Bug in der Anwendung — der Stacktrace liegt im Pod-Log",
+    "Fehlendes Secret oder ConfigMap-Key",
+    "Datenbank nicht erreichbar"
+  ], cmd:[
+    "oc logs -n $NS deploy/$APP --tail=200",
+    "oc logs -n $NS deploy/$APP --previous --tail=100",
+    "oc get events -n $NS --sort-by=.lastTimestamp | tail -20"
+  ]},
+  {c:"502", n:"Bad Gateway", hop:"ing", cls:"rose", tag:"5xx", why:[
+    "Falscher targetPort im Service",
+    "Pod crasht oder Readiness wird zu früh grün",
+    "Backend spricht HTTPS, der Ingress schickt HTTP — backend-protocol fehlt",
+    "HTTP/2-Backend hinter HTTP/1-Proxy"
+  ], cmd:[
+    "oc get endpoints $SVC -n $NS -o wide",
+    "oc get svc $SVC -n $NS -o jsonpath='{.spec.ports}'",
+    "oc exec -n $NS deploy/$APP -- curl -sI localhost:8080/healthz",
+    "oc get ingress $ING -n $NS -o yaml | grep backend-protocol"
+  ]},
+  {c:"503", n:"Service Unavailable", hop:"svc", cls:"rose", tag:"5xx", why:[
+    "Leere Endpoint-Liste — Selector passt nicht zu den Pod-Labels",
+    "Alle Pods NotReady oder auf 0 skaliert",
+    "NetworkPolicy blockt den Weg zum Pod"
+  ], cmd:[
+    "oc get endpoints $SVC -n $NS",
+    "oc get svc $SVC -n $NS -o jsonpath='{.spec.selector}'",
+    "oc get pods -n $NS --show-labels",
+    "oc get pods -n $NS -o wide | grep -v Running"
+  ]},
+  {c:"504", n:"Gateway Timeout", hop:"ing", cls:"rose", tag:"5xx", why:[
+    "Backend langsamer als proxy-read-timeout — Default 60s",
+    "Langer DB-Query oder Deadlock",
+    "Timeout am vorgelagerten LB kürzer als am Ingress"
+  ], cmd:[
+    "oc annotate ingress $ING -n $NS nginx.ingress.kubernetes.io/proxy-read-timeout=300 --overwrite",
+    "oc exec -n $NS deploy/$APP -- curl -so /dev/null -w '%{time_total}\\n' localhost:8080/$PATH"
+  ]}
+];
+
+const WALK = [
+  {q:"Taucht der Request im Controller-Log auf?", hop:"ing",
+   h:"Das Log des Ingress-Controllers filtern, nicht das der Anwendung.",
+   cmd:"oc logs -n openshift-ingress deploy/router-default --tail=200 | grep $HOST",
+   no:{t:"Upstream: DNS, LB oder Firewall", k:"vu",
+       d:"Der Request erreicht den Cluster gar nicht. Prüfe Namensauflösung, den externen Load Balancer und die Firewall-Regel — im Cluster ist nichts kaputt."}},
+  {q:"Hat der Service Endpoints?", hop:"svc",
+   h:"Erschlägt die Hälfte aller Fälle. Leere Liste heißt: der Selector passt nicht.",
+   cmd:"oc get endpoints $SVC -n $NS",
+   no:{t:"503 Service Unavailable", k:"",
+       d:"Selector-Mismatch oder alle Pods NotReady. Vergleiche spec.selector des Service mit den tatsächlichen Pod-Labels."}},
+  {q:"Antwortet der Pod direkt?", hop:"pod",
+   h:"Den Ingress überspringen und im Cluster gegen den Pod curlen.",
+   cmd:"oc exec -n $NS deploy/$APP -- curl -sI localhost:8080/healthz",
+   no:{t:"502 Bad Gateway", k:"",
+       d:"Falscher Port, CrashLoop oder Readiness zu früh grün. Der Pod steht in der Endpoint-Liste, liefert aber nichts Brauchbares."}},
+  {q:"Stimmt das Backend-Protokoll?", hop:"ing",
+   h:"Spricht der Pod HTTPS oder gRPC, muss das am Ingress annotiert sein.",
+   cmd:"oc get ingress $ING -n $NS -o yaml | grep backend-protocol",
+   no:{t:"502 durch Protokoll-Mismatch", k:"",
+       d:"backend-protocol auf HTTPS oder GRPC setzen. Ohne die Annotation schickt der Proxy Klartext an einen TLS-Port."}},
+  {q:"Antwortet das Backend innerhalb des Timeouts?", hop:"ing",
+   h:"Default sind 60 Sekunden. Miss die echte Antwortzeit direkt im Pod.",
+   cmd:"oc exec -n $NS deploy/$APP -- curl -so /dev/null -w '%{time_total}\\n' localhost:8080/$PATH",
+   no:{t:"504 Gateway Timeout", k:"",
+       d:"proxy-read-timeout erhöhen oder die langsame Query fixen. Tauchen daneben 499er auf, bricht der Client schon vorher ab."}},
+  {q:"Liegt ein Stacktrace im App-Log?", hop:"pod", invert:true,
+   h:"Jetzt ist der Ingress raus aus der Verdächtigenliste.",
+   cmd:"oc logs -n $NS deploy/$APP --tail=200",
+   yes:{t:"500 Internal Server Error", k:"",
+        d:"Bug, fehlendes Secret oder Datenbank weg. Der Ingress-Pfad ist sauber — das Problem liegt in der Anwendung."}}
+];
+const WALK_END = {t:"Zurück zur Ingress-Konfiguration", k:"v4",
+  d:"Alle 5xx-Verdächtigen sind ausgeschlossen. Der Fehler kommt aus der Config: Host und Path, Rewrite-Regel, auth-Annotationen, proxy-body-size. Wechsle auf Nachschlagen und filtere nach der Station Ingress."};
+
+let cli="oc", mode="ref", sel=-1, view=[], hopFilter=null;
+let step=0, trail=[], done=null;
+
+const $ = s => document.querySelector(s);
+const list = $("#list"), rail = $("#rail"), live = $("#live");
+const esc = s => s.replace(/[&<>]/g, m => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[m]));
+const tr = s => cli === "oc" ? s : s.replace(/\boc\b/g, "kubectl");
+
+function drawRail(){
+  rail.innerHTML = HOPS.map(h =>
+    `<button data-hop="${h.id}" aria-pressed="${hopFilter===h.id}">
+       <span class="dot">${h.k}</span>
+       <span class="t">${h.n}</span>
+       <span class="s">${h.s}</span></button>`).join("");
+}
+
+function filtered(){
+  const q = $("#q").value.trim().toLowerCase();
+  return E.filter(e => {
+    if (hopFilter && e.hop !== hopFilter) return false;
+    if (!q) return true;
+    return (e.c+" "+e.n+" "+e.why.join(" ")+" "+e.cmd.join(" ")).toLowerCase().includes(q);
+  });
+}
+
+function cmdBlock(c){
+  const t = esc(tr(c));
+  return `<div class="cmd"><pre><code>${t}</code></pre>
+    <button class="copy" data-cmd="${t}">kopieren</button></div>`;
+}
+
+function drawList(){
+  view = filtered();
+  const h = hopFilter ? " · " + HOPS.find(x=>x.id===hopFilter).n : "";
+  $("#count").textContent = view.length + " Treffer" + h;
+  if (!view.length){
+    list.innerHTML = `<div class="empty">Kein Treffer. <code>Esc</code> setzt Suchfeld und Station zurück.</div>`;
+    return;
+  }
+  list.innerHTML = view.map((e,i) =>
+    `<div class="row ${e.cls}${i===sel?" sel":""}" data-i="${i}">
+      <button class="row-head" aria-expanded="false">
+        <span class="badge">${e.c}</span>
+        <span class="name"><b>${e.n}</b><small>${esc(e.why[0])}</small></span>
+        <span class="pill">${e.tag}</span>
+        <span class="plus" aria-hidden="true"></span>
+      </button>
+      <div class="body">
+        <h3 class="lbl">Häufigste Ursachen</h3>
+        <ul class="clean">${e.why.map(w=>`<li>${esc(w)}</li>`).join("")}</ul>
+        <h3 class="lbl">Prüfen</h3>
+        ${e.cmd.map(cmdBlock).join("")}
+      </div>
+    </div>`).join("");
+}
+
+function trailHtml(){
+  if (!trail.length) return "";
+  return `<ul class="trail">${trail.map(t=>`<li><b>${t.a}</b>  ${esc(t.q)}</li>`).join("")}</ul>`;
+}
+
+function drawWalk(){
+  const w = $("#walk");
+  if (done){
+    w.innerHTML = `<div class="step verdict ${done.k}">
+      <div class="sec-head"><span class="num">!</span><h2>${done.t}</h2></div>
+      <p class="hint">${done.d}</p>${trailHtml()}
+      <button class="restart">Von vorn</button></div>`;
+    return;
+  }
+  const s = WALK[step];
+  w.innerHTML = `<div class="step">
+    <div class="sec-head"><span class="num">${step+1}</span><h2>${s.q}</h2></div>
+    <p class="hint">${s.h}</p>
+    ${cmdBlock(s.cmd)}
+    <div class="answers">
+      <button class="ans" data-a="j">Ja<kbd>j</kbd></button>
+      <button class="ans" data-a="n">Nein<kbd>n</kbd></button>
+    </div>${trailHtml()}</div>`;
+}
+
+function answer(a){
+  const s = WALK[step];
+  trail.push({q:s.q, a: a==="j" ? "ja  " : "nein"});
+  const hit = s.invert ? (a==="j" ? s.yes : null) : (a==="n" ? s.no : null);
+  if (hit) done = hit;
+  else if (step === WALK.length-1) done = WALK_END;
+  else step++;
+  drawWalk();
+  litHop(done ? null : WALK[step].hop);
+  live.textContent = done ? done.t : WALK[step].q;
+}
+
+function litHop(id){
+  document.querySelectorAll("#rail button").forEach(b =>
+    b.classList.toggle("lit", !!id && b.dataset.hop === id));
+}
+
+function setMode(m){
+  mode = m;
+  $("#m-ref").setAttribute("aria-pressed", m==="ref");
+  $("#m-walk").setAttribute("aria-pressed", m==="walk");
+  $("#ref").classList.toggle("hidden", m!=="ref");
+  $("#walk").classList.toggle("hidden", m!=="walk");
+  if (m==="walk"){ drawWalk(); litHop(done ? null : WALK[step].hop); }
+  else { litHop(null); drawList(); }
+}
+
+function setCli(c){
+  cli = c;
+  $("#cli-oc").setAttribute("aria-pressed", c==="oc");
+  $("#cli-k").setAttribute("aria-pressed", c==="kubectl");
+  const open = [...document.querySelectorAll(".row.open")].map(r=>r.dataset.i);
+  drawList();
+  open.forEach(i=>{
+    const r = list.querySelector(`.row[data-i="${i}"]`);
+    if (r){ r.classList.add("open"); r.querySelector(".row-head").setAttribute("aria-expanded","true"); }
+  });
+  if (mode==="walk") drawWalk();
+}
+
+async function copy(btn){
+  try { await navigator.clipboard.writeText(btn.dataset.cmd); }
+  catch { const t=document.createElement("textarea"); t.value=btn.dataset.cmd;
+    document.body.appendChild(t); t.select(); document.execCommand("copy"); t.remove(); }
+  btn.textContent="kopiert"; btn.classList.add("done");
+  live.textContent="Kommando kopiert";
+  setTimeout(()=>{ btn.textContent="kopieren"; btn.classList.remove("done"); },1400);
+}
+
+function selectRow(i){
+  sel = Math.max(0, Math.min(view.length-1, i));
+  document.querySelectorAll(".row").forEach((r,k)=>r.classList.toggle("sel", k===sel));
+  const el = list.querySelector(".row.sel");
+  if (el) el.scrollIntoView({block:"nearest"});
+  if (view[sel]) litHop(view[sel].hop);
+}
+
+document.addEventListener("click", e => {
+  const cp = e.target.closest(".copy"); if (cp) return copy(cp);
+  const rh = e.target.closest(".row-head");
+  if (rh){
+    const row = rh.closest(".row");
+    row.classList.toggle("open");
+    rh.setAttribute("aria-expanded", row.classList.contains("open"));
+    selectRow(+row.dataset.i); return;
+  }
+  const hp = e.target.closest("#rail button");
+  if (hp){
+    hopFilter = hopFilter === hp.dataset.hop ? null : hp.dataset.hop;
+    sel=-1; drawRail(); if (mode==="ref") drawList(); return;
+  }
+  const an = e.target.closest(".ans"); if (an) return answer(an.dataset.a);
+  if (e.target.closest(".restart")){ step=0; trail=[]; done=null; drawWalk(); litHop(WALK[0].hop); return; }
+  if (e.target.id==="m-ref") return setMode("ref");
+  if (e.target.id==="m-walk") return setMode("walk");
+  if (e.target.id==="cli-oc") return setCli("oc");
+  if (e.target.id==="cli-k") return setCli("kubectl");
+});
+
+$("#q").addEventListener("input", ()=>{ sel=-1; drawList(); });
+
+document.addEventListener("keydown", e => {
+  const inField = e.target.tagName === "INPUT";
+  if (e.key==="/" && !inField){ e.preventDefault(); $("#q").focus(); $("#q").select(); return; }
+  if (e.key==="Escape"){ $("#q").value=""; hopFilter=null; sel=-1; drawRail(); drawList(); $("#q").blur(); return; }
+  if (inField && !["ArrowDown","ArrowUp","Enter"].includes(e.key)) return;
+  if (mode==="walk" && !done && !inField){
+    if (e.key==="j"||e.key==="J"){ e.preventDefault(); return answer("j"); }
+    if (e.key==="n"||e.key==="N"){ e.preventDefault(); return answer("n"); }
+  }
+  if (mode!=="ref") return;
+  if (e.key==="ArrowDown"){ e.preventDefault(); selectRow(sel+1); }
+  else if (e.key==="ArrowUp"){ e.preventDefault(); selectRow(sel-1); }
+  else if (e.key==="Enter" && sel>=0){
+    e.preventDefault();
+    const r = list.querySelector(".row.sel");
+    r.classList.toggle("open");
+    r.querySelector(".row-head").setAttribute("aria-expanded", r.classList.contains("open"));
+  }
+  else if (e.key==="c" && sel>=0 && !inField){
+    const b = list.querySelector(".row.sel .copy"); if (b) copy(b);
+  }
+});
+
+drawRail(); drawList(); $("#q").focus();
+</script>
+</body>
+</html>
