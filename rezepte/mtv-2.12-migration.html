@@ -1,0 +1,847 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MTV 2.12 – VMs nach OpenShift Virtualization – Der Fahrplan</title>
+<meta name="rezept-kategorie"    content="cluster-ops">
+<meta name="rezept-beschreibung" content="VM-Migration nach OpenShift Virtualization mit MTV 2.12: CLI-Workflow, Storage Copy Offload, alle Quellprovider, Performance-Tuning und Troubleshooting.">
+<meta name="rezept-stand"        content="MTV 2.12 · 07/2026">
+<meta name="rezept-suche"        content="mtv forklift virt-v2v vmware vsphere warm cold migration plan networkmap storagemap vddk cbt xcopy offload max_vm_inflight must-gather kubevirt shared disks">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#33394a;--ink-soft:#5c6376;--paper:#fbfaf7;--card:#ffffff;--line:#e9e6df;
+  --code-bg:#31364a;--code-ink:#e8eaf2;
+  --mint:#d9f2e4;--mint-deep:#2f8f6b;
+  --sky:#dcebf9;--sky-deep:#2d6fa8;
+  --lav:#e7e2f7;--lav-deep:#6b5bb5;
+  --peach:#fbe6d7;--peach-deep:#c2703d;
+  --butter:#faf0cf;--butter-deep:#a5842a;
+  --rose:#f9e0e6;--rose-deep:#b34f6d;
+  --aqua:#d7eff0;--aqua-deep:#2b8288;
+  --r-lg:26px;--r-md:18px;--r-sm:12px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:90px}
+body{font-family:'Inter',sans-serif;font-size:16px;line-height:1.65;color:var(--ink);background:var(--paper)}
+h1,h2,h3{font-family:'Sora',sans-serif;color:var(--ink)}
+code,pre,.chip{font-family:'JetBrains Mono',monospace}
+
+header{max-width:1060px;margin:0 auto;padding:64px 24px 30px}
+.kicker{display:inline-block;font-family:'Sora',sans-serif;font-weight:700;font-size:.75rem;letter-spacing:.14em;text-transform:uppercase;color:var(--mint-deep);background:var(--mint);border-radius:999px;padding:6px 16px;margin-bottom:18px}
+header h1{font-size:clamp(1.9rem,4.5vw,3rem);font-weight:800;line-height:1.15;margin-bottom:16px}
+header h1 span{color:var(--mint-deep)}
+.lede{max-width:640px;color:var(--ink-soft);font-size:1.05rem}
+
+.route{max-width:1060px;margin:26px auto 10px;padding:0 24px;display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.route a{display:flex;flex-direction:column;gap:6px;background:var(--card);border:1px solid var(--line);border-radius:var(--r-md);padding:16px;text-decoration:none;color:var(--ink);transition:transform .15s,box-shadow .15s}
+.route a:hover{transform:translateY(-3px);box-shadow:0 8px 22px rgba(51,57,74,.09)}
+.route .dot{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:'Sora',sans-serif;font-weight:700;font-size:.95rem}
+.route a:nth-child(1) .dot{background:var(--aqua);color:var(--aqua-deep)}
+.route a:nth-child(2) .dot{background:var(--mint);color:var(--mint-deep)}
+.route a:nth-child(3) .dot{background:var(--sky);color:var(--sky-deep)}
+.route a:nth-child(4) .dot{background:var(--lav);color:var(--lav-deep)}
+.route a:nth-child(5) .dot{background:var(--peach);color:var(--peach-deep)}
+.route a:nth-child(6) .dot{background:var(--butter);color:var(--butter-deep)}
+.route a:nth-child(7) .dot{background:var(--rose);color:var(--rose-deep)}
+.route a:nth-child(8) .dot{background:var(--mint);color:var(--mint-deep)}
+.route .t{font-family:'Sora',sans-serif;font-weight:700;font-size:.95rem}
+.route .s{font-size:.8rem;color:var(--ink-soft)}
+
+nav{position:sticky;top:0;z-index:50;background:rgba(251,250,247,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);margin-top:18px}
+nav .wrap{max-width:1060px;margin:0 auto;padding:10px 24px;display:flex;gap:6px;overflow-x:auto;white-space:nowrap}
+nav a{font-family:'Sora',sans-serif;font-weight:600;font-size:.8rem;color:var(--ink-soft);text-decoration:none;padding:7px 12px;border-radius:999px}
+nav a:hover{background:var(--card);color:var(--ink)}
+
+main{max-width:1060px;margin:0 auto;padding:12px 24px 40px}
+section{margin:44px 0;scroll-margin-top:90px}
+.sec-head{display:flex;align-items:center;gap:14px;margin-bottom:8px}
+.badge{width:44px;height:44px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-family:'Sora',sans-serif;font-weight:800;font-size:1.25rem;flex-shrink:0}
+section.aqua .badge{background:var(--aqua);color:var(--aqua-deep)}
+section.mint .badge{background:var(--mint);color:var(--mint-deep)}
+section.sky .badge{background:var(--sky);color:var(--sky-deep)}
+section.lav .badge{background:var(--lav);color:var(--lav-deep)}
+section.peach .badge{background:var(--peach);color:var(--peach-deep)}
+section.butter .badge{background:var(--butter);color:var(--butter-deep)}
+section.rose .badge{background:var(--rose);color:var(--rose-deep)}
+section h2{font-size:clamp(1.4rem,3vw,1.9rem);font-weight:800}
+.sec-sub{color:var(--ink-soft);margin:4px 0 18px;max-width:760px}
+
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);padding:22px 24px;margin:14px 0}
+.card h3{font-size:1.1rem;margin-bottom:10px}
+.card p{margin:8px 0}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.grid2 .card{margin:0}
+
+ol.steps{list-style:none;counter-reset:step;margin:12px 0}
+ol.steps li{counter-increment:step;display:grid;grid-template-columns:34px 1fr;gap:12px;align-items:start;padding:9px 0;border-bottom:1px dashed var(--line)}
+ol.steps li:last-child{border-bottom:none}
+ol.steps li::before{content:counter(step);width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:'Sora',sans-serif;font-weight:700;font-size:.85rem;background:var(--mint);color:var(--mint-deep)}
+section.aqua ol.steps li::before{background:var(--aqua);color:var(--aqua-deep)}
+section.sky ol.steps li::before{background:var(--sky);color:var(--sky-deep)}
+section.lav ol.steps li::before{background:var(--lav);color:var(--lav-deep)}
+section.peach ol.steps li::before{background:var(--peach);color:var(--peach-deep)}
+section.butter ol.steps li::before{background:var(--butter);color:var(--butter-deep)}
+section.rose ol.steps li::before{background:var(--rose);color:var(--rose-deep)}
+ol.steps b{display:block}
+ol.steps small{color:var(--ink-soft);font-size:.87rem}
+
+ul.clean{list-style:none;margin:10px 0}
+ul.clean li{padding:5px 0 5px 20px;position:relative}
+ul.clean li::before{content:"";position:absolute;left:2px;top:.75em;width:8px;height:8px;border-radius:50%;background:var(--mint-deep)}
+section.aqua ul.clean li::before{background:var(--aqua-deep)}
+section.sky ul.clean li::before{background:var(--sky-deep)}
+section.lav ul.clean li::before{background:var(--lav-deep)}
+section.peach ul.clean li::before{background:var(--peach-deep)}
+section.butter ul.clean li::before{background:var(--butter-deep)}
+section.rose ul.clean li::before{background:var(--rose-deep)}
+
+table{width:100%;border-collapse:collapse;margin:14px 0;background:var(--card);border-radius:var(--r-md);overflow:hidden;border:1px solid var(--line);font-size:.92rem}
+th{font-family:'Sora',sans-serif;font-weight:700;font-size:.8rem;text-align:left;padding:11px 14px;background:var(--paper);border-bottom:1px solid var(--line)}
+td{padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+tr:last-child td{border-bottom:none}
+
+pre{background:var(--code-bg);color:var(--code-ink);border-radius:var(--r-md);padding:16px 18px;overflow-x:auto;font-size:.84rem;line-height:1.6;margin:12px 0}
+pre .c{color:#8b93ad}
+p code,li code,td code{background:#eeece5;border-radius:6px;padding:2px 6px;font-size:.85em}
+
+.note,.warn,.mnemo{border-radius:var(--r-md);padding:14px 18px;margin:14px 0;font-size:.95rem}
+.note{background:var(--sky);color:#274a68}
+.warn{background:var(--rose);color:#7c3a50}
+.warn::before{content:"⚠️ ";margin-right:2px}
+.mnemo{background:var(--butter);color:#6e5a1f}
+.mnemo::before{content:"🧠 Eselsbrücke · ";font-family:'Sora',sans-serif;font-weight:700;font-size:.8rem}
+
+details{background:var(--card);border:1px solid var(--line);border-radius:var(--r-md);margin:10px 0;overflow:hidden}
+summary{cursor:pointer;list-style:none;font-family:'Sora',sans-serif;font-weight:600;font-size:.95rem;padding:14px 18px;position:relative;padding-right:44px}
+summary::-webkit-details-marker{display:none}
+summary::after{content:"+";position:absolute;right:18px;top:50%;transform:translateY(-50%);font-weight:700;color:var(--ink-soft)}
+details[open] summary::after{content:"–"}
+details .inner{padding:0 18px 16px;border-top:1px dashed var(--line);padding-top:12px}
+
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}
+.chip{background:var(--card);border:1px solid var(--line);border-radius:999px;padding:5px 12px;font-size:.8rem}
+
+footer{max-width:1060px;margin:0 auto;padding:30px 24px 60px;color:var(--ink-soft);font-size:.85rem;border-top:1px solid var(--line)}
+
+@media(max-width:820px){
+  .route{grid-template-columns:repeat(2,1fr)}
+  .grid2{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <span class="kicker">MTV 2.12 · OpenShift Virtualization · VM-Migration</span>
+  <h1>VMs nach OpenShift Virtualization:<br>der komplette <span>Fahrplan</span></h1>
+  <p class="lede">Acht Etappen durch das Migration Toolkit for Virtualization: von den CRs und dem virt-v2v-Unterbau über den vollständigen CLI-Workflow für vSphere bis zu Storage Copy Offload, Performance-Tuning und Troubleshooting. <b>Kernprinzip: Plan beschreibt, Migration führt aus – alles andere sind Zutaten.</b></p>
+</header>
+
+<div class="route">
+  <a href="#basics"><span class="dot">0</span><span class="t">Grundlagen</span><span class="s">CRs · Services · warm/cold</span></a>
+  <a href="#vmware"><span class="dot">1</span><span class="t">VMware-CLI</span><span class="s">Secret bis Migration</span></a>
+  <a href="#offload"><span class="dot">2</span><span class="t">Spezialfälle</span><span class="s">Offload · Shared Disks</span></a>
+  <a href="#sources"><span class="dot">3</span><span class="t">Andere Quellen</span><span class="s">RHV · OVA · Hyper-V · EC2</span></a>
+  <a href="#advanced"><span class="dot">4</span><span class="t">Advanced</span><span class="s">Hooks · Rego · Scheduling</span></a>
+  <a href="#perf"><span class="dot">5</span><span class="t">Performance</span><span class="s">Metriken · Parallelität</span></a>
+  <a href="#trouble"><span class="dot">6</span><span class="t">Troubleshooting</span><span class="s">Fehler · must-gather</span></a>
+  <a href="#howto"><span class="dot">7</span><span class="t">Chronologisch</span><span class="s">Cold Migration komplett</span></a>
+</div>
+
+<nav><div class="wrap">
+  <a href="#basics">0 · Grundlagen</a>
+  <a href="#vmware">1 · VMware-CLI</a>
+  <a href="#offload">2 · Spezialfälle</a>
+  <a href="#sources">3 · Quellen</a>
+  <a href="#advanced">4 · Advanced</a>
+  <a href="#perf">5 · Performance</a>
+  <a href="#trouble">6 · Troubleshooting</a>
+  <a href="#howto">7 · Chronologisch</a>
+</div></nav>
+
+<main>
+
+<!-- ====================== 0 GRUNDLAGEN ====================== -->
+<section id="basics" class="aqua">
+  <div class="sec-head"><div class="badge">0</div><h2>Grundlagen: CRs, Services, warm vs. cold</h2></div>
+  <p class="sec-sub">MTV (Projektname: Forklift) ist ein Operator. Alles, was du tust, ist das Anlegen von Custom Resources – der Rest ist Orchestrierung durch Controller.</p>
+
+  <div class="card">
+    <h3>Die fünf CRs</h3>
+    <ul class="clean">
+      <li><b>Provider</b> – Verbindungsdaten zu Quelle und Ziel</li>
+      <li><b>NetworkMap</b> – Quellnetz → Zielnetz (pod, multus oder ignored)</li>
+      <li><b>StorageMap</b> – Quell-Datastore → StorageClass</li>
+      <li><b>Plan</b> – VM-Liste mit Migrationsparametern plus die beiden Maps</li>
+      <li><b>Migration</b> – führt einen Plan aus. Pro Plan läuft immer nur eine Migration gleichzeitig; mehrere nacheinander sind erlaubt (z. B. für Reste nach Teil-Fehlschlägen)</li>
+    </ul>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>Cold Migration</h3>
+      <p>VM ist während der gesamten Migration aus. Bei VMware läuft ein Conversion-Pod mit <b>virt-v2v</b>, der konvertiert und die Disks überträgt. Bei RHV/OpenStack übernehmen Volume Populators den Disk-Transfer.</p>
+    </div>
+    <div class="card">
+      <h3>Warm Migration</h3>
+      <p>VM läuft weiter. MTV erstellt in Intervallen (Standard: 60 min) CBT-Snapshots und überträgt nur die Deltas (Precopy). Erst zum <b>Cutover</b> wird die VM heruntergefahren und der letzte Stand übertragen. Voraussetzung: Changed Block Tracking auf VM und jeder Disk aktiviert.</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Services hinter den Kulissen</h3>
+    <ul class="clean">
+      <li><b>Inventory</b> – verbindet sich zu den Providern, hält lokales Inventar, stößt Validierung an</li>
+      <li><b>Validation</b> – prüft VMs per Regelwerk (Rego) auf Migrierbarkeit; Ergebnis: Plan-Status <code>Ready</code> oder <code>Not ready</code></li>
+      <li><b>Migration Controller</b> – orchestriert die Migration, setzt am Ende <code>Completed</code></li>
+      <li><b>Populator Controller</b> – Disk-Transfers via Volume Populators (RHV, OpenStack)</li>
+      <li><b>KubeVirt- und CDI-Controller</b> – erledigen die eigentliche technische Arbeit (PVCs, Importer-Pods, virt-launcher)</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>virt-v2v: der Umbau der Gäste</h3>
+    <p>virt-v2v arbeitet nur auf den Disks, nie in der laufenden VM – Gast-Credentials sind nicht nötig. Es injiziert VirtIO-Treiber, installiert den QEMU Guest Agent, passt die Boot-Konfiguration an und entfernt Hypervisor-Reste (VMware Tools, alte NIC-Treiber). Bei VMware- und OVA-Quellen setzt es zusätzlich die IP-Adressen.</p>
+    <p><b>Raw Copy Mode</b> (<code>skipGuestConversion: true</code>) überspringt die Konvertierung komplett – für OS, die virt-v2v nicht kann (z. B. macOS) oder LUKS-Disks ohne Schlüssel. Standardmäßig laufen solche VMs dann auf Kompatibilitätsgeräten (SATA, E1000E, USB); mit <code>useCompatibilityMode: false</code> auf VirtIO, aber nur wenn die Treiber im Gast schon installiert sind.</p>
+  </div>
+
+  <div class="warn"><b>Achtung:</b> Raw-Copy-Migrationen melden Erfolg, aber die VM bootet unter Umständen nicht oder läuft schlecht – die Konvertierung, die genau das verhindert, wurde ja übersprungen. Red Hat bittet darum, Raw-Copy-Migrationen über den Support anzufragen.</div>
+
+  <div class="mnemo"><b>MTV ist ein Umzugsunternehmen</b> – der Plan ist die Umzugsliste, die Migration-CR der LKW, der losfährt, und virt-v2v der Monteur, der die Möbel an die neue Wohnung anpasst.</div>
+
+  <details>
+    <summary>In der RHEL-Gast-Falle: Guest Agent in Disconnected-Umgebungen</summary>
+    <div class="inner">
+      <p>Bei RHEL-Gästen versucht virt-v2v, den Guest Agent aus der Red-Hat-Registry zu installieren. In abgeschotteten Umgebungen schlägt das fehl – dann per Hook oder anderer Automatisierung nachinstallieren.</p>
+    </div>
+  </details>
+</section>
+
+<!-- ====================== 1 VMWARE-CLI ====================== -->
+<section id="vmware" class="mint">
+  <div class="sec-head"><div class="badge">1</div><h2>VMware vSphere per CLI migrieren</h2></div>
+  <p class="sec-sub">Der Referenz-Workflow. Sechs CRs in fester Reihenfolge – jede weitere Quelle (Etappe 3) ist nur eine Variation davon.</p>
+
+  <div class="card">
+    <h3>Der CR-Stapel</h3>
+    <ol class="steps">
+      <li><div><b>Secret</b><small>vCenter/ESXi-Zugangsdaten, <code>url</code> z. B. <code>https://&lt;vCenter_host&gt;/sdk</code>. <code>insecureSkipVerify</code> nur bewusst setzen – Daten laufen dann unverschlüsselt.</small></div></li>
+      <li><div><b>Provider</b><small><code>type: vsphere</code>, <code>sdkEndpoint: vcenter</code> oder <code>esxi</code>. <code>vddkInitImage</code> ist optional, aber dringend empfohlen – beschleunigt Transfers massiv.</small></div></li>
+      <li><div><b>Host</b><small>Bindet einen ESXi-Host (per moRef) an eine Migrations-Netzwerk-IP.</small></div></li>
+      <li><div><b>NetworkMap + StorageMap</b><small>Quellnetz/-datastore (per moRef) auf NAD bzw. StorageClass mappen. Auch Pflicht, wenn VMs kein Netz/keine Disk haben – dann eben leer.</small></div></li>
+      <li><div><b>Plan</b><small>VM-Liste plus Parameter: <code>warm</code>, <code>preserveStaticIPs</code>, <code>skipGuestConversion</code>, Namens-Templates, Scheduling-Labels.</small></div></li>
+      <li><div><b>Migration</b><small>Referenziert den Plan und startet ihn. Bei warm optional mit <code>cutover</code>-Zeit (ISO 8601 mit UTC-Offset).</small></div></li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h3>Plan-Parameter, die wehtun können</h3>
+    <table>
+      <thead><tr><th>Parameter</th><th>Wirkung</th></tr></thead>
+      <tbody>
+        <tr><td><b>warm</b></td><td>true = warm, false = cold. Warm ohne cutover in der Migration-CR: es läuft nur Precopy, kein Umzug</td></tr>
+        <tr><td><b>preserveStaticIPs</b></td><td>vNICs ändern sich bei der Migration – statisch an den Interface-Namen gebundene IPs gehen sonst verloren</td></tr>
+        <tr><td><b>skipGuestConversion</b></td><td>true = Raw Copy Mode statt virt-v2v (siehe Etappe 0)</td></tr>
+        <tr><td><b>pvcNameTemplateUseGenerateName</b></td><td>true (Default) hängt Zufallszeichen an PVC-Namen an</td></tr>
+        <tr><td><b>migrateSharedDisks</b></td><td>Shared-Disk-Handling, siehe Etappe 2</td></tr>
+        <tr><td><b>targetName</b></td><td>Zielname der VM – muss eindeutig und eine gültige Kubernetes-Subdomain sein, sonst schlägt die Migration automatisch fehl</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="warn"><b>Achtung, stiller Fehler:</b> vSphere-Berechtigungen nur auf VM-Ebene reichen nicht. Der forklift-controller scheitert dann dauerhaft beim Reconcile des Plans und liefert HTTP 500 – ohne klaren Hinweis auf die Ursache. Rechte auf Datacenter-Ebene vergeben und auf die Kind-Objekte propagieren (oder mühsam jedes Objekt einzeln berechtigen).</div>
+
+  <div class="warn"><b>Achtung:</b> <code>pvcNameTemplateUseGenerateName: false</code> plus eigenes Template kann Namenskollisionen erzeugen – die Migration läuft los und crasht erst an der Kollision.</div>
+
+  <div class="card">
+    <h3>Weitere Stolpersteine (aus den „Considerations")</h3>
+    <ul class="clean">
+      <li><b>Kein Snapshot</b> nach Migrationsstart – kann die Migration zum Scheitern bringen; ebenso vMotion/svMotion und Relocation deaktivieren (Datenkorruption)</li>
+      <li><b>Antivirus</b> in Quell-VMs vorher entfernen – bekannte Fehlerquelle</li>
+      <li><b>NVMe-Disks</b> aus VMware werden nicht unterstützt</li>
+      <li><b>FIPS:</b> vSphere-6- und vSphere-7-VMs lassen sich nicht auf FIPS-konforme OpenShift-Virtualization-Cluster migrieren</li>
+      <li><b>UDN:</b> Liegt die Provider-IP innerhalb des Subnetzes eines User-Defined Network, schlägt die Migration fehl</li>
+    </ul>
+  </div>
+
+  <details>
+    <summary>moRefs beschaffen (Inventory-Service abfragen)</summary>
+    <div class="inner">
+      <p>Datastores, Netze, Hosts und VMs werden per Managed Object Reference (moRef) referenziert. Die holst du dir aus dem Inventory-Service:</p>
+      <pre><code><span class="c"># Route des Inventory-Service und Token</span>
+oc get route -n openshift-mtv
+TOKEN=$(oc whoami -t)
+
+<span class="c"># Provider-ID, dann z. B. Datastores auflisten</span>
+curl -H "Authorization: Bearer $TOKEN" https://&lt;inventory_route&gt;/providers/vsphere -k
+curl -H "Authorization: Bearer $TOKEN" https://&lt;inventory_route&gt;/providers/vsphere/&lt;provider_id&gt;/datastores/ -k</code></pre>
+      <p>Im JSON steht die moRef im Feld <code>id</code> (z. B. <code>datastore-11</code>).</p>
+    </div>
+  </details>
+
+  <details>
+    <summary>Minimalbeispiel: Secret + Provider</summary>
+    <div class="inner">
+      <p>Das Secret trägt Labels, damit MTV es dem Provider-Typ zuordnen kann; der Provider verweist zurück auf das Secret.</p>
+      <pre><code>cat &lt;&lt;'EOF' | oc apply -f -
+apiVersion: v1
+kind: Secret
+metadata:
+  name: vsphere-creds
+  namespace: openshift-mtv
+  labels:
+    createdForProviderType: vsphere
+    createdForResourceType: providers
+type: Opaque
+stringData:
+  user: &lt;user&gt;
+  password: &lt;password&gt;
+  insecureSkipVerify: "false"
+  cacert: |
+    &lt;ca_certificate&gt;
+  url: https://&lt;vCenter_host&gt;/sdk
+EOF
+
+cat &lt;&lt;'EOF' | oc apply -f -
+apiVersion: forklift.konveyor.io/v1beta1
+kind: Provider
+metadata:
+  name: vsphere-source
+  namespace: openshift-mtv
+spec:
+  type: vsphere
+  url: https://&lt;vCenter_host&gt;/sdk
+  settings:
+    vddkInitImage: &lt;VDDK_image&gt;
+    sdkEndpoint: vcenter
+  secret:
+    name: vsphere-creds
+    namespace: openshift-mtv
+EOF</code></pre>
+    </div>
+  </details>
+
+  <details>
+    <summary>Migration abbrechen (ganz oder einzelne VMs)</summary>
+    <div class="inner">
+      <p>Ganze Migration: Migration-CR löschen. Einzelne VMs: in den <code>spec.cancel</code>-Block der laufenden Migration-CR eintragen – der Rest läuft weiter.</p>
+      <pre><code>oc delete migration &lt;migration&gt; -n openshift-mtv
+
+<span class="c"># oder gezielt einzelne VMs (per moRef-id oder name)</span>
+cat &lt;&lt;'EOF' | oc apply -f -
+apiVersion: forklift.konveyor.io/v1beta1
+kind: Migration
+metadata:
+  name: &lt;migration&gt;
+  namespace: openshift-mtv
+spec:
+  cancel:
+  - id: vm-102
+  - name: rhel8-vm
+EOF</code></pre>
+    </div>
+  </details>
+
+  <details>
+    <summary>Deep Inspection: VMs vor der Migration prüfen (Tech Preview)</summary>
+    <div class="inner">
+      <p>Deep Inspection mountet die Disks in einem Inspection-Pod und analysiert Gast-OS, Dateisysteme und bekannte Konvertierungsprobleme – Fehler fallen so vor der Migration auf statt mittendrin. Läuft in Batches von 10 gleichzeitig; braucht VDDK und aktiviertes CBT.</p>
+      <pre><code><span class="c"># Conversion-CR mit conversion-type: DeepInspection anlegen, dann:</span>
+oc get conversion &lt;vm_name&gt;-inspection -n openshift-mtv -o json | jq '.status.phase'
+oc get conversion &lt;vm_name&gt;-inspection -n openshift-mtv -o json | jq '.status.inspectionResult'</code></pre>
+      <p>Pods und PVCs räumt MTV nach der Inspektion selbst auf. Tech Preview – nicht für Produktion supportet.</p>
+    </div>
+  </details>
+</section>
+
+<!-- ====================== 2 SPEZIALFÄLLE ====================== -->
+<section id="offload" class="sky">
+  <div class="sec-head"><div class="badge">2</div><h2>Spezialfälle: Storage Copy Offload &amp; Shared Disks</h2></div>
+  <p class="sec-sub">Zwei VMware-Sonderwege: Daten direkt im SAN kopieren statt übers Netz – und Multi-Writer-Disks, die genau einmal mitgenommen werden müssen.</p>
+
+  <div class="card">
+    <h3>Storage Copy Offload (XCOPY)</h3>
+    <p>Statt die Disks übers Netzwerk zu ziehen, ruft MTV via <code>vmkfstools</code> auf dem ESXi-Host den XCOPY-Befehl des Storage-Arrays auf (iSCSI oder FC). Die Daten wandern innerhalb des SAN – deutlich schneller. Voraussetzungen: unterstütztes Array, funktionierender CSI-Treiber dorthin, vSphere-Rolle mit Datastore- und Host-Configuration-Rechten (Vorschlag: „StorageOffloader").</p>
+    <ol class="steps">
+      <li><div><b>Feature einschalten</b><small><code>oc patch forkliftcontrollers forklift-controller --type merge -p '{"spec":{"feature_copy_offload": "true"}}' -n openshift-mtv</code></small></div></li>
+      <li><div><b>Vendor-Secret anlegen</b><small>Je Hersteller eigene Keys: immer <code>STORAGE_HOSTNAME/USERNAME/PASSWORD</code>, dazu z. B. <code>ONTAP_SVM</code> (NetApp), <code>POWERMAX_SYMMETRIX_ID</code>, <code>PURE_CLUSTER_PREFIX</code>; Hitachi zusätzlich vSphere-Zugang (<code>GOVMOMI_*</code>) und <code>HOSTGROUP_ID_LIST</code>.</small></div></li>
+      <li><div><b>StorageMap mit offloadPlugin</b><small><code>vsphereXcopyConfig</code> mit <code>secretRef</code> und <code>storageVendorProduct</code>, dann normalen Plan darauf zeigen lassen.</small></div></li>
+    </ol>
+    <div class="chips">
+      <span class="chip">vantara</span><span class="chip">ontap</span><span class="chip">primera3par</span><span class="chip">pureFlashArray</span><span class="chip">powerflex</span><span class="chip">powermax</span><span class="chip">powerstore</span><span class="chip">infinibox</span><span class="chip">flashsystem</span>
+    </div>
+  </div>
+
+  <div class="warn"><b>Achtung, stiller Fehler:</b> Vorbestehende Snapshots auf der Quell-VM verhindern XCOPY – vmkfstools fällt dann kommentarlos auf langsames Software-Cloning zurück. Die Migration läuft, nur eben ohne den Geschwindigkeitsvorteil. Alte Snapshots vorher löschen; Snapshots, die eine Warm-Migration selbst anlegt, stören dagegen nicht.</div>
+
+  <div class="mnemo"><b>XCOPY ist der Gabelstapler im Lagerhaus</b> – die Ware wird innerhalb der Halle umgesetzt, statt sie über die Straße (das Netzwerk) zu fahren.</div>
+
+  <div class="card">
+    <h3>Shared Disks: das Zwei-Pläne-Muster</h3>
+    <p>Nur cold, keine Shared-Boot-Disks. Ab MTV 2.7.11 steuert <code>migrateSharedDisks</code> (Default: true) das Verhalten:</p>
+    <ul class="clean">
+      <li><b>Plan 1</b> (<code>migrateSharedDisks: true</code>) – alle Shared Disks, pro Shared Disk genau eine angeschlossene VM, deren unshared Disks. VMs so wählen, dass jede Shared Disk nur einmal im Plan vorkommt. Vor dem Start: alle VMs an den Shared Disks ausschalten.</li>
+      <li><b>Plan 2</b> (<code>migrateSharedDisks: false</code>) – alle übrigen VMs mit ihren unshared Disks (Transfer via CDI). MTV hängt die bereits migrierten Shared-PVCs danach automatisch wieder an.</li>
+    </ul>
+  </div>
+
+  <div class="warn"><b>Achtung, stiller Fehler:</b> MTV prüft nicht, ob eine Shared Disk schon migriert wurde. Sind die VMs falsch auf die Pläne verteilt, „gelingt" die Migration – aber eine Shared Disk existiert danach doppelt. Bei zyklischen Abhängigkeiten helfen zwei Workarounds: Duplikat hinterher manuell löschen und VM neu verbinden, oder vor der Migration den Link einer VM zur Disk entfernen („Remove" in der VMware-UI) und danach in OpenShift wieder anhängen.</div>
+
+  <details>
+    <summary>VM-Namen automatisch generieren (Template-Utility)</summary>
+    <div class="inner">
+      <p>Für DNS-konforme Zielnamen bietet MTV Template-Funktionen in den Namens-Templates, u. a. <code>lower</code>, <code>trunc</code>, <code>replace</code>, <code>trimSuffix</code>, <code>nospace</code>, <code>mustRegexReplaceAll</code> sowie Mathe-Funktionen (<code>add</code>, <code>mod</code>, <code>max</code> …). Beispiel: <code>{{ lower "TEXT" }}</code> → <code>text</code>, <code>{{ trunc 3 "abcdef" }}</code> → <code>abc</code>.</p>
+    </div>
+  </details>
+</section>
+
+<!-- ====================== 3 ANDERE QUELLEN ====================== -->
+<section id="sources" class="lav">
+  <div class="sec-head"><div class="badge">3</div><h2>Andere Quellen: RHV bis EC2</h2></div>
+  <p class="sec-sub">Der CR-Stapel aus Etappe 1 bleibt identisch – nur Secret-Inhalte und Provider-Typ wechseln. Hier die Unterschiede, die zählen.</p>
+
+  <div class="card">
+    <h3>Provider-Typen im Überblick</h3>
+    <table>
+      <thead><tr><th>Quelle</th><th>type</th><th>Besonderheit</th></tr></thead>
+      <tbody>
+        <tr><td><b>Red Hat Virtualization</b></td><td><code>ovirt</code></td><td>Engine-API-URL; Disk-Transfer per Volume Populator (cold)</td></tr>
+        <tr><td><b>OpenStack</b></td><td><code>openstack</code></td><td>Keystone-Zugang; Transfer per Volume Populator</td></tr>
+        <tr><td><b>OVA</b></td><td><code>ova</code></td><td><code>url: &lt;nfs_server:/nfs_path&gt;</code> – die OVAs liegen auf einem NFS-Share</td></tr>
+        <tr><td><b>Microsoft Hyper-V</b></td><td><code>hyperv</code></td><td>Secret mit <code>url</code> (WinRM-Host) und <code>smbUrl</code> im Format <code>//server/share</code> – Vorwärts-Slashes, sonst YAML-Ärger mit Backslashes</td></tr>
+        <tr><td><b>AWS EC2</b></td><td><code>ec2</code></td><td>Provider-Setting <code>target-az</code> zwingend passend zu einer AZ mit OpenShift-Workern</td></tr>
+        <tr><td><b>OpenShift Virtualization</b></td><td><code>openshift</code></td><td>Secret mit <code>token</code> statt User/Passwort; für Migrationen zwischen Clustern</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="warn"><b>Achtung:</b> Bei EC2 sind EBS-Volumes an ihre Availability Zone gebunden. Zeigt <code>target-az</code> auf eine AZ ohne Worker-Nodes, kann der EBS-CSI-Treiber die Volumes nicht anhängen – die Migration scheitert erst spät. Bei Same-Account-Migrationen die Credentials des OpenShift-Clusters verwenden, damit der CSI-Treiber auf die Volumes zugreifen kann.</div>
+
+  <div class="card">
+    <h3>OVA: Finger weg von Vendor-Appliances</h3>
+    <p>OVA-Import ist für Gast-OS validiert, die aus vSphere exportiert wurden. Netzwerk-/Security-Appliances von Drittherstellern nutzen oft proprietäre Bootloader oder Disk-Layouts, die die virt-v2v-Konvertierung nicht übersteht – und die Konvertierung kann den Vendor-Support erlöschen lassen. Besser: das native QCOW2/KVM-Image des Herstellers per „Upload Image" oder „Import from URL" direkt in OpenShift Virtualization bringen.</p>
+  </div>
+
+  <div class="card">
+    <h3>OCP → OCP: Live Migration</h3>
+    <p>Zwischen OpenShift-Virtualization-Clustern geht auch live – gleiche Prozedur wie sonst, nur bekommt der Plan das Label <code>type: live</code>. Voraussetzung sind die Live-Migration-Prerequisites von OpenShift Virtualization. Nebenbei: Bei OCP→OCP läuft kein virt-v2v, deshalb gibt es auch keine Conversion-Pod-Logs.</p>
+  </div>
+</section>
+
+<!-- ====================== 4 ADVANCED ====================== -->
+<section id="advanced" class="peach">
+  <div class="sec-head"><div class="badge">4</div><h2>Advanced Options</h2></div>
+  <p class="sec-sub">Stellschrauben am ForkliftController und am Plan: Precopy-Takt, AIO-Puffer, eigene Validierungsregeln, Hooks und gezieltes Scheduling.</p>
+
+  <div class="card">
+    <h3>Precopy-Intervall (warm)</h3>
+    <p>Wie oft MTV zwischen Start und Cutover Snapshots zieht. Default 60 Minuten, Änderung ohne Pod-Neustart:</p>
+    <pre><code>oc patch forkliftcontroller/&lt;forklift-controller&gt; -n openshift-mtv \
+  -p '{"spec":{"controller_precopy_interval": &lt;minuten&gt;}}' --type=merge</code></pre>
+  </div>
+
+  <div class="card">
+    <h3>AIO-Buffering (nur cold!)</h3>
+    <p>Tunt die NBD/NFC-Puffer für Transfers – lohnt bei mehreren VMs gleichzeitig vom selben ESXi-Host. Konfiguration: <code>virt_v2v_extra_args: "--vddk-config /mnt/extra-v2v-conf/input.conf"</code> plus <code>virt_v2v_extra_conf_config_map: "perf"</code> im ForkliftController, dazu eine ConfigMap <code>perf</code>, deren <code>binaryData.input.conf</code> die Base64-kodierten Werte enthält:</p>
+    <pre><code>echo -e "VixDiskLib.nfcAio.Session.BufSizeIn64KB=16\nvixDiskLib.nfcAio.Session.BufCount=4" | base64
+<span class="c"># Ergebnis in die ConfigMap perf (binaryData: input.conf), dann forklift-controller-Pod neu starten</span></code></pre>
+  </div>
+
+  <div class="warn"><b>Achtung, stiller Fehler:</b> AIO-Konfiguration vor Warm-Migrationen wieder entfernen. Sie ist ausschließlich für Cold gedacht – bleibt sie stehen, leiden die nächsten Warm-Migrationen, ohne dass ein Fehler darauf zeigt.</div>
+
+  <div class="card">
+    <h3>Eigene Validierungsregeln (Rego)</h3>
+    <p>Die Validation prüft VMs mit OPA-Regeln; Treffer landen als „Concerns" in der Inventory und der Web-Konsole. Eigene Regeln kommen in eine ConfigMap <code>forklift-validation-config</code> im Namespace <code>openshift-mtv</code> und überleben so Pod-Neustarts und Upgrades. Package-Namespaces: <code>io.konveyor.forklift.vmware</code> bzw. <code>.ovirt</code>.</p>
+    <ul class="clean">
+      <li><b>Gleicher Regelname wie eine bestehende Regel</b> – die Regeln werden per ODER verknüpft</li>
+      <li><b>Widerspruch zu einer Default-Regel</b> (z. B. <code>default valid_input</code> umdefiniert) – der Validation-Service startet nicht mehr</li>
+      <li><b>Defaults prüfen:</b> <code>oc rsh &lt;validation_pod&gt;</code>, dann <code>grep -R "default" /usr/share/opa/policies/io/konveyor/forklift/&lt;provider&gt;</code></li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>Hooks: Ansible vor und nach der Migration</h3>
+    <p>Pro Plan maximal ein PreHook und ein PostHook. Das Playbook wird Base64-kodiert in der Hook-CR hinterlegt, als ConfigMap in einen Job im Namespace <code>openshift-mtv</code> gemountet und loggt sich per SSH in die VM ein – PreHook auf der Quelle, PostHook auf OpenShift. Die VM muss dafür laufen und per SSH erreichbar sein. Service Account optional, braucht aber mindestens Schreibrechte auf <code>openshift-mtv</code>.</p>
+  </div>
+
+  <div class="card">
+    <h3>Target-VM-Scheduling (MTV ≥ 2.10)</h3>
+    <p>Steuert, wo migrierte VMs landen – direkt im Plan, gilt für alle VMs des Plans:</p>
+    <ul class="clean">
+      <li><b>targetAffinity</b> – komplexe Regeln inkl. podAntiAffinity, z. B. VMs für DR auf verschiedene Nodes verteilen</li>
+      <li><b>targetLabels</b> – Organisations-Labels; System-Labels (migration, plan, vmID) überschreiben gleiche Keys</li>
+      <li><b>targetNodeSelector</b> – exaktes Key-Value-Matching, klassisch für GPU- oder Storage-Nodes</li>
+      <li><b>convertorLabels / -NodeSelector / -Affinity</b> – dasselbe für die virt-v2v-Konvertierungs-Pods (nur cold), z. B. um I/O-starke Nodes für die Konvertierung zu reservieren</li>
+    </ul>
+    <p>Anti-Affinity gibt es nur auf Workload-Ebene (Pods), nicht auf Node-Ebene.</p>
+  </div>
+
+  <div class="mnemo"><b>Hooks sind die Handwerker beim Umzug</b> – der PreHook packt in der alten Wohnung ein, der PostHook schließt in der neuen alles wieder an.</div>
+</section>
+
+<!-- ====================== 5 PERFORMANCE ====================== -->
+<section id="perf" class="butter">
+  <div class="sec-head"><div class="badge">5</div><h2>Performance: Metriken und Parallelität</h2></div>
+  <p class="sec-sub">Red-Hat-Labordaten als Best Case (vSphere-basiert). Die eine Zahl, die du dir merken musst: 10 gleichzeitige VMs pro ESXi-Host.</p>
+
+  <div class="card">
+    <h3>Parallelität steuern: MAX_VM_INFLIGHT</h3>
+    <p>Maximale gleichzeitige VM-Transfers <b>pro ESXi-Host</b>, Default 20. Ein Slot pro VM, egal wie viele Disks. Beispiel: <code>MAX_VM_INFLIGHT=20</code> und 2 ESXi-Hosts im Provider = bis zu 20 VMs je Host parallel.</p>
+    <ul class="clean">
+      <li><b>10 VMs gleichzeitig statt sequenziell</b> – rund dreimal schneller (272 statt 100 MiB/s); mehr als 10 pro Host bringt kaum noch etwas</li>
+      <li><b>Mehrere Hosts skalieren:</b> 80 VMs von 1 Host: 2:43 h (294 MiB/s) – von 8 Hosts à 10 VMs: 41 min (1.173 MiB/s)</li>
+      <li><b>Pläne aufteilen:</b> max. 500 Disks pro Plan; 500 VMs in 1 Plan: 5:10 h – 800 VMs in 8 Plänen: 57 min. Faustregel: ~100 VMs pro Plan</li>
+    </ul>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>Netz &amp; Endpoints</h3>
+      <p>10-GbE-Netz einplanen; Migration frisst Bandbreite und teilt sie sich sonst mit Produktivdiensten. Bei vielen VMs auf mehreren Hosts: vCenter-Endpoint für Inventory, ESXi-Netze für den Transfer. Ab vSphere 7.0 lässt sich das NBD-Interface am ESXi taggen: <code>esxcli network ip interface tag add -t vSphereBackupNFC -i vmk2</code>. BIOS/Host-Power-Management auf High Performance bringt messbar (+15 MiB/s Datastore-Read bei &gt;10 VMs).</p>
+    </div>
+    <div class="card">
+      <h3>Warm-Empfehlungen</h3>
+      <p>Bis 400 Disks parallel getestet; ab ~300 sinkt die Precopy-Rate um ~25 % – daher Gruppen von ≤200 Disks fahren. Cutover möglichst direkt nach Planstart setzen (nur ein Precopy pro VM). Viele Einzel-VM-Pläne mit Zeitpuffer: <code>controller_precopy_interval</code> auf 120–240 min erhöhen.</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Große Disks (≥ 1 TB Daten pro Disk)</h3>
+    <ul class="clean">
+      <li><b>Wartungsfenster</b> einplanen, parallele Migrations- und Lastspitzen vermeiden, MTV priorisieren</li>
+      <li><b>Hohe Churn-Rate</b> (≥100 GB zwischen Snapshots): Precopy-Intervall verkürzen und mindestens 24 h vor dem Cutover starten</li>
+      <li><b>Sehr große Single-Disk-VMs:</b> wenn Downtime möglich, cold statt warm; alternativ Daten auf mehrere Disks splitten für parallele Transfers</li>
+      <li><b>Datenbanken mit Dauerschreiblast:</b> ggf. außerhalb von MTV per DB-eigener Replikation umziehen</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>AIO-Messwerte &amp; getestete Maxima</h3>
+    <p>Beste Werte mit <code>BufSizeIn64KB=16</code> / <code>BufCount=4</code> bei 10 VMs auf einem Host: Migrationszeit −31,1 % (0:24:32 → 0:16:54), Leserate 347,83 → 504,93 MB/s. Kein Effekt bei einzelner VM oder mehreren Hosts. Getestete Cold-Maxima: 8 ESXi-Hosts, 500 VMs/Plan, 5.000 VMs gesamt, 40 Pläne parallel, 6-TB-Disk (3 TB Daten), 50 Disks pro VM. Warm: 200 VMs/Plan, 400 parallele Disk-Transfers.</p>
+  </div>
+
+  <div class="mnemo"><b>MAX_VM_INFLIGHT sind die Laderampen pro Lagerhaus</b> – mehr Rampen als LKWs (10) bringen nichts, aber ein zweites Lagerhaus verdoppelt den Durchsatz.</div>
+
+  <details>
+    <summary>Prometheus-Metriken (mtv_*)</summary>
+    <div class="inner">
+      <p>Alle mit Labels für provider, mode (cold/warm) und target (local/remote); Netz-/Storage-Throughput ist Tech Preview:</p>
+      <ul class="clean">
+        <li><b>mtv_plans_status</b> – aktueller Status aller Pläne (Gauge)</li>
+        <li><b>mtv_migration_duration_seconds</b> / <b>mtv_migrations_duration_seconds</b> – Dauer je Plan (Gauge) bzw. Histogramm über Zeitintervalle</li>
+        <li><b>mtv_migration_data_transferred_bytes</b> – übertragene Bytes je erfolgreichem Plan</li>
+        <li><b>mtv_workload_migrations_status_total</b> – Counter je Status/Plan-ID</li>
+        <li><b>mtv_plan_alert_status</b> – Fehlschläge inkl. Phase, in der es scheiterte</li>
+        <li><b>mtv_migration_net_throughput</b> / <b>mtv_migration_storage_throughput</b> – Live-Durchsatz laufender Pläne</li>
+      </ul>
+    </div>
+  </details>
+</section>
+
+<!-- ====================== 6 TROUBLESHOOTING ====================== -->
+<section id="trouble" class="rose">
+  <div class="sec-head"><div class="badge">6</div><h2>Troubleshooting</h2></div>
+  <p class="sec-sub">Feste Eskalationsreihenfolge – und die Fehlermeldungen, die im Alltag am häufigsten auftauchen.</p>
+
+  <div class="card">
+    <h3>Diagnose-Reihenfolge</h3>
+    <ol class="steps">
+      <li><div><b>Migrationsfortschritt</b><small>Virtual-machines-Tab des Plans: welche VM hängt in welcher Phase?</small></div></li>
+      <li><div><b>OpenShift Lightspeed fragen</b><small>Ab MTV 2.12 mit aktivierter Integration: Fragen in natürlicher Sprache („Why did the migration for VM X fail?").</small></div></li>
+      <li><div><b>Pod-Logs</b><small>Erst ab der Konvertierungsphase vorhanden. Migration Resources → Pod → View logs.</small></div></li>
+      <li><div><b>forklift-controller-Logs</b><small><code>oc logs -n openshift-mtv deployment/forklift-controller</code> – alle MTV-Ereignisse.</small></div></li>
+      <li><div><b>must-gather</b><small>Pflichtanhang für jeden Support-Case, filterbar nach Namespace, Plan oder VM.</small></div></li>
+    </ol>
+    <pre><code>oc adm must-gather --image=registry.redhat.io/migration-toolkit-virtualization/mtv-must-gather-rhel8:2.12.3
+<span class="c"># gefiltert:</span>
+oc adm must-gather --image=...:2.12.3 -- PLAN=&lt;migration_plan&gt; /usr/bin/targeted
+oc adm must-gather --image=...:2.12.3 -- VM=&lt;vm_id&gt; NS=&lt;namespace&gt; /usr/bin/targeted</code></pre>
+  </div>
+
+  <div class="card">
+    <h3>Häufige Fehlermeldungen</h3>
+    <table>
+      <thead><tr><th>Meldung</th><th>Ursache &amp; Lösung</th></tr></thead>
+      <tbody>
+        <tr><td><b>Warm import retry limit reached</b></td><td>VM hat das CBT-Snapshot-Maximum (32) erreicht. Alte MTV-Snapshots im vSphere-Client löschen, Plan neu starten</td></tr>
+        <tr><td><b>Unable to resize disk image</b></td><td>EXT4 auf Block-Storage: CDI unterschätzt den Filesystem-Overhead. In der CDI-CR <code>spec.config.filesystemOverhead.global</code> auf &gt; 0.10 setzen (z. B. "0.15")</td></tr>
+        <tr><td><b>ConnectionTestFailed (OVA)</b></td><td>Irreführend – erscheint auch bei korrekter Konfiguration, bevor der Provider auf Ready springt. Erst abwarten, dann prüfen</td></tr>
+        <tr><td><b>Error pulling VDDK image</b></td><td>Provider liegt außerhalb von openshift-mtv, VDDK-Image dort nicht erreichbar. Image in den Provider-Namespace bringen oder Pull-Secrets für Cross-Namespace-Zugriff einrichten</td></tr>
+        <tr><td><b>VDDK image required for vSAN</b></td><td>vSAN-Backend ohne VDDK geht grundsätzlich nicht. VDDK-Image bauen und im Provider eintragen</td></tr>
+        <tr><td><b>Failed to restart… taking a snapshot (Windows, warm)</b></td><td>Volume Shadow Copy Service (VSS) läuft nicht im Gast</td></tr>
+        <tr><td><b>VM name validation failed: Invalid DNS name</b></td><td>Punkte, Großbuchstaben, führende/abschließende Bindestriche oder &gt;63 Zeichen. MTV benennt automatisch um – oder gezielt per targetName/Template</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="warn"><b>Achtung, stiller Fehler:</b> „Migration erfolgreich, VM spinnt trotzdem" hat zwei Klassiker: das Gast-OS steht nicht auf der Liste der zertifizierten Guest-OS für OpenShift Virtualization – oder der VM-Name war nicht DNS-konform bzw. weicht vom Datei-/Ordnernamen im Datastore ab. Beides prüft dir keine Fehlermeldung nach Abschluss.</div>
+
+  <details>
+    <summary>Storage-Copy-Offload-Spezialfälle</summary>
+    <div class="inner">
+      <ul class="clean">
+        <li><b>SOAP-Fehler ohne Ursache</b> – transiente vSphere↔ESXi-Verbindungsfehler; Populator/Migration einfach neu starten</li>
+        <li><b>CLI Fault: object … not found</b> – VIB installiert, aber hostd nicht neu gestartet: per SSH auf den ESXi und <code>/etc/init.d/hostd restart</code></li>
+        <li><b>SSH-Fehler</b> – SSH auf dem ESXi deaktiviert, Netzproblem, oder Timeout: <code>SSH_TIMEOUT_SECONDS</code> im Provider-Secret erhöhen (z. B. 300). Prüfen: <code>vim-cmd hostsvc/get_ssh_status</code></li>
+        <li><b>Cannot derive SVM (NetApp)</b> – ONTAP-SVM nicht konfiguriert; Management-LIF der SVM als <code>STORAGE_HOSTNAME</code> eintragen</li>
+      </ul>
+    </div>
+  </details>
+
+  <details>
+    <summary>Was must-gather einsammelt</summary>
+    <div class="inner">
+      <p>CRs (DataVolume, VirtualMachine, Plan, Job) plus Logs von importer-, conversion-, virt-launcher-, forklift-controller-, forklift-must-gather-api- und hook-job-Pods. Namenskonvention der Pods: <code>&lt;plan&gt;-&lt;vm_id&gt;&lt;5_zeichen&gt;</code>, Importer mit Präfix <code>importer-</code>. Leere Logs fehlen im Archiv. Für den Self-Service Technical Supportability Review (KI-Auswertung im Customer Portal) braucht es das <b>allgemeine</b> Cluster-must-gather ohne <code>--image</code>.</p>
+    </div>
+  </details>
+</section>
+
+<!-- ====================== 7 CHRONOLOGISCH ====================== -->
+<section id="howto" class="mint">
+  <div class="sec-head"><div class="badge">7</div><h2>Chronologisch: VMware-Cold-Migration komplett</h2></div>
+  <p class="sec-sub">Alle Etappen als eine Schrittfolge – vom leeren Namespace bis zur laufenden VM. Warm-Zusätze jeweils markiert.</p>
+
+  <div class="card">
+    <h3>Die vier Phasen auf einen Blick</h3>
+    <ol class="steps">
+      <li><div><b>Phase A · Vorbereiten</b><small>Schritte 1–3: Quelle prüfen, Secret und Provider anlegen.</small></div></li>
+      <li><div><b>Phase B · Mappen</b><small>Schritte 4–6: moRefs holen, NetworkMap und StorageMap schreiben.</small></div></li>
+      <li><div><b>Phase C · Planen &amp; Starten</b><small>Schritte 7–8: Plan-CR, dann Migration-CR.</small></div></li>
+      <li><div><b>Phase D · Überwachen</b><small>Schritte 9–10: Fortschritt und Ziel-VM verifizieren.</small></div></li>
+    </ol>
+  </div>
+
+  <h3 style="margin:26px 0 6px;font-size:1.15rem">Phase A · Vorbereiten</h3>
+
+  <details>
+    <summary>Schritt 1 · Quelle aufräumen</summary>
+    <div class="inner">
+      <p>Fehlerquellen vor dem Start beseitigen, statt sie mitten in der Migration zu debuggen: Antivirus aus den Quell-VMs entfernen, vMotion/svMotion für die betroffenen VMs deaktivieren, VM-Namen auf DNS-Konformität prüfen. Für warm: CBT auf jeder VM und jeder Disk aktivieren. vSphere-Rechte auf Datacenter-Ebene mit Propagierung vergeben.</p>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 2 · Secret anlegen</summary>
+    <div class="inner">
+      <p>Ohne gültige Credentials kommt der Provider nie auf Ready – das Secret ist das Fundament.</p>
+      <pre><code>cat &lt;&lt;'EOF' | oc apply -f -
+apiVersion: v1
+kind: Secret
+metadata:
+  name: vsphere-creds
+  namespace: openshift-mtv
+  labels:
+    createdForProviderType: vsphere
+    createdForResourceType: providers
+type: Opaque
+stringData:
+  user: &lt;user&gt;
+  password: &lt;password&gt;
+  insecureSkipVerify: "false"
+  cacert: |
+    &lt;ca_certificate&gt;
+  url: https://&lt;vCenter_host&gt;/sdk
+EOF</code></pre>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 3 · Provider (und Host) anlegen</summary>
+    <div class="inner">
+      <p>Der Provider macht die Quelle für MTV sichtbar; das VDDK-Image beschleunigt jeden Transfer. Die Host-CR bindet den ESXi an das Migrationsnetz.</p>
+      <pre><code>cat &lt;&lt;'EOF' | oc apply -f -
+apiVersion: forklift.konveyor.io/v1beta1
+kind: Provider
+metadata:
+  name: vsphere-source
+  namespace: openshift-mtv
+spec:
+  type: vsphere
+  url: https://&lt;vCenter_host&gt;/sdk
+  settings:
+    vddkInitImage: &lt;VDDK_image&gt;
+    sdkEndpoint: vcenter
+  secret:
+    name: vsphere-creds
+    namespace: openshift-mtv
+EOF
+
+cat &lt;&lt;'EOF' | oc apply -f -
+apiVersion: forklift.konveyor.io/v1beta1
+kind: Host
+metadata:
+  name: esxi-01
+  namespace: openshift-mtv
+spec:
+  provider:
+    namespace: openshift-mtv
+    name: vsphere-source
+  id: &lt;source_host_mor&gt;
+  ipAddress: &lt;source_network_ip&gt;
+EOF</code></pre>
+    </div>
+  </details>
+
+  <h3 style="margin:26px 0 6px;font-size:1.15rem">Phase B · Mappen</h3>
+
+  <details>
+    <summary>Schritt 4 · moRefs aus dem Inventory holen</summary>
+    <div class="inner">
+      <p>Maps und VM-Liste referenzieren vSphere-Objekte per moRef – ohne die IDs geht nichts weiter.</p>
+      <pre><code>TOKEN=$(oc whoami -t)
+curl -H "Authorization: Bearer $TOKEN" https://&lt;inventory_route&gt;/providers/vsphere -k
+curl -H "Authorization: Bearer $TOKEN" https://&lt;inventory_route&gt;/providers/vsphere/&lt;provider_id&gt;/datastores/ -k</code></pre>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 5 · NetworkMap schreiben</summary>
+    <div class="inner">
+      <p>Jedes Quellnetz braucht ein Ziel – <code>pod</code>, <code>multus</code> (mit NAD und Namespace) oder <code>ignored</code>, wenn ein Netz bewusst nicht mitkommen soll.</p>
+      <pre><code>cat &lt;&lt;'EOF' | oc apply -f -
+apiVersion: forklift.konveyor.io/v1beta1
+kind: NetworkMap
+metadata:
+  name: vmware-netmap
+  namespace: openshift-mtv
+spec:
+  map:
+    - destination:
+        name: &lt;network_name&gt;
+        type: pod
+      source:
+        id: &lt;source_network_id&gt;
+    - destination:
+        name: &lt;network_attachment_definition&gt;
+        namespace: &lt;nad_namespace&gt;
+        type: multus
+      source:
+        id: &lt;source_network_id&gt;
+  provider:
+    source:
+      name: vsphere-source
+      namespace: openshift-mtv
+    destination:
+      name: &lt;destination_provider&gt;
+      namespace: openshift-mtv
+EOF</code></pre>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 6 · StorageMap schreiben</summary>
+    <div class="inner">
+      <p>Datastore-moRef auf StorageClass; <code>accessMode</code> (ReadWriteOnce/ReadWriteMany) ist bei normalen VMware-Migrationen Pflicht.</p>
+      <pre><code>cat &lt;&lt;'EOF' | oc apply -f -
+apiVersion: forklift.konveyor.io/v1beta1
+kind: StorageMap
+metadata:
+  name: vmware-storagemap
+  namespace: openshift-mtv
+spec:
+  map:
+    - destination:
+        storageClass: &lt;storage_class&gt;
+        accessMode: ReadWriteOnce
+      source:
+        id: &lt;source_datastore&gt;
+  provider:
+    source:
+      name: vsphere-source
+      namespace: openshift-mtv
+    destination:
+      name: &lt;destination_provider&gt;
+      namespace: openshift-mtv
+EOF</code></pre>
+    </div>
+  </details>
+
+  <h3 style="margin:26px 0 6px;font-size:1.15rem">Phase C · Planen &amp; Starten</h3>
+
+  <details>
+    <summary>Schritt 7 · Plan-CR anlegen</summary>
+    <div class="inner">
+      <p>Der Plan bündelt VMs, Maps und Verhalten. <code>warm: false</code> für cold; <code>preserveStaticIPs: true</code>, wenn Gäste statische IPs an Interface-Namen binden.</p>
+      <pre><code>cat &lt;&lt;'EOF' | oc apply -f -
+apiVersion: forklift.konveyor.io/v1beta1
+kind: Plan
+metadata:
+  name: vmware-plan
+  namespace: openshift-mtv
+spec:
+  warm: false
+  provider:
+    source:
+      name: vsphere-source
+      namespace: openshift-mtv
+    destination:
+      name: &lt;destination_provider&gt;
+      namespace: openshift-mtv
+  map:
+    network:
+      name: vmware-netmap
+      namespace: openshift-mtv
+    storage:
+      name: vmware-storagemap
+      namespace: openshift-mtv
+  preserveStaticIPs: true
+  targetNamespace: &lt;target_namespace&gt;
+  vms:
+    - id: &lt;vm_moref&gt;
+    - name: &lt;vm_name&gt;
+EOF</code></pre>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 8 · Migration-CR anlegen (Start)</summary>
+    <div class="inner">
+      <p>Erst diese CR setzt den Plan in Bewegung. Bei warm gehört hier die Cutover-Zeit hinein – ohne sie läuft nur Precopy.</p>
+      <pre><code>cat &lt;&lt;'EOF' | oc apply -f -
+apiVersion: forklift.konveyor.io/v1beta1
+kind: Migration
+metadata:
+  name: vmware-migration-1
+  namespace: openshift-mtv
+spec:
+  plan:
+    name: vmware-plan
+    namespace: openshift-mtv
+  cutover: 2026-08-10T22:00:00.000+02:00
+EOF</code></pre>
+      <p>Ab jetzt: keine Snapshots mehr auf den Quell-VMs anlegen.</p>
+    </div>
+  </details>
+
+  <h3 style="margin:26px 0 6px;font-size:1.15rem">Phase D · Überwachen</h3>
+
+  <details>
+    <summary>Schritt 9 · Fortschritt beobachten</summary>
+    <div class="inner">
+      <p>Pro Disk entsteht ein DataVolume → PVC → Importer-Pod; danach der Conversion-Pod mit virt-v2v, dann die VirtualMachine-CR. Der Migration Controller startet die VM nur, wenn sie auch auf der Quelle lief.</p>
+      <pre><code>oc get migration vmware-migration-1 -n openshift-mtv -o yaml
+oc get pods -n &lt;target_namespace&gt; -w
+<span class="c"># Logs des Conversion-Pods bei Hängern:</span>
+oc logs &lt;conversion_pod&gt; -n &lt;target_namespace&gt;</code></pre>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 10 · Verifizieren</summary>
+    <div class="inner">
+      <p>Plan-Status muss auf Completed stehen; danach in der Ziel-VM prüfen, dass sie bootet, alle Disks sieht und das Netz stimmt. Der Power-State der Quelle wird übernommen – eine ausgeschaltete Quell-VM bleibt auch am Ziel aus.</p>
+      <pre><code>oc get plan vmware-plan -n openshift-mtv -o jsonpath='{.status.conditions}'
+oc get vm -n &lt;target_namespace&gt;</code></pre>
+    </div>
+  </details>
+</section>
+
+</main>
+
+<footer>Zusammengefasst aus der Red-Hat-Dokumentation „Migration Toolkit for Virtualization 2.12 – Migrating your virtual machines to Red Hat OpenShift Virtualization" (Kapitel 1–13, Stand 07/2026). Kein Ersatz für die offizielle Doku – Versionsdetails vor Produktionseinsatz gegen docs.redhat.com prüfen.</footer>
+
+</body>
+</html>
