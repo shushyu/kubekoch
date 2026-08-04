@@ -1,184 +1,539 @@
 <!DOCTYPE html>
 <html lang="de">
+
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>KubeKoch – Kubernetes &amp; OpenShift-Rezepte auf Deutsch</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<style>
-:root{
-  --ink:#33394a;
-  --ink-soft:#5c6376;
-  --paper:#fbfaf7;
-  --card:#ffffff;
-  --line:#e9e6df;
-  --mint:#d9f2e4;      --mint-deep:#2f8f6b;
-  --sky:#dcebf9;       --sky-deep:#2d6fa8;
-  --lav:#e7e2f7;       --lav-deep:#6b5bb5;
-  --peach:#fbe6d7;     --peach-deep:#c2703d;
-  --butter:#faf0cf;    --butter-deep:#a5842a;
-  --rose:#f9e0e6;      --rose-deep:#b34f6d;
-  --aqua:#d7eff0;      --aqua-deep:#2b8288;
-  --grau:#ecebe6;      --grau-deep:#5c6376;
-  --r-lg:26px; --r-md:18px; --r-sm:12px;
-}
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'Inter',sans-serif;background:var(--paper);color:var(--ink);line-height:1.65;font-size:16px}
-h1,h2,h3{font-family:'Sora',sans-serif;line-height:1.2}
-a{color:inherit}
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KubeKoch – Kubernetes &amp; OpenShift-Rezepte auf Deutsch</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link
+    href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
+    rel="stylesheet">
+  <style>
+    :root {
+      --ink: #33394a;
+      --ink-soft: #5c6376;
+      --paper: #fbfaf7;
+      --card: #ffffff;
+      --line: #e9e6df;
+      --mint: #d9f2e4;
+      --mint-deep: #2f8f6b;
+      --sky: #dcebf9;
+      --sky-deep: #2d6fa8;
+      --lav: #e7e2f7;
+      --lav-deep: #6b5bb5;
+      --peach: #fbe6d7;
+      --peach-deep: #c2703d;
+      --butter: #faf0cf;
+      --butter-deep: #a5842a;
+      --rose: #f9e0e6;
+      --rose-deep: #b34f6d;
+      --aqua: #d7eff0;
+      --aqua-deep: #2b8288;
+      --grau: #ecebe6;
+      --grau-deep: #5c6376;
+      --r-lg: 26px;
+      --r-md: 18px;
+      --r-sm: 12px;
+    }
 
-/* ---------- Kopf ---------- */
-header{max-width:1060px;margin:0 auto;padding:56px 24px 8px}
-.kicker{display:inline-block;background:var(--lav);color:var(--lav-deep);font-weight:600;font-size:.8rem;letter-spacing:.08em;text-transform:uppercase;padding:6px 14px;border-radius:999px;margin-bottom:18px}
-header h1{font-size:clamp(1.9rem,4.5vw,3rem);font-weight:800;letter-spacing:-.02em}
-header h1 span{color:var(--mint-deep)}
-.lede{color:var(--ink-soft);max-width:640px;margin-top:14px;font-size:1.05rem}
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0
+    }
 
-/* ---------- Suche & Linien-Filter ---------- */
-.finder{max-width:1060px;margin:30px auto 0;padding:0 24px}
-.search{position:relative;max-width:520px}
-.search input{width:100%;font:inherit;font-size:.95rem;padding:13px 18px 13px 46px;border:1.5px solid var(--line);border-radius:999px;background:var(--card);color:var(--ink);outline:none}
-.search input:focus-visible{border-color:var(--sky-deep);box-shadow:0 0 0 3px var(--sky)}
-.search svg{position:absolute;left:16px;top:50%;transform:translateY(-50%);width:18px;height:18px;stroke:var(--ink-soft);fill:none;stroke-width:2;pointer-events:none}
-.lines{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
-.lines button{font-family:'Sora';font-weight:600;font-size:.8rem;padding:7px 15px;border-radius:999px;border:1.5px solid var(--line);background:var(--card);color:var(--ink-soft);cursor:pointer}
-.lines button:hover{color:var(--ink)}
-.lines button:focus-visible{outline:2px solid var(--sky-deep);outline-offset:2px}
-.lines button[aria-pressed="true"]{border-color:transparent}
-.lines button[data-linie="alle"][aria-pressed="true"]{background:var(--ink);color:#fff}
-.lines button[data-linie="observability"][aria-pressed="true"]{background:var(--aqua);color:var(--aqua-deep)}
-.lines button[data-linie="storage"][aria-pressed="true"]{background:var(--mint);color:var(--mint-deep)}
-.lines button[data-linie="netzwerk"][aria-pressed="true"]{background:var(--sky);color:var(--sky-deep)}
-.lines button[data-linie="security"][aria-pressed="true"]{background:var(--lav);color:var(--lav-deep)}
-.lines button[data-linie="cluster-ops"][aria-pressed="true"]{background:var(--peach);color:var(--peach-deep)}
-.lines button[data-linie="gitops"][aria-pressed="true"]{background:var(--butter);color:var(--butter-deep)}
-.lines button[data-linie="troubleshooting"][aria-pressed="true"]{background:var(--rose);color:var(--rose-deep)}
-.lines button[data-linie="allgemein"][aria-pressed="true"]{background:var(--grau);color:var(--grau-deep)}
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--paper);
+      color: var(--ink);
+      line-height: 1.65;
+      font-size: 16px
+    }
 
-/* ---------- Kartenraster ---------- */
-main{max-width:1060px;margin:0 auto;padding:26px 24px 90px}
-.count{color:var(--ink-soft);font-size:.84rem;margin-bottom:16px}
-.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:18px}
-.plan{position:relative;display:flex;flex-direction:column;gap:12px;background:var(--card);border:1.5px solid var(--line);border-radius:var(--r-lg);padding:24px 26px 20px;text-decoration:none;transition:transform .15s ease,box-shadow .15s ease}
-a.plan:hover,a.plan:focus-visible{transform:translateY(-3px);box-shadow:0 10px 26px rgba(60,60,90,.10);outline:none}
-a.plan:focus-visible{box-shadow:0 0 0 3px var(--sky)}
-.plan-top{display:flex;align-items:center;gap:10px}
-.linie{font-family:'Sora';font-weight:700;font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;padding:5px 12px;border-radius:999px}
-.plan[data-linie="observability"] .linie{background:var(--aqua);color:var(--aqua-deep)}
-.plan[data-linie="storage"] .linie{background:var(--mint);color:var(--mint-deep)}
-.plan[data-linie="netzwerk"] .linie{background:var(--sky);color:var(--sky-deep)}
-.plan[data-linie="security"] .linie{background:var(--lav);color:var(--lav-deep)}
-.plan[data-linie="cluster-ops"] .linie{background:var(--peach);color:var(--peach-deep)}
-.plan[data-linie="gitops"] .linie{background:var(--butter);color:var(--butter-deep)}
-.plan[data-linie="troubleshooting"] .linie{background:var(--rose);color:var(--rose-deep)}
-.plan[data-linie="allgemein"] .linie{background:var(--grau);color:var(--grau-deep)}
-.stand{margin-left:auto;font-family:'JetBrains Mono';font-size:.72rem;color:var(--ink-soft)}
-.plan h2{font-size:1.12rem;font-weight:700}
-.plan p{font-size:.9rem;color:var(--ink-soft)}
+    h1,
+    h2,
+    h3 {
+      font-family: 'Sora', sans-serif;
+      line-height: 1.2
+    }
 
-/* Streckenband: ein Punkt pro Schritt des Rezepts */
-.strecke{display:flex;align-items:center;gap:0;margin-top:auto;padding-top:14px}
-.strecke i{width:10px;height:10px;border-radius:4px;flex-shrink:0}
-.strecke b{height:2.5px;flex:1;max-width:26px;border-radius:2px;opacity:.45}
-.plan[data-linie="observability"] .strecke i,.plan[data-linie="observability"] .strecke b{background:var(--aqua-deep)}
-.plan[data-linie="storage"] .strecke i,.plan[data-linie="storage"] .strecke b{background:var(--mint-deep)}
-.plan[data-linie="netzwerk"] .strecke i,.plan[data-linie="netzwerk"] .strecke b{background:var(--sky-deep)}
-.plan[data-linie="security"] .strecke i,.plan[data-linie="security"] .strecke b{background:var(--lav-deep)}
-.plan[data-linie="cluster-ops"] .strecke i,.plan[data-linie="cluster-ops"] .strecke b{background:var(--peach-deep)}
-.plan[data-linie="gitops"] .strecke i,.plan[data-linie="gitops"] .strecke b{background:var(--butter-deep)}
-.plan[data-linie="troubleshooting"] .strecke i,.plan[data-linie="troubleshooting"] .strecke b{background:var(--rose-deep)}
-.plan[data-linie="allgemein"] .strecke i,.plan[data-linie="allgemein"] .strecke b{background:var(--grau-deep)}
-.strecke span{margin-left:12px;font-size:.76rem;color:var(--ink-soft);white-space:nowrap}
+    a {
+      color: inherit
+    }
 
-/* Leerer Zustand */
-.leer{display:none;background:var(--card);border:1.5px dashed var(--line);border-radius:var(--r-lg);padding:34px;text-align:center;color:var(--ink-soft)}
-.leer b{color:var(--ink);font-family:'Sora'}
+    /* ---------- Kopf ---------- */
+    header {
+      max-width: 1060px;
+      margin: 0 auto;
+      padding: 56px 24px 8px
+    }
 
-footer{max-width:1060px;margin:0 auto;padding:30px 24px 60px;color:var(--ink-soft);font-size:.82rem;border-top:1px solid var(--line)}
-footer a{color:var(--ink-soft)}
+    .kicker {
+      display: inline-block;
+      background: var(--lav);
+      color: var(--lav-deep);
+      font-weight: 600;
+      font-size: .8rem;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      padding: 6px 14px;
+      border-radius: 999px;
+      margin-bottom: 18px
+    }
 
-@media(max-width:820px){
-  .grid{grid-template-columns:1fr}
-  header{padding-top:40px}
-}
-@media(prefers-reduced-motion:reduce){.plan{transition:none}}
-</style>
+    header h1 {
+      font-size: clamp(1.9rem, 4.5vw, 3rem);
+      font-weight: 800;
+      letter-spacing: -.02em
+    }
+
+    header h1 span {
+      color: var(--mint-deep)
+    }
+
+    .lede {
+      color: var(--ink-soft);
+      max-width: 640px;
+      margin-top: 14px;
+      font-size: 1.05rem
+    }
+
+    /* ---------- Suche & Linien-Filter ---------- */
+    .finder {
+      max-width: 1060px;
+      margin: 30px auto 0;
+      padding: 0 24px
+    }
+
+    .search {
+      position: relative;
+      max-width: 520px
+    }
+
+    .search input {
+      width: 100%;
+      font: inherit;
+      font-size: .95rem;
+      padding: 13px 18px 13px 46px;
+      border: 1.5px solid var(--line);
+      border-radius: 999px;
+      background: var(--card);
+      color: var(--ink);
+      outline: none
+    }
+
+    .search input:focus-visible {
+      border-color: var(--sky-deep);
+      box-shadow: 0 0 0 3px var(--sky)
+    }
+
+    .search svg {
+      position: absolute;
+      left: 16px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 18px;
+      height: 18px;
+      stroke: var(--ink-soft);
+      fill: none;
+      stroke-width: 2;
+      pointer-events: none
+    }
+
+    .lines {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 16px
+    }
+
+    .lines button {
+      font-family: 'Sora';
+      font-weight: 600;
+      font-size: .8rem;
+      padding: 7px 15px;
+      border-radius: 999px;
+      border: 1.5px solid var(--line);
+      background: var(--card);
+      color: var(--ink-soft);
+      cursor: pointer
+    }
+
+    .lines button:hover {
+      color: var(--ink)
+    }
+
+    .lines button:focus-visible {
+      outline: 2px solid var(--sky-deep);
+      outline-offset: 2px
+    }
+
+    .lines button[aria-pressed="true"] {
+      border-color: transparent
+    }
+
+    .lines button[data-linie="alle"][aria-pressed="true"] {
+      background: var(--ink);
+      color: #fff
+    }
+
+    .lines button[data-linie="observability"][aria-pressed="true"] {
+      background: var(--aqua);
+      color: var(--aqua-deep)
+    }
+
+    .lines button[data-linie="storage"][aria-pressed="true"] {
+      background: var(--mint);
+      color: var(--mint-deep)
+    }
+
+    .lines button[data-linie="netzwerk"][aria-pressed="true"] {
+      background: var(--sky);
+      color: var(--sky-deep)
+    }
+
+    .lines button[data-linie="security"][aria-pressed="true"] {
+      background: var(--lav);
+      color: var(--lav-deep)
+    }
+
+    .lines button[data-linie="cluster-ops"][aria-pressed="true"] {
+      background: var(--peach);
+      color: var(--peach-deep)
+    }
+
+    .lines button[data-linie="gitops"][aria-pressed="true"] {
+      background: var(--butter);
+      color: var(--butter-deep)
+    }
+
+    .lines button[data-linie="troubleshooting"][aria-pressed="true"] {
+      background: var(--rose);
+      color: var(--rose-deep)
+    }
+
+    .lines button[data-linie="allgemein"][aria-pressed="true"] {
+      background: var(--grau);
+      color: var(--grau-deep)
+    }
+
+    /* ---------- Kartenraster ---------- */
+    main {
+      max-width: 1060px;
+      margin: 0 auto;
+      padding: 26px 24px 90px
+    }
+
+    .count {
+      color: var(--ink-soft);
+      font-size: .84rem;
+      margin-bottom: 16px
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 18px
+    }
+
+    .plan {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      background: var(--card);
+      border: 1.5px solid var(--line);
+      border-radius: var(--r-lg);
+      padding: 24px 26px 20px;
+      text-decoration: none;
+      transition: transform .15s ease, box-shadow .15s ease
+    }
+
+    a.plan:hover,
+    a.plan:focus-visible {
+      transform: translateY(-3px);
+      box-shadow: 0 10px 26px rgba(60, 60, 90, .10);
+      outline: none
+    }
+
+    a.plan:focus-visible {
+      box-shadow: 0 0 0 3px var(--sky)
+    }
+
+    .plan-top {
+      display: flex;
+      align-items: center;
+      gap: 10px
+    }
+
+    .linie {
+      font-family: 'Sora';
+      font-weight: 700;
+      font-size: .72rem;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      padding: 5px 12px;
+      border-radius: 999px
+    }
+
+    .plan[data-linie="observability"] .linie {
+      background: var(--aqua);
+      color: var(--aqua-deep)
+    }
+
+    .plan[data-linie="storage"] .linie {
+      background: var(--mint);
+      color: var(--mint-deep)
+    }
+
+    .plan[data-linie="netzwerk"] .linie {
+      background: var(--sky);
+      color: var(--sky-deep)
+    }
+
+    .plan[data-linie="security"] .linie {
+      background: var(--lav);
+      color: var(--lav-deep)
+    }
+
+    .plan[data-linie="cluster-ops"] .linie {
+      background: var(--peach);
+      color: var(--peach-deep)
+    }
+
+    .plan[data-linie="gitops"] .linie {
+      background: var(--butter);
+      color: var(--butter-deep)
+    }
+
+    .plan[data-linie="troubleshooting"] .linie {
+      background: var(--rose);
+      color: var(--rose-deep)
+    }
+
+    .plan[data-linie="allgemein"] .linie {
+      background: var(--grau);
+      color: var(--grau-deep)
+    }
+
+    .stand {
+      margin-left: auto;
+      font-family: 'JetBrains Mono';
+      font-size: .72rem;
+      color: var(--ink-soft)
+    }
+
+    .plan h2 {
+      font-size: 1.12rem;
+      font-weight: 700
+    }
+
+    .plan p {
+      font-size: .9rem;
+      color: var(--ink-soft)
+    }
+
+    /* Streckenband: ein Punkt pro Schritt des Rezepts */
+    .strecke {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      margin-top: auto;
+      padding-top: 14px
+    }
+
+    .strecke i {
+      width: 10px;
+      height: 10px;
+      border-radius: 4px;
+      flex-shrink: 0
+    }
+
+    .strecke b {
+      height: 2.5px;
+      flex: 1;
+      max-width: 26px;
+      border-radius: 2px;
+      opacity: .45
+    }
+
+    .plan[data-linie="observability"] .strecke i,
+    .plan[data-linie="observability"] .strecke b {
+      background: var(--aqua-deep)
+    }
+
+    .plan[data-linie="storage"] .strecke i,
+    .plan[data-linie="storage"] .strecke b {
+      background: var(--mint-deep)
+    }
+
+    .plan[data-linie="netzwerk"] .strecke i,
+    .plan[data-linie="netzwerk"] .strecke b {
+      background: var(--sky-deep)
+    }
+
+    .plan[data-linie="security"] .strecke i,
+    .plan[data-linie="security"] .strecke b {
+      background: var(--lav-deep)
+    }
+
+    .plan[data-linie="cluster-ops"] .strecke i,
+    .plan[data-linie="cluster-ops"] .strecke b {
+      background: var(--peach-deep)
+    }
+
+    .plan[data-linie="gitops"] .strecke i,
+    .plan[data-linie="gitops"] .strecke b {
+      background: var(--butter-deep)
+    }
+
+    .plan[data-linie="troubleshooting"] .strecke i,
+    .plan[data-linie="troubleshooting"] .strecke b {
+      background: var(--rose-deep)
+    }
+
+    .plan[data-linie="allgemein"] .strecke i,
+    .plan[data-linie="allgemein"] .strecke b {
+      background: var(--grau-deep)
+    }
+
+    .strecke span {
+      margin-left: 12px;
+      font-size: .76rem;
+      color: var(--ink-soft);
+      white-space: nowrap
+    }
+
+    /* Leerer Zustand */
+    .leer {
+      display: none;
+      background: var(--card);
+      border: 1.5px dashed var(--line);
+      border-radius: var(--r-lg);
+      padding: 34px;
+      text-align: center;
+      color: var(--ink-soft)
+    }
+
+    .leer b {
+      color: var(--ink);
+      font-family: 'Sora'
+    }
+
+    footer {
+      max-width: 1060px;
+      margin: 0 auto;
+      padding: 30px 24px 60px;
+      color: var(--ink-soft);
+      font-size: .82rem;
+      border-top: 1px solid var(--line)
+    }
+
+    footer a {
+      color: var(--ink-soft)
+    }
+
+    @media(max-width:820px) {
+      .grid {
+        grid-template-columns: 1fr
+      }
+
+      header {
+        padding-top: 40px
+      }
+    }
+
+    @media(prefers-reduced-motion:reduce) {
+      .plan {
+        transition: none
+      }
+    }
+  </style>
 </head>
+
 <body>
 
-<header>
-  <span class="kicker">Heute im Topf: lecker Cluster</span>
-  <h1>Kube<span>Koch</span></h1>
-  <p class="lede">Einfache Rezepte für Kubernetes zum Nachmachen</p>
-</header>
+  <header>
+    <span class="kicker">Heute im Topf: lecker Cluster</span>
+    <h1>Kube<span>Koch</span></h1>
+    <p class="lede">Einfache Rezepte zum Nachmachen: <b>Schritt für Schritt</b> vom leeren Cluster zum laufenden Setup –
+      inklusive der stillen Fehler, die die Doku verschweigt.</p>
+  </header>
 
-<div class="finder">
-  <div class="search">
-    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.5-4.5"/></svg>
-    <input type="search" id="suche" placeholder="Rezept suchen… " aria-label="Rezept suchen">
+  <div class="finder">
+    <div class="search">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="11" cy="11" r="7" />
+        <path d="M21 21l-4.5-4.5" />
+      </svg>
+      <input type="search" id="suche" placeholder="Rezept suchen … (z. B. Loki, LokiStack, Logging)"
+        aria-label="Rezept suchen">
+    </div>
+    <div class="lines" role="group" aria-label="Nach Linie filtern">
+      <button data-linie="alle" aria-pressed="true">Alle Linien</button>
+      <button data-linie="observability" aria-pressed="false">Observability</button>
+      <button data-linie="storage" aria-pressed="false">Storage</button>
+      <button data-linie="netzwerk" aria-pressed="false">Netzwerk</button>
+      <button data-linie="security" aria-pressed="false">Security</button>
+      <button data-linie="cluster-ops" aria-pressed="false">Cluster-Ops</button>
+      <button data-linie="gitops" aria-pressed="false">GitOps</button>
+      <button data-linie="troubleshooting" aria-pressed="false">Troubleshooting</button>
+      <button data-linie="allgemein" aria-pressed="false">Allgemein</button>
+    </div>
   </div>
-  <div class="lines" role="group" aria-label="Nach Linie filtern">
-    <button data-linie="alle" aria-pressed="true">Alle Linien</button>
-    <button data-linie="observability" aria-pressed="false">Observability</button>
-    <button data-linie="storage" aria-pressed="false">Storage</button>
-    <button data-linie="netzwerk" aria-pressed="false">Netzwerk</button>
-    <button data-linie="security" aria-pressed="false">Security</button>
-    <button data-linie="cluster-ops" aria-pressed="false">Cluster-Ops</button>
-    <button data-linie="gitops" aria-pressed="false">GitOps</button>
-    <button data-linie="troubleshooting" aria-pressed="false">Troubleshooting</button>
-  </div>
-</div>
 
-<main>
-  <p class="count" id="anzahl"></p>
+  <main>
+    <p class="count" id="anzahl"></p>
 
-  <div class="grid" id="grid">
-<!--KARTEN-->
-  </div>
+    <div class="grid" id="grid">
+      <!--KARTEN-->
+    </div>
 
-  <div class="leer" id="leer">
-    <b>Kein Rezept gefunden.</b><br>
-    Suchbegriff anpassen oder Linienfilter auf „Alle Linien“ stellen.
-  </div>
-</main>
+    <div class="leer" id="leer">
+      <b>Kein Rezept gefunden.</b><br>
+      Suchbegriff anpassen oder Linienfilter auf „Alle Linien“ stellen.
+    </div>
+  </main>
 
-<footer>
-  KubeKoch · privates Lernprojekt, keine offizielle Red-Hat- oder CNCF-Seite · Quellcode auf <a href="https://github.com/">GitHub</a>
-</footer>
+  <footer>
+    KubeKoch · privates Lernprojekt, keine offizielle Red-Hat- oder CNCF-Seite · Quellcode auf <a
+      href="https://github.com/">GitHub</a>
+  </footer>
 
-<script>
-(function(){
-  const eingabe = document.getElementById('suche');
-  const knoepfe = document.querySelectorAll('.lines button');
-  const karten  = document.querySelectorAll('#grid .plan');
-  const leer    = document.getElementById('leer');
-  const anzahl  = document.getElementById('anzahl');
-  let linie = 'alle';
+  <script>
+    (function () {
+      const eingabe = document.getElementById('suche');
+      const knoepfe = document.querySelectorAll('.lines button');
+      const karten = document.querySelectorAll('#grid .plan');
+      const leer = document.getElementById('leer');
+      const anzahl = document.getElementById('anzahl');
+      let linie = 'alle';
 
-  function filtern(){
-    const q = eingabe.value.trim().toLowerCase();
-    let sichtbar = 0;
-    karten.forEach(k => {
-      const text = (k.textContent + ' ' + (k.dataset.suche || '')).toLowerCase();
-      const passt = (linie === 'alle' || k.dataset.linie === linie) && (!q || text.includes(q));
-      k.style.display = passt ? '' : 'none';
-      if (passt) sichtbar++;
-    });
-    leer.style.display = sichtbar ? 'none' : 'block';
-    anzahl.textContent = sichtbar === 1 ? '1 Rezept' : sichtbar + ' Rezepte';
-  }
+      function filtern() {
+        const q = eingabe.value.trim().toLowerCase();
+        let sichtbar = 0;
+        karten.forEach(k => {
+          const text = (k.textContent + ' ' + (k.dataset.suche || '')).toLowerCase();
+          const passt = (linie === 'alle' || k.dataset.linie === linie) && (!q || text.includes(q));
+          k.style.display = passt ? '' : 'none';
+          if (passt) sichtbar++;
+        });
+        leer.style.display = sichtbar ? 'none' : 'block';
+        anzahl.textContent = sichtbar === 1 ? '1 Rezept' : sichtbar + ' Rezepte';
+      }
 
-  eingabe.addEventListener('input', filtern);
-  knoepfe.forEach(b => b.addEventListener('click', () => {
-    knoepfe.forEach(x => x.setAttribute('aria-pressed', 'false'));
-    b.setAttribute('aria-pressed', 'true');
-    linie = b.dataset.linie;
-    filtern();
-  }));
-  filtern();
-})();
-</script>
+      eingabe.addEventListener('input', filtern);
+      knoepfe.forEach(b => b.addEventListener('click', () => {
+        knoepfe.forEach(x => x.setAttribute('aria-pressed', 'false'));
+        b.setAttribute('aria-pressed', 'true');
+        linie = b.dataset.linie;
+        filtern();
+      }));
+      filtern();
+    })();
+  </script>
 
 </body>
+
 </html>

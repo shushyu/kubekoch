@@ -112,6 +112,45 @@ def karten_html(karten: list[dict]) -> str:
     return "\n".join(teile)
 
 
+ZURUECK_CSS = """
+<style id="kk-zurueck-style">
+.kk-zurueck{position:fixed;top:26px;left:26px;z-index:99;display:flex;align-items:center;
+  gap:8px;height:42px;padding:0 18px 0 15px;border-radius:999px;background:#fff;
+  border:1.5px solid #e9e6df;color:#5c6376;text-decoration:none;
+  font-family:'Sora','Inter',sans-serif;font-weight:600;font-size:.82rem;white-space:nowrap;
+  box-shadow:0 2px 10px rgba(60,60,90,.06);transition:color .15s ease,box-shadow .15s ease}
+.kk-zurueck:hover{color:#33394a;box-shadow:0 4px 16px rgba(60,60,90,.12)}
+.kk-zurueck:focus-visible{outline:2px solid #2d6fa8;outline-offset:2px}
+.kk-zurueck svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2.2;
+  stroke-linecap:round;stroke-linejoin:round}
+@media(max-width:1180px){
+  .kk-zurueck{position:static;margin:20px 0 -10px 24px;width:max-content}
+}
+@media(prefers-reduced-motion:reduce){.kk-zurueck{transition:none}}
+</style>
+"""
+
+ZURUECK_HTML = (
+    '<a class="kk-zurueck" href="../index.html" aria-label="Zurück zur Startseite">'
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>'
+    "Alle Rezepte</a>"
+)
+
+
+def mit_zurueck_button(quelle: str) -> str:
+    """Fügt den Zurück-Button ein, ohne die Rezept-Datei selbst zu verändern."""
+    if "kk-zurueck" in quelle:
+        return quelle
+    if "</head>" in quelle:
+        quelle = quelle.replace("</head>", ZURUECK_CSS + "</head>", 1)
+    else:
+        quelle = ZURUECK_CSS + quelle
+    m = re.search(r"<body[^>]*>", quelle, re.I)
+    if m:
+        return quelle[: m.end()] + "\n" + ZURUECK_HTML + quelle[m.end() :]
+    return ZURUECK_HTML + quelle
+
+
 def main() -> None:
     dateien = sorted(REZEPTE.glob("*.html"))
     karten = sorted((karte(p) for p in dateien), key=lambda k: k["titel"].lower())
@@ -123,7 +162,15 @@ def main() -> None:
         shutil.rmtree(SITE)
     SITE.mkdir()
     (SITE / "index.html").write_text(index, encoding="utf-8")
-    shutil.copytree(REZEPTE, SITE / "rezepte")
+    (SITE / "rezepte").mkdir()
+    for quelldatei in REZEPTE.iterdir():
+        if quelldatei.suffix.lower() == ".html":
+            (SITE / "rezepte" / quelldatei.name).write_text(
+                mit_zurueck_button(quelldatei.read_text(encoding="utf-8")),
+                encoding="utf-8",
+            )
+        elif quelldatei.is_file():
+            shutil.copy(quelldatei, SITE / "rezepte" / quelldatei.name)
     cname = ROOT / "CNAME"
     if cname.exists():
         shutil.copy(cname, SITE / "CNAME")
