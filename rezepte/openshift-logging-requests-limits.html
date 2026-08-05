@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenShift Logging 6.x – Requests &amp; Limits anpassen</title>
+<meta name="rezept-kategorie"    content="observability">
+<meta name="rezept-beschreibung" content="Requests und Limits im Namespace openshift-logging richtig anpassen: Collector per ClusterLogForwarder, Loki nur über das Size-Profil – nie direkt am Workload.">
+<meta name="rezept-stand"        content="OpenShift 4.18 · Logging 6.x · 08/2026">
+<meta name="rezept-suche"        content="clusterlogforwarder lokistack logfilemetricexporter vector loki requests limits size subscription olm useRequestsAsLimits">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#33394a;
+  --ink-soft:#5c6376;
+  --paper:#fbfaf7;
+  --card:#ffffff;
+  --line:#e9e6df;
+  --code-bg:#31364a;
+  --code-ink:#e8eaf2;
+  --mint:#d9f2e4;      --mint-deep:#2f8f6b;
+  --sky:#dcebf9;       --sky-deep:#2d6fa8;
+  --lav:#e7e2f7;       --lav-deep:#6b5bb5;
+  --peach:#fbe6d7;     --peach-deep:#c2703d;
+  --butter:#faf0cf;    --butter-deep:#a5842a;
+  --rose:#f9e0e6;      --rose-deep:#b34f6d;
+  --aqua:#d7eff0;      --aqua-deep:#2b8288;
+  --r-lg:26px; --r-md:18px; --r-sm:12px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;scroll-padding-top:90px}
+body{font-family:'Inter',sans-serif;background:var(--paper);color:var(--ink);line-height:1.65;font-size:16px}
+h1,h2,h3,h4{font-family:'Sora',sans-serif;line-height:1.2}
+
+/* ---------- Kopf ---------- */
+header{max-width:1060px;margin:0 auto;padding:56px 24px 8px}
+.kicker{display:inline-block;background:var(--lav);color:var(--lav-deep);font-weight:600;font-size:.8rem;letter-spacing:.08em;text-transform:uppercase;padding:6px 14px;border-radius:999px;margin-bottom:18px}
+header h1{font-size:clamp(1.9rem,4.5vw,3rem);font-weight:800;letter-spacing:-.02em}
+header h1 span{color:var(--mint-deep)}
+.lede{color:var(--ink-soft);max-width:640px;margin-top:14px;font-size:1.05rem}
+
+/* ---------- Fahrplan ---------- */
+.route{max-width:1060px;margin:34px auto 10px;padding:0 24px;display:grid;grid-template-columns:repeat(6,1fr);gap:12px}
+.route a{display:flex;flex-direction:column;gap:8px;text-decoration:none;color:var(--ink);background:var(--card);border:1.5px solid var(--line);border-radius:var(--r-md);padding:16px 14px;transition:transform .15s ease,box-shadow .15s ease}
+.route a:hover,.route a:focus-visible{transform:translateY(-3px);box-shadow:0 8px 22px rgba(60,60,90,.10);outline:none}
+.route .dot{width:34px;height:34px;border-radius:12px;display:grid;place-items:center;font-family:'Sora';font-weight:700;font-size:.9rem}
+.route .t{font-weight:600;font-size:.86rem;line-height:1.3}
+.route .s{font-size:.74rem;color:var(--ink-soft)}
+.route a:nth-child(1) .dot{background:var(--aqua);color:var(--aqua-deep)}
+.route a:nth-child(2) .dot{background:var(--mint);color:var(--mint-deep)}
+.route a:nth-child(3) .dot{background:var(--sky);color:var(--sky-deep)}
+.route a:nth-child(4) .dot{background:var(--lav);color:var(--lav-deep)}
+.route a:nth-child(5) .dot{background:var(--peach);color:var(--peach-deep)}
+.route a:nth-child(6) .dot{background:var(--butter);color:var(--butter-deep)}
+
+/* ---------- Sticky-Nav ---------- */
+nav{position:sticky;top:0;z-index:50;background:rgba(251,250,247,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);margin-top:26px}
+nav .wrap{max-width:1060px;margin:0 auto;padding:10px 24px;display:flex;gap:8px;overflow-x:auto}
+nav a{white-space:nowrap;text-decoration:none;font-size:.82rem;font-weight:600;color:var(--ink-soft);padding:7px 14px;border-radius:999px;border:1px solid transparent}
+nav a:hover{background:var(--card);border-color:var(--line);color:var(--ink)}
+
+/* ---------- Sektionen ---------- */
+main{max-width:1060px;margin:0 auto;padding:20px 24px 90px}
+section{margin-top:64px}
+.sec-head{display:flex;align-items:center;gap:16px;margin-bottom:8px}
+.badge{width:52px;height:52px;border-radius:16px;display:grid;place-items:center;font-family:'Sora';font-weight:800;font-size:1.25rem;flex-shrink:0}
+section h2{font-size:clamp(1.4rem,3vw,1.9rem);font-weight:700}
+.sec-sub{color:var(--ink-soft);margin-bottom:22px;max-width:720px}
+.aqua .badge{background:var(--aqua);color:var(--aqua-deep)}
+.mint .badge{background:var(--mint);color:var(--mint-deep)}
+.sky .badge{background:var(--sky);color:var(--sky-deep)}
+.lav .badge{background:var(--lav);color:var(--lav-deep)}
+.peach .badge{background:var(--peach);color:var(--peach-deep)}
+.butter .badge{background:var(--butter);color:var(--butter-deep)}
+.rose .badge{background:var(--rose);color:var(--rose-deep)}
+
+/* ---------- Karten & Schritte ---------- */
+.card{background:var(--card);border:1.5px solid var(--line);border-radius:var(--r-lg);padding:26px 28px;margin-bottom:20px}
+.card h3{font-size:1.08rem;margin-bottom:14px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+ol.steps{list-style:none;counter-reset:s;display:flex;flex-direction:column;gap:14px}
+ol.steps li{counter-increment:s;display:grid;grid-template-columns:34px 1fr;gap:14px;align-items:start}
+ol.steps li::before{content:counter(s);width:30px;height:30px;border-radius:10px;display:grid;place-items:center;font-family:'Sora';font-weight:700;font-size:.85rem;margin-top:2px}
+.aqua ol.steps li::before{background:var(--aqua);color:var(--aqua-deep)}
+.mint ol.steps li::before{background:var(--mint);color:var(--mint-deep)}
+.sky ol.steps li::before{background:var(--sky);color:var(--sky-deep)}
+.lav ol.steps li::before{background:var(--lav);color:var(--lav-deep)}
+.peach ol.steps li::before{background:var(--peach);color:var(--peach-deep)}
+.butter ol.steps li::before{background:var(--butter);color:var(--butter-deep)}
+.rose ol.steps li::before{background:var(--rose);color:var(--rose-deep)}
+.steps b{font-weight:600}
+.steps small{display:block;color:var(--ink-soft);font-size:.86rem;margin-top:2px}
+
+ul.clean{list-style:none;display:flex;flex-direction:column;gap:10px}
+ul.clean li{padding-left:24px;position:relative}
+ul.clean li::before{content:"";position:absolute;left:4px;top:.62em;width:9px;height:9px;border-radius:3px;background:var(--line)}
+.aqua ul.clean li::before{background:var(--aqua-deep)}
+.mint ul.clean li::before{background:var(--mint-deep)}
+.sky ul.clean li::before{background:var(--sky-deep)}
+.lav ul.clean li::before{background:var(--lav-deep)}
+.peach ul.clean li::before{background:var(--peach-deep)}
+.butter ul.clean li::before{background:var(--butter-deep)}
+.rose ul.clean li::before{background:var(--rose-deep)}
+
+/* ---------- Code ---------- */
+pre{background:var(--code-bg);color:var(--code-ink);border-radius:var(--r-sm);padding:16px 18px;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:.82rem;line-height:1.6;margin:10px 0}
+code{font-family:'JetBrains Mono',monospace;font-size:.85em;background:#efede7;border-radius:6px;padding:2px 6px}
+pre code{background:none;padding:0;font-size:1em}
+pre .c{color:#9aa3c0}
+
+/* ---------- Hinweisboxen ---------- */
+.note,.warn,.mnemo{border-radius:var(--r-md);padding:14px 18px;margin:14px 0;font-size:.92rem}
+.note{background:var(--sky)}
+.warn{background:var(--rose)}
+.mnemo{background:var(--butter)}
+.note b,.warn b,.mnemo b{font-weight:700}
+.mnemo::before{content:"🧠 Eselsbrücke · ";font-weight:700}
+.warn::before{content:"⚠️ ";font-weight:700}
+
+/* ---------- Tabellen ---------- */
+table{width:100%;border-collapse:separate;border-spacing:0;font-size:.88rem;margin:10px 0}
+th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-family:'Sora';font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft)}
+tr:last-child td{border-bottom:none}
+thead th:first-child{border-top-left-radius:var(--r-sm)}
+thead th:last-child{border-top-right-radius:var(--r-sm)}
+thead{background:var(--paper)}
+
+/* ---------- Details ---------- */
+details{border:1.5px solid var(--line);border-radius:var(--r-md);margin:12px 0;background:var(--card)}
+details summary{cursor:pointer;padding:14px 18px;font-weight:600;font-size:.94rem;list-style:none;display:flex;align-items:center;gap:10px}
+details summary::before{content:"+";font-family:'Sora';font-weight:700;width:24px;height:24px;border-radius:8px;background:var(--paper);display:grid;place-items:center;flex-shrink:0}
+details[open] summary::before{content:"–"}
+details .inner{padding:0 18px 18px}
+summary::-webkit-details-marker{display:none}
+
+/* ---------- DNS-Chips ---------- */
+.chips{display:flex;flex-wrap:wrap;gap:10px;margin:10px 0}
+.chip{background:var(--paper);border:1.5px solid var(--line);border-radius:999px;padding:6px 14px;font-family:'JetBrains Mono';font-size:.8rem}
+
+footer{max-width:1060px;margin:0 auto;padding:30px 24px 60px;color:var(--ink-soft);font-size:.82rem;border-top:1px solid var(--line)}
+
+@media(max-width:820px){
+  .route{grid-template-columns:repeat(2,1fr)}
+  .grid2{grid-template-columns:1fr}
+}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.route a{transition:none}}
+</style>
+</head>
+<body>
+
+<header>
+  <span class="kicker">OpenShift 4.18 · Logging 6.x · Vector + LokiStack</span>
+  <h1>Requests &amp; Limits im Logging:<br>immer an der <span>Custom Resource</span></h1>
+  <p class="lede">Sechs Abschnitte: Warum direkte Edits im Namespace <code>openshift-logging</code> nichts bringen, an welcher CR welcher Workload hängt – und <b>warum Loki keine einzelnen Werte kennt, sondern nur Größen</b>.</p>
+</header>
+
+<div class="route">
+  <a href="#basics"><span class="dot">0</span><span class="t">Grundprinzip</span><span class="s">Operator reconciled alles</span></a>
+  <a href="#collector"><span class="dot">1</span><span class="t">Collector</span><span class="s">ClusterLogForwarder</span></a>
+  <a href="#exporter"><span class="dot">2</span><span class="t">Metric-Exporter</span><span class="s">LogFileMetricExporter CR</span></a>
+  <a href="#loki"><span class="dot">3</span><span class="t">LokiStack</span><span class="s">Nur spec.size, kein resources</span></a>
+  <a href="#operators"><span class="dot">4</span><span class="t">Operator-Pods</span><span class="s">Subscription.spec.config</span></a>
+  <a href="#sizing"><span class="dot">5</span><span class="t">Sizing prüfen</span><span class="s">Vector-Metrik, PromQL</span></a>
+</div>
+
+<nav><div class="wrap">
+  <a href="#basics">0 · Grundprinzip</a>
+  <a href="#collector">1 · Collector</a>
+  <a href="#exporter">2 · Metric-Exporter</a>
+  <a href="#loki">3 · LokiStack</a>
+  <a href="#operators">4 · Operator-Pods</a>
+  <a href="#sizing">5 · Sizing</a>
+</div></nav>
+
+<main>
+
+<!-- ================= 0 GRUNDPRINZIP ================= -->
+<section id="basics" class="aqua">
+  <div class="sec-head"><div class="badge">0</div><h2>Grundprinzip: Wer hier schraubt, schraubt an der CR</h2></div>
+  <p class="sec-sub">Alle Workloads im Namespace <code>openshift-logging</code> werden von Operatoren reconciled. Anpassungen an Requests und Limits erfolgen deshalb <b>immer an der zuständigen Custom Resource</b> – nie am Deployment, StatefulSet oder DaemonSet darunter.</p>
+
+  <div class="card">
+    <h3>Wer steuert was?</h3>
+    <table>
+      <thead><tr><th>Workload</th><th>Gesteuert durch</th><th>Anpassbar?</th><th>Wie</th></tr></thead>
+      <tbody>
+        <tr><td><b>Collector (Vector DaemonSet)</b></td><td><code>ClusterLogForwarder</code></td><td>ja</td><td><code>spec.collector.resources</code></td></tr>
+        <tr><td><b>LogFileMetricExporter</b></td><td><code>LogFileMetricExporter</code> CR</td><td>ja</td><td><code>spec.resources</code></td></tr>
+        <tr><td><b>Loki-Komponenten</b></td><td><code>LokiStack</code> CR</td><td>nein</td><td>nur indirekt über <code>spec.size</code></td></tr>
+        <tr><td><b><code>useRequestsAsLimits</code></b></td><td><code>LokiStack</code> CR</td><td>teilweise</td><td>Limits = Requests (Guaranteed QoS), Tech Preview</td></tr>
+        <tr><td><b>cluster-logging-operator Pod</b></td><td>OLM</td><td>möglich</td><td><code>Subscription.spec.config.resources</code></td></tr>
+        <tr><td><b>loki-operator Pod</b></td><td>OLM</td><td>möglich</td><td><code>Subscription.spec.config.resources</code></td></tr>
+        <tr><td><b>Direkte Edits an Workloads</b></td><td>Operator-Reconciliation</td><td>nein</td><td>wird zurückgesetzt</td></tr>
+      </tbody>
+    </table>
+    <p style="font-size:.88rem;color:var(--ink-soft)">Zu den Loki-Komponenten zählen ingester, distributor, querier, query-frontend, index-gateway, compactor, gateway und ruler. Der loki-operator läuft meist in <code>openshift-operators-redhat</code>.</p>
+  </div>
+
+  <div class="warn"><b>Der Edit, der nie ankommt:</b> <code>oc edit deployment</code> geht durch, der Pod startet neu, alles wirkt erledigt – und beim nächsten Reconcile setzt der Operator die Werte kommentarlos zurück. Kein Fehler, kein Event, nur stiller Rückbau. Der scheinbare Ausweg <code>managementState: Unmanaged</code> ist unsupported.</div>
+
+  <div class="mnemo"><b>Collector = Stellschraube, Loki = Konfektionsgröße.</b> Beim Collector dreht man einzelne Werte, bei Loki wählt man nur die T-Shirt-Size.</div>
+</section>
+
+<!-- ================= 1 COLLECTOR ================= -->
+<section id="collector" class="mint">
+  <div class="sec-head"><div class="badge">1</div><h2>Collector: ClusterLogForwarder</h2></div>
+  <p class="sec-sub">Das Vector-DaemonSet gehört dem <code>ClusterLogForwarder</code>. Requests und Limits stehen dort unter <code>spec.collector.resources</code> – der supported Weg, einzelne Werte frei zu wählen.</p>
+
+  <div class="card">
+    <h3>Resources am Collector setzen</h3>
+    <p>Änderung an der CR, der Operator rollt das DaemonSet selbst neu aus – bei einem DaemonSet also ein Restart auf jedem Node.</p>
+<pre><code>apiVersion: observability.openshift.io/v1
+kind: ClusterLogForwarder
+metadata:
+  name: collector
+  namespace: openshift-logging
+spec:
+  collector:
+    resources:
+      requests:
+        cpu: 500m
+        memory: 64Mi
+      limits:
+        cpu: "2"
+        memory: 2Gi</code></pre>
+  </div>
+</section>
+
+<!-- ================= 2 METRIC-EXPORTER ================= -->
+<section id="exporter" class="sky">
+  <div class="sec-head"><div class="badge">2</div><h2>LogFileMetricExporter</h2></div>
+  <p class="sec-sub">Der Exporter hat seine eigene CR – und dort ein reguläres <code>spec.resources</code>-Feld. Gleiches Muster wie beim Collector, nur eine Ebene höher im Pfad.</p>
+
+  <div class="card">
+    <h3>Resources am Exporter setzen</h3>
+<pre><code>apiVersion: logging.openshift.io/v1alpha1
+kind: LogFileMetricExporter
+metadata:
+  name: instance
+  namespace: openshift-logging
+spec:
+  resources:
+    requests:
+      cpu: 200m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi</code></pre>
+  </div>
+</section>
+
+<!-- ================= 3 LOKISTACK ================= -->
+<section id="loki" class="lav">
+  <div class="sec-head"><div class="badge">3</div><h2>LokiStack: nur die Größe wählen</h2></div>
+  <p class="sec-sub">Das LokiStack-CRD kennt unter <code>spec.template.&lt;component&gt;</code> nur <code>replicas</code>, <code>nodeSelector</code>, <code>tolerations</code> und <code>podAntiAffinity</code> – <b>kein</b> <code>resources</code>-Feld (im Loki-Operator-Quellcode verifiziert). Requests, Limits, Replicas und PodDisruptionBudgets bestimmt vollständig das Size-Profil.</p>
+
+  <div class="card">
+    <h3>Size-Profil umstellen</h3>
+    <p>Wer mehr oder weniger Ressourcen für Loki will, wählt eine andere Größe – Werte einzeln tunen ist nicht vorgesehen. Der Red-Hat-KB-Artikel „Modify the default CPU, memory and PVC requested by Lokistack" (access.redhat.com/solutions/7051529) kommt zum selben Fazit.</p>
+<pre><code>oc -n openshift-logging edit lokistack logging-loki</code></pre>
+<pre><code>spec:
+  size: 1x.extra-small   <span class="c"># 1x.demo | 1x.pico | 1x.extra-small | 1x.small | 1x.medium</span></code></pre>
+    <div class="warn"><b>Resize ist kein stiller Klick:</b> Die Umstellung löst einen Rolling Restart <b>aller</b> Loki-Komponenten aus – ins Wartungsfenster legen. Und die PVCs werden dabei <b>nicht</b> automatisch vergrößert: Die Size steht auf „größer“, der Storage bleibt klein, und das fällt erst auf, wenn er vollläuft.</div>
+    <div class="note"><b>Hinweis:</b> Die Ausnahme <code>useRequestsAsLimits</code> setzt Limits = Requests und erzwingt damit Guaranteed QoS – aktuell Tech Preview.</div>
+  </div>
+</section>
+
+<!-- ================= 4 OPERATOR-PODS ================= -->
+<section id="operators" class="peach">
+  <div class="sec-head"><div class="badge">4</div><h2>Operator-Pods: der OLM-Mechanismus</h2></div>
+  <p class="sec-sub">Auch die Operatoren selbst haben einen Chef: OLM. Falls deren Pods angepasst werden müssen (selten), geht das über <code>spec.config.resources</code> in der jeweiligen <code>Subscription</code> – direkte Edits am Operator-Deployment setzt OLM zurück.</p>
+
+  <div class="card">
+    <h3>Resources über die Subscription setzen</h3>
+    <p>Gilt für cluster-logging-operator und loki-operator gleichermaßen; letzterer liegt meist in <code>openshift-operators-redhat</code>.</p>
+<pre><code>apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+spec:
+  config:
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi</code></pre>
+    <div class="mnemo"><b>Es sind Hausmeister über Hausmeistern:</b> Der Logging-Operator räumt hinter seinen Workloads auf, OLM räumt hinter den Operatoren auf. Wer etwas ändern will, redet immer mit der nächsthöheren Etage – nie mit dem Zimmer selbst.</div>
+  </div>
+</section>
+
+<!-- ================= 5 SIZING ================= -->
+<section id="sizing" class="butter">
+  <div class="sec-head"><div class="badge">5</div><h2>Sizing prüfen: reicht die gewählte Größe?</h2></div>
+  <p class="sec-sub">Ob z. B. <code>1x.extra-small</code> (100 GB/Tag) genügt, entscheidet das reale Ingest-Volumen. Gemessen wird an der Quelle – über die Vector-Metrik, nicht über Loki-Distributor-Metriken.</p>
+
+  <div class="card">
+    <h3>Ingest-Volumen per PromQL messen</h3>
+<pre><code>vector_component_sent_bytes_total{component_id=~"output_default_lokistack.*"}</code></pre>
+    <p style="font-size:.88rem;color:var(--ink-soft)">Die Metrik zählt, was der Collector tatsächlich Richtung LokiStack schickt – die ehrlichste Grundlage für die Size-Entscheidung.</p>
+  </div>
+</section>
+
+</main>
+
+<footer>Zusammengefasst aus der internen Notiz „Requests &amp; Limits im Namespace openshift-logging anpassen" (OpenShift 4.18, Logging 6.x) sowie Red Hat KB access.redhat.com/solutions/7051529. Kein Ersatz für die offizielle Doku – Versionsdetails vor Produktionseinsatz gegen docs.redhat.com prüfen.</footer>
+
+</body>
+</html>
