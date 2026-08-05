@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenShift – Cluster-Recovery nach langer Offline-Zeit</title>
+<meta name="rezept-kategorie"    content="troubleshooting">
+<meta name="rezept-beschreibung" content="Cluster nach über zwei Wochen offline: Zugriff über einen Master-Node wiederherstellen (RHCOS Emergency Mode, localhost.kubeconfig), pending CSRs approven, Nodes zurückholen.">
+<meta name="rezept-stand"        content="OpenShift 4.x · RHCOS 4.7+ · 08/2026">
+<meta name="rezept-suche"        content="csr pending certificate approve localhost.kubeconfig static-pod-resources rhcos grub single emergency recovery notready">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#33394a;
+  --ink-soft:#5c6376;
+  --paper:#fbfaf7;
+  --card:#ffffff;
+  --line:#e9e6df;
+  --code-bg:#31364a;
+  --code-ink:#e8eaf2;
+  --mint:#d9f2e4;      --mint-deep:#2f8f6b;
+  --sky:#dcebf9;       --sky-deep:#2d6fa8;
+  --lav:#e7e2f7;       --lav-deep:#6b5bb5;
+  --peach:#fbe6d7;     --peach-deep:#c2703d;
+  --butter:#faf0cf;    --butter-deep:#a5842a;
+  --rose:#f9e0e6;      --rose-deep:#b34f6d;
+  --aqua:#d7eff0;      --aqua-deep:#2b8288;
+  --r-lg:26px; --r-md:18px; --r-sm:12px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;scroll-padding-top:90px}
+body{font-family:'Inter',sans-serif;background:var(--paper);color:var(--ink);line-height:1.65;font-size:16px}
+h1,h2,h3,h4{font-family:'Sora',sans-serif;line-height:1.2}
+
+/* ---------- Kopf ---------- */
+header{max-width:1060px;margin:0 auto;padding:56px 24px 8px}
+.kicker{display:inline-block;background:var(--lav);color:var(--lav-deep);font-weight:600;font-size:.8rem;letter-spacing:.08em;text-transform:uppercase;padding:6px 14px;border-radius:999px;margin-bottom:18px}
+header h1{font-size:clamp(1.9rem,4.5vw,3rem);font-weight:800;letter-spacing:-.02em}
+header h1 span{color:var(--mint-deep)}
+.lede{color:var(--ink-soft);max-width:640px;margin-top:14px;font-size:1.05rem}
+
+/* ---------- Fahrplan ---------- */
+.route{max-width:1060px;margin:34px auto 10px;padding:0 24px;display:grid;grid-template-columns:repeat(6,1fr);gap:12px}
+.route a{display:flex;flex-direction:column;gap:8px;text-decoration:none;color:var(--ink);background:var(--card);border:1.5px solid var(--line);border-radius:var(--r-md);padding:16px 14px;transition:transform .15s ease,box-shadow .15s ease}
+.route a:hover,.route a:focus-visible{transform:translateY(-3px);box-shadow:0 8px 22px rgba(60,60,90,.10);outline:none}
+.route .dot{width:34px;height:34px;border-radius:12px;display:grid;place-items:center;font-family:'Sora';font-weight:700;font-size:.9rem}
+.route .t{font-weight:600;font-size:.86rem;line-height:1.3}
+.route .s{font-size:.74rem;color:var(--ink-soft)}
+.route a:nth-child(1) .dot{background:var(--aqua);color:var(--aqua-deep)}
+.route a:nth-child(2) .dot{background:var(--mint);color:var(--mint-deep)}
+.route a:nth-child(3) .dot{background:var(--sky);color:var(--sky-deep)}
+.route a:nth-child(4) .dot{background:var(--lav);color:var(--lav-deep)}
+.route a:nth-child(5) .dot{background:var(--peach);color:var(--peach-deep)}
+.route a:nth-child(6) .dot{background:var(--butter);color:var(--butter-deep)}
+
+/* ---------- Sticky-Nav ---------- */
+nav{position:sticky;top:0;z-index:50;background:rgba(251,250,247,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);margin-top:26px}
+nav .wrap{max-width:1060px;margin:0 auto;padding:10px 24px;display:flex;gap:8px;overflow-x:auto}
+nav a{white-space:nowrap;text-decoration:none;font-size:.82rem;font-weight:600;color:var(--ink-soft);padding:7px 14px;border-radius:999px;border:1px solid transparent}
+nav a:hover{background:var(--card);border-color:var(--line);color:var(--ink)}
+
+/* ---------- Sektionen ---------- */
+main{max-width:1060px;margin:0 auto;padding:20px 24px 90px}
+section{margin-top:64px}
+.sec-head{display:flex;align-items:center;gap:16px;margin-bottom:8px}
+.badge{width:52px;height:52px;border-radius:16px;display:grid;place-items:center;font-family:'Sora';font-weight:800;font-size:1.25rem;flex-shrink:0}
+section h2{font-size:clamp(1.4rem,3vw,1.9rem);font-weight:700}
+.sec-sub{color:var(--ink-soft);margin-bottom:22px;max-width:720px}
+.aqua .badge{background:var(--aqua);color:var(--aqua-deep)}
+.mint .badge{background:var(--mint);color:var(--mint-deep)}
+.sky .badge{background:var(--sky);color:var(--sky-deep)}
+.lav .badge{background:var(--lav);color:var(--lav-deep)}
+.peach .badge{background:var(--peach);color:var(--peach-deep)}
+.butter .badge{background:var(--butter);color:var(--butter-deep)}
+.rose .badge{background:var(--rose);color:var(--rose-deep)}
+
+/* ---------- Karten & Schritte ---------- */
+.card{background:var(--card);border:1.5px solid var(--line);border-radius:var(--r-lg);padding:26px 28px;margin-bottom:20px}
+.card h3{font-size:1.08rem;margin-bottom:14px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+ol.steps{list-style:none;counter-reset:s;display:flex;flex-direction:column;gap:14px}
+ol.steps li{counter-increment:s;display:grid;grid-template-columns:34px 1fr;gap:14px;align-items:start}
+ol.steps li::before{content:counter(s);width:30px;height:30px;border-radius:10px;display:grid;place-items:center;font-family:'Sora';font-weight:700;font-size:.85rem;margin-top:2px}
+.aqua ol.steps li::before{background:var(--aqua);color:var(--aqua-deep)}
+.mint ol.steps li::before{background:var(--mint);color:var(--mint-deep)}
+.sky ol.steps li::before{background:var(--sky);color:var(--sky-deep)}
+.lav ol.steps li::before{background:var(--lav);color:var(--lav-deep)}
+.peach ol.steps li::before{background:var(--peach);color:var(--peach-deep)}
+.butter ol.steps li::before{background:var(--butter);color:var(--butter-deep)}
+.rose ol.steps li::before{background:var(--rose);color:var(--rose-deep)}
+.steps b{font-weight:600}
+.steps small{display:block;color:var(--ink-soft);font-size:.86rem;margin-top:2px}
+
+ul.clean{list-style:none;display:flex;flex-direction:column;gap:10px}
+ul.clean li{padding-left:24px;position:relative}
+ul.clean li::before{content:"";position:absolute;left:4px;top:.62em;width:9px;height:9px;border-radius:3px;background:var(--line)}
+.aqua ul.clean li::before{background:var(--aqua-deep)}
+.mint ul.clean li::before{background:var(--mint-deep)}
+.sky ul.clean li::before{background:var(--sky-deep)}
+.lav ul.clean li::before{background:var(--lav-deep)}
+.peach ul.clean li::before{background:var(--peach-deep)}
+.butter ul.clean li::before{background:var(--butter-deep)}
+.rose ul.clean li::before{background:var(--rose-deep)}
+
+/* ---------- Code ---------- */
+pre{background:var(--code-bg);color:var(--code-ink);border-radius:var(--r-sm);padding:16px 18px;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:.82rem;line-height:1.6;margin:10px 0}
+code{font-family:'JetBrains Mono',monospace;font-size:.85em;background:#efede7;border-radius:6px;padding:2px 6px}
+pre code{background:none;padding:0;font-size:1em}
+pre .c{color:#9aa3c0}
+
+/* ---------- Hinweisboxen ---------- */
+.note,.warn,.mnemo{border-radius:var(--r-md);padding:14px 18px;margin:14px 0;font-size:.92rem}
+.note{background:var(--sky)}
+.warn{background:var(--rose)}
+.mnemo{background:var(--butter)}
+.note b,.warn b,.mnemo b{font-weight:700}
+.mnemo::before{content:"🧠 Eselsbrücke · ";font-weight:700}
+.warn::before{content:"⚠️ ";font-weight:700}
+
+/* ---------- Tabellen ---------- */
+table{width:100%;border-collapse:separate;border-spacing:0;font-size:.88rem;margin:10px 0}
+th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-family:'Sora';font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft)}
+tr:last-child td{border-bottom:none}
+thead th:first-child{border-top-left-radius:var(--r-sm)}
+thead th:last-child{border-top-right-radius:var(--r-sm)}
+thead{background:var(--paper)}
+
+/* ---------- Details ---------- */
+details{border:1.5px solid var(--line);border-radius:var(--r-md);margin:12px 0;background:var(--card)}
+details summary{cursor:pointer;padding:14px 18px;font-weight:600;font-size:.94rem;list-style:none;display:flex;align-items:center;gap:10px}
+details summary::before{content:"+";font-family:'Sora';font-weight:700;width:24px;height:24px;border-radius:8px;background:var(--paper);display:grid;place-items:center;flex-shrink:0}
+details[open] summary::before{content:"–"}
+details .inner{padding:0 18px 18px}
+summary::-webkit-details-marker{display:none}
+
+/* ---------- DNS-Chips ---------- */
+.chips{display:flex;flex-wrap:wrap;gap:10px;margin:10px 0}
+.chip{background:var(--paper);border:1.5px solid var(--line);border-radius:999px;padding:6px 14px;font-family:'JetBrains Mono';font-size:.8rem}
+
+footer{max-width:1060px;margin:0 auto;padding:30px 24px 60px;color:var(--ink-soft);font-size:.82rem;border-top:1px solid var(--line)}
+
+@media(max-width:820px){
+  .route{grid-template-columns:repeat(2,1fr)}
+  .grid2{grid-template-columns:1fr}
+}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.route a{transition:none}}
+</style>
+</head>
+<body>
+
+<header>
+  <span class="kicker">OpenShift 4.x · RHCOS · Disaster Recovery</span>
+  <h1>Cluster nach langer Pause:<br>Recovery über einen <span>Master-Node</span></h1>
+  <p class="lede">Sechs Abschnitte aus einem echten Fall: Ein Cluster war über zwei Wochen offline und kam nach dem Einschalten nicht sauber hoch. <b>Ein erreichbarer Master-Node genügte</b>, um Zugriff wiederherzustellen, die aufgestauten CSRs zu approven und die Nodes zurückzuholen.</p>
+</header>
+
+<div class="route">
+  <a href="#basics"><span class="dot">0</span><span class="t">Ausgangslage</span><span class="s">Symptome, Plan, Prinzip</span></a>
+  <a href="#boot"><span class="dot">1</span><span class="t">Emergency Boot</span><span class="s">GRUB, console, single</span></a>
+  <a href="#ssh"><span class="dot">2</span><span class="t">SSH-Zugang</span><span class="s">Key identifizieren, verbinden</span></a>
+  <a href="#kubeconfig"><span class="dot">3</span><span class="t">Lokale kubeconfig</span><span class="s">localhost.kubeconfig</span></a>
+  <a href="#csr"><span class="dot">4</span><span class="t">CSRs approven</span><span class="s">Pending prüfen, freigeben</span></a>
+  <a href="#cleanup"><span class="dot">5</span><span class="t">Aufräumen</span><span class="s">PVCs, Merkposten</span></a>
+</div>
+
+<nav><div class="wrap">
+  <a href="#basics">0 · Ausgangslage</a>
+  <a href="#boot">1 · Emergency Boot</a>
+  <a href="#ssh">2 · SSH-Zugang</a>
+  <a href="#kubeconfig">3 · kubeconfig</a>
+  <a href="#csr">4 · CSRs</a>
+  <a href="#cleanup">5 · Aufräumen</a>
+</div></nav>
+
+<main>
+
+<!-- ================= 0 AUSGANGSLAGE ================= -->
+<section id="basics" class="aqua">
+  <div class="sec-head"><div class="badge">0</div><h2>Ausgangslage: zwei Wochen offline, Nodes NotReady</h2></div>
+  <p class="sec-sub">Nach dem Power-on wirkt vieles normal – die Maschinen booten, Prozesse laufen. Trotzdem wird der Cluster nicht gesund: Während der Offline-Zeit sind Node-Zertifikate abgelaufen, die Erneuerungsanträge (CSRs) stapeln sich unbestätigt, und ohne gültige Zertifikate kommen die Nodes nicht auf <code>Ready</code>.</p>
+
+  <div class="card">
+    <h3>Symptome und Recovery-Plan</h3>
+    <table>
+      <thead><tr><th>Symptom</th><th>Dahinter steckt</th></tr></thead>
+      <tbody>
+        <tr><td><b>Cluster über zwei Wochen offline</b></td><td>Zertifikats-Rotation konnte nicht laufen</td></tr>
+        <tr><td><b>Mehrere CSRs in <code>Pending</code></b></td><td>Erneuerungsanträge warten auf Freigabe</td></tr>
+        <tr><td><b>Nodes werden nicht Ready</b></td><td>erst nach dem Approve der CSRs kamen sie zurück</td></tr>
+        <tr><td><b>Kein normaler API-/Admin-Zugriff</b></td><td>Zugang musste über einen Master-Node hergestellt werden</td></tr>
+      </tbody>
+    </table>
+    <p>Der Weg zurück in sechs Schritten:</p>
+    <ol class="steps">
+      <li><div><b>Einen Master im RHCOS Emergency Mode booten</b><small>GRUB-Eintrag editieren, <code>single</code> anhängen. → Abschnitt 1</small></div></li>
+      <li><div><b>Hinterlegten SSH-Key identifizieren und verbinden</b><small>Über die Konsole des Masters. → Abschnitt 2</small></div></li>
+      <li><div><b>Lokale kubeconfig nutzen</b><small><code>localhost.kubeconfig</code> aus den Static-Pod-Resources. → Abschnitt 3</small></div></li>
+      <li><div><b>Pending CSRs prüfen</b><small><code>oc get csr</code> mit der lokalen kubeconfig. → Abschnitt 4</small></div></li>
+      <li><div><b>Alle pending CSRs approven</b><small>Danach kommen die Nodes zurück. → Abschnitt 4</small></div></li>
+      <li><div><b>Bei Bedarf PVCs aufräumen</b><small>Vom selben Master aus. → Abschnitt 5</small></div></li>
+    </ol>
+    <div class="warn"><b>Alles bootet, nichts wird gesund:</b> Das Tückische an diesem Fehlerbild ist die Stille – kein Crash, keine rote Konsole. Die Nodes hängen einfach in <code>NotReady</code>, weil niemand die wartenden CSRs stempelt. Nach langen Offline-Phasen deshalb <b>früh</b> auf pending CSRs prüfen, bevor man anderswo sucht.</div>
+    <div class="mnemo"><b>CSRs sind Passverlängerungsanträge nach dem langen Urlaub:</b> Während der Cluster schlief, sind die Ausweise der Nodes abgelaufen. Die Anträge liegen fertig auf dem Amt – es fehlt nur der Stempel. Ohne Stempel kommt kein Node durch die Kontrolle.</div>
+  </div>
+</section>
+
+<!-- ================= 1 EMERGENCY BOOT ================= -->
+<section id="boot" class="mint">
+  <div class="sec-head"><div class="badge">1</div><h2>Einen Master im RHCOS Emergency Mode booten</h2></div>
+  <p class="sec-sub">Wenn kein normaler Zugriff mehr existiert, führt der Weg über die Konsole eines Master-Nodes. Ab RHCOS 4.7 lässt sich der Boot-Eintrag in GRUB direkt anpassen.</p>
+
+  <div class="card">
+    <h3>GRUB-Eintrag editieren</h3>
+    <ol class="steps">
+      <li><div><b>Node rebooten, GRUB-Menü unterbrechen</b><small>Beim Start das Bootmenü abfangen.</small></div></li>
+      <li><div><b><code>e</code> drücken</b><small>Öffnet den Boot-Eintrag zum Editieren.</small></div></li>
+      <li><div><b>console-Parameter aufräumen</b><small>In der Kernel-Kommandozeile nur den tatsächlich genutzten <code>console=</code>-Parameter behalten, den ungenutzten entfernen – im Beispiel: <code>console=ttyS0,115200n8</code> raus.</small></div></li>
+      <li><div><b><code>single</code> anhängen</b><small>Als zusätzlichen Boot-Parameter.</small></div></li>
+      <li><div><b><code>Ctrl+X</code></b><small>Boot mit den geänderten Parametern fortsetzen.</small></div></li>
+    </ol>
+    <div class="warn"><b>Der falsche console-Parameter macht die Konsole stumm:</b> Zeigt <code>console=</code> auf eine serielle Schnittstelle, die gar nicht angeschlossen ist, wandert die Boot-Ausgabe ins Leere – am Bildschirm sieht der Boot wie eingefroren aus, obwohl er läuft. Deshalb vor dem Weiterbooten den ungenutzten Eintrag entfernen.</div>
+    <div class="mnemo"><b><code>single</code> ist der Werkstatt-Modus:</b> Der Wagen fährt nicht auf die Straße, sondern auf die Hebebühne – genug System, um dranzuarbeiten, ohne dass alles andere mitläuft.</div>
+  </div>
+</section>
+
+<!-- ================= 2 SSH ================= -->
+<section id="ssh" class="sky">
+  <div class="sec-head"><div class="badge">2</div><h2>SSH-Key identifizieren und verbinden</h2></div>
+  <p class="sec-sub">Mit Konsolenzugriff auf den Master lässt sich nachsehen, welcher SSH-Public-Key auf dem Node hinterlegt ist – und damit der passende private Key für die Verbindung wählen.</p>
+
+  <div class="card">
+    <h3>Als core-User auf den Master</h3>
+    <p>Sobald klar ist, welcher Key hinterlegt ist, geht es per SSH auf den Node; alle folgenden Schritte laufen in dieser Session.</p>
+<pre><code>ssh core@&lt;master-ip&gt; -i &lt;ssh-key&gt;</code></pre>
+  </div>
+</section>
+
+<!-- ================= 3 KUBECONFIG ================= -->
+<section id="kubeconfig" class="lav">
+  <div class="sec-head"><div class="badge">3</div><h2>Die lokale kubeconfig des Masters nutzen</h2></div>
+  <p class="sec-sub">Jeder Master trägt in den Static-Pod-Resources des kube-apiservers eine lokale kubeconfig – sie öffnet den Cluster-Zugriff direkt vom Node aus, ganz ohne die normalen Zugangswege.</p>
+
+  <div class="card">
+    <h3>localhost.kubeconfig aus den Static-Pod-Resources</h3>
+<pre><code>cd /etc/kubernetes/static-pod-resources/kube-apiserver-certs/secrets/node-kubeconfigs/
+oc --kubeconfig=localhost.kubeconfig get po -A</code></pre>
+    <p>Liefert der Befehl Pod-Listen, steht der Zugriff – ab hier funktionieren alle <code>oc</code>-Kommandos mit <code>--kubeconfig=localhost.kubeconfig</code>.</p>
+    <div class="mnemo"><b>Der Hausschlüssel unter der Fußmatte:</b> Wenn alle regulären Türen (API-URL, oauth, Admin-kubeconfig) klemmen, liegt auf jedem Master noch ein lokaler Schlüssel bereit. Man muss nur erst physisch vor der Tür stehen – genau dafür waren Abschnitt 1 und 2 da.</div>
+  </div>
+</section>
+
+<!-- ================= 4 CSR ================= -->
+<section id="csr" class="peach">
+  <div class="sec-head"><div class="badge">4</div><h2>Pending CSRs prüfen und approven</h2></div>
+  <p class="sec-sub">Der Kern des Recovery: Erst die Lage sichten, dann alle wartenden Anträge in einem Zug freigeben. Im beschriebenen Fall kamen die Nodes direkt danach zurück.</p>
+
+  <div class="card">
+    <h3>Sichten, dann stempeln</h3>
+<pre><code><span class="c"># Lage pruefen - viele CSRs standen auf Pending</span>
+oc --kubeconfig=localhost.kubeconfig get csr
+
+<span class="c"># alle pending CSRs in einem Zug approven</span>
+oc --kubeconfig=localhost.kubeconfig get csr -o name \
+  | xargs oc --kubeconfig=localhost.kubeconfig adm certificate approve</code></pre>
+    <p>Nach dem Approve begannen die Nodes, wieder online zu kommen. Dabei können neue CSRs nachrücken – <code>get csr</code> also wiederholen, bis nichts mehr auf <code>Pending</code> steht.</p>
+    <div class="note"><b>Hinweis:</b> Der xargs-Einzeiler gibt <b>alle</b> vorhandenen CSRs frei. Im Recovery-Fall nach langer Offline-Zeit ist genau das gewollt – im Normalbetrieb gehört vor jedes Approve ein Blick, wer da eigentlich anfragt.</div>
+  </div>
+</section>
+
+<!-- ================= 5 AUFRÄUMEN ================= -->
+<section id="cleanup" class="butter">
+  <div class="sec-head"><div class="badge">5</div><h2>Aufräumen und Merkposten</h2></div>
+  <p class="sec-sub">Vom selben Master lassen sich mit der lokalen kubeconfig auch Aufräumarbeiten erledigen – im beschriebenen Fall das Löschen betroffener PVCs.</p>
+
+  <div class="card">
+    <h3>PVCs löschen (falls nötig)</h3>
+<pre><code>oc --kubeconfig=localhost.kubeconfig delete pvc &lt;pvc-name&gt; -n &lt;namespace&gt;</code></pre>
+    <p>Bei Bedarf für alle betroffenen Namespaces und PVCs wiederholen.</p>
+  </div>
+
+  <div class="card">
+    <h3>Was aus dem Fall bleibt</h3>
+    <ul class="clean">
+      <li><b>Ein Master reicht.</b> Ohne API- und Admin-Zugriff genügt ein erreichbarer Master-Node, um den Cluster-Zugriff wiederherzustellen</li>
+      <li><b>CSRs zuerst.</b> Nach langen Offline-Phasen früh auf pending CSRs prüfen – sie sind der häufige Grund, warum Nodes nicht Ready werden</li>
+      <li><b>localhost.kubeconfig kennen.</b> Der Pfad unter <code>/etc/kubernetes/static-pod-resources/.../node-kubeconfigs/</code> ist der Rettungsanker, wenn die normalen Zugangswege tot sind</li>
+    </ul>
+  </div>
+</section>
+
+</main>
+
+<footer>Zusammengefasst aus dem eigenen Recovery-Protokoll „OpenShift Cluster Recovery After Extended Offline Period" (Cluster &gt; 2 Wochen offline, RHCOS 4.7+). Kein Ersatz für die offizielle Doku – Vorgehen vor Produktionseinsatz gegen docs.redhat.com prüfen.</footer>
+
+</body>
+</html>
