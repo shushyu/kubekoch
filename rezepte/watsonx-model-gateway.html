@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IBM watsonx 2.4.x – Model Gateway einrichten</title>
+<meta name="rezept-kategorie"    content="cluster-ops">
+<meta name="rezept-beschreibung" content="Das Model Gateway in watsonx 2.4.x als OpenAI-kompatibler Proxy vor mehreren LLM-Providern – Secrets, Provider, Aliase, API-Weg und die Stolperfallen beim On-Prem-Setup.">
+<meta name="rezept-stand"        content="IBM watsonx 2.4.x · 08/2026">
+<meta name="rezept-suche"        content="model gateway watsonx provider secret secrets-manager alias load-balancing zenapikey bearer-token openai-kompatibel ml-gateway inferencing software-hub vault">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#33394a;
+  --ink-soft:#5c6376;
+  --paper:#fbfaf7;
+  --card:#ffffff;
+  --line:#e9e6df;
+  --code-bg:#31364a;
+  --code-ink:#e8eaf2;
+  --mint:#d9f2e4;      --mint-deep:#2f8f6b;
+  --sky:#dcebf9;       --sky-deep:#2d6fa8;
+  --lav:#e7e2f7;       --lav-deep:#6b5bb5;
+  --peach:#fbe6d7;     --peach-deep:#c2703d;
+  --butter:#faf0cf;    --butter-deep:#a5842a;
+  --rose:#f9e0e6;      --rose-deep:#b34f6d;
+  --aqua:#d7eff0;      --aqua-deep:#2b8288;
+  --r-lg:26px; --r-md:18px; --r-sm:12px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;scroll-padding-top:90px}
+body{font-family:'Inter',sans-serif;background:var(--paper);color:var(--ink);line-height:1.65;font-size:16px}
+h1,h2,h3,h4{font-family:'Sora',sans-serif;line-height:1.2}
+
+/* ---------- Kopf ---------- */
+header{max-width:1060px;margin:0 auto;padding:56px 24px 8px}
+.kicker{display:inline-block;background:var(--lav);color:var(--lav-deep);font-weight:600;font-size:.8rem;letter-spacing:.08em;text-transform:uppercase;padding:6px 14px;border-radius:999px;margin-bottom:18px}
+header h1{font-size:clamp(1.9rem,4.5vw,3rem);font-weight:800;letter-spacing:-.02em}
+header h1 span{color:var(--mint-deep)}
+.lede{color:var(--ink-soft);max-width:640px;margin-top:14px;font-size:1.05rem}
+
+/* ---------- Fahrplan ---------- */
+.route{max-width:1060px;margin:34px auto 10px;padding:0 24px;display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.route a{display:flex;flex-direction:column;gap:8px;text-decoration:none;color:var(--ink);background:var(--card);border:1.5px solid var(--line);border-radius:var(--r-md);padding:16px 14px;transition:transform .15s ease,box-shadow .15s ease}
+.route a:hover,.route a:focus-visible{transform:translateY(-3px);box-shadow:0 8px 22px rgba(60,60,90,.10);outline:none}
+.route .dot{width:34px;height:34px;border-radius:12px;display:grid;place-items:center;font-family:'Sora';font-weight:700;font-size:.9rem}
+.route .t{font-weight:600;font-size:.86rem;line-height:1.3}
+.route .s{font-size:.74rem;color:var(--ink-soft)}
+.route a:nth-child(1) .dot{background:var(--aqua);color:var(--aqua-deep)}
+.route a:nth-child(2) .dot{background:var(--mint);color:var(--mint-deep)}
+.route a:nth-child(3) .dot{background:var(--sky);color:var(--sky-deep)}
+.route a:nth-child(4) .dot{background:var(--lav);color:var(--lav-deep)}
+.route a:nth-child(5) .dot{background:var(--peach);color:var(--peach-deep)}
+.route a:nth-child(6) .dot{background:var(--butter);color:var(--butter-deep)}
+.route a:nth-child(7) .dot{background:var(--rose);color:var(--rose-deep)}
+.route a:nth-child(8) .dot{background:var(--mint);color:var(--mint-deep)}
+
+/* ---------- Sticky-Nav ---------- */
+nav{position:sticky;top:0;z-index:50;background:rgba(251,250,247,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);margin-top:26px}
+nav .wrap{max-width:1060px;margin:0 auto;padding:10px 24px;display:flex;gap:8px;overflow-x:auto}
+nav a{white-space:nowrap;text-decoration:none;font-size:.82rem;font-weight:600;color:var(--ink-soft);padding:7px 14px;border-radius:999px;border:1px solid transparent}
+nav a:hover{background:var(--card);border-color:var(--line);color:var(--ink)}
+
+/* ---------- Sektionen ---------- */
+main{max-width:1060px;margin:0 auto;padding:20px 24px 90px}
+section{margin-top:64px}
+.sec-head{display:flex;align-items:center;gap:16px;margin-bottom:8px}
+.badge{width:52px;height:52px;border-radius:16px;display:grid;place-items:center;font-family:'Sora';font-weight:800;font-size:1.25rem;flex-shrink:0}
+section h2{font-size:clamp(1.4rem,3vw,1.9rem);font-weight:700}
+.sec-sub{color:var(--ink-soft);margin-bottom:22px;max-width:720px}
+.aqua .badge{background:var(--aqua);color:var(--aqua-deep)}
+.mint .badge{background:var(--mint);color:var(--mint-deep)}
+.sky .badge{background:var(--sky);color:var(--sky-deep)}
+.lav .badge{background:var(--lav);color:var(--lav-deep)}
+.peach .badge{background:var(--peach);color:var(--peach-deep)}
+.butter .badge{background:var(--butter);color:var(--butter-deep)}
+.rose .badge{background:var(--rose);color:var(--rose-deep)}
+
+/* ---------- Karten & Schritte ---------- */
+.card{background:var(--card);border:1.5px solid var(--line);border-radius:var(--r-lg);padding:26px 28px;margin-bottom:20px}
+.card h3{font-size:1.08rem;margin-bottom:14px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+ol.steps{list-style:none;counter-reset:s;display:flex;flex-direction:column;gap:14px}
+ol.steps li{counter-increment:s;display:grid;grid-template-columns:34px 1fr;gap:14px;align-items:start}
+ol.steps li::before{content:counter(s);width:30px;height:30px;border-radius:10px;display:grid;place-items:center;font-family:'Sora';font-weight:700;font-size:.85rem;margin-top:2px}
+.aqua ol.steps li::before{background:var(--aqua);color:var(--aqua-deep)}
+.mint ol.steps li::before{background:var(--mint);color:var(--mint-deep)}
+.sky ol.steps li::before{background:var(--sky);color:var(--sky-deep)}
+.lav ol.steps li::before{background:var(--lav);color:var(--lav-deep)}
+.peach ol.steps li::before{background:var(--peach);color:var(--peach-deep)}
+.butter ol.steps li::before{background:var(--butter);color:var(--butter-deep)}
+.rose ol.steps li::before{background:var(--rose);color:var(--rose-deep)}
+.steps b{font-weight:600}
+.steps small{display:block;color:var(--ink-soft);font-size:.86rem;margin-top:2px}
+
+ul.clean{list-style:none;display:flex;flex-direction:column;gap:10px}
+ul.clean li{padding-left:24px;position:relative}
+ul.clean li::before{content:"";position:absolute;left:4px;top:.62em;width:9px;height:9px;border-radius:3px;background:var(--line)}
+.aqua ul.clean li::before{background:var(--aqua-deep)}
+.mint ul.clean li::before{background:var(--mint-deep)}
+.sky ul.clean li::before{background:var(--sky-deep)}
+.lav ul.clean li::before{background:var(--lav-deep)}
+.peach ul.clean li::before{background:var(--peach-deep)}
+.butter ul.clean li::before{background:var(--butter-deep)}
+.rose ul.clean li::before{background:var(--rose-deep)}
+
+/* ---------- Code ---------- */
+pre{background:var(--code-bg);color:var(--code-ink);border-radius:var(--r-sm);padding:16px 18px;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:.82rem;line-height:1.6;margin:10px 0}
+code{font-family:'JetBrains Mono',monospace;font-size:.85em;background:#efede7;border-radius:6px;padding:2px 6px}
+pre code{background:none;padding:0;font-size:1em}
+pre .c{color:#9aa3c0}
+
+/* ---------- Hinweisboxen ---------- */
+.note,.warn,.mnemo{border-radius:var(--r-md);padding:14px 18px;margin:14px 0;font-size:.92rem}
+.note{background:var(--sky)}
+.warn{background:var(--rose)}
+.mnemo{background:var(--butter)}
+.note b,.warn b,.mnemo b{font-weight:700}
+.mnemo::before{content:"🧠 Eselsbrücke · ";font-weight:700}
+.warn::before{content:"⚠️ ";font-weight:700}
+
+/* ---------- Tabellen ---------- */
+table{width:100%;border-collapse:separate;border-spacing:0;font-size:.88rem;margin:10px 0}
+th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-family:'Sora';font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft)}
+tr:last-child td{border-bottom:none}
+thead th:first-child{border-top-left-radius:var(--r-sm)}
+thead th:last-child{border-top-right-radius:var(--r-sm)}
+thead{background:var(--paper)}
+
+/* ---------- Details ---------- */
+details{border:1.5px solid var(--line);border-radius:var(--r-md);margin:12px 0;background:var(--card)}
+details summary{cursor:pointer;padding:14px 18px;font-weight:600;font-size:.94rem;list-style:none;display:flex;align-items:center;gap:10px}
+details summary::before{content:"+";font-family:'Sora';font-weight:700;width:24px;height:24px;border-radius:8px;background:var(--paper);display:grid;place-items:center;flex-shrink:0}
+details[open] summary::before{content:"–"}
+details .inner{padding:0 18px 18px}
+summary::-webkit-details-marker{display:none}
+
+/* ---------- DNS-Chips ---------- */
+.chips{display:flex;flex-wrap:wrap;gap:10px;margin:10px 0}
+.chip{background:var(--paper);border:1.5px solid var(--line);border-radius:999px;padding:6px 14px;font-family:'JetBrains Mono';font-size:.8rem}
+
+footer{max-width:1060px;margin:0 auto;padding:30px 24px 60px;color:var(--ink-soft);font-size:.82rem;border-top:1px solid var(--line)}
+
+@media(max-width:820px){
+  .route{grid-template-columns:repeat(2,1fr)}
+  .grid2{grid-template-columns:1fr}
+}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.route a{transition:none}}
+</style>
+</head>
+<body>
+
+<header>
+  <span class="kicker">IBM watsonx 2.4.x · Model Gateway · Administration</span>
+  <h1>Ein Endpunkt für alle Modelle:<br>das <span>Model Gateway</span> einrichten</h1>
+  <p class="lede">Acht Abschnitte vom Konzept bis zum ersten Request: Das Model Gateway ist ein OpenAI-kompatibler Proxy vor mehreren Modellanbietern. Anwendungen sprechen nur noch <b>einen Endpunkt und einen Alias</b> an, der Austausch des dahinterliegenden Modells wird zur Konfigurationsfrage. Inklusive Secret-Schema, API-Weg und den Stellen, an denen die UI schweigt.</p>
+</header>
+
+<div class="route">
+  <a href="#basics"><span class="dot">0</span><span class="t">Überblick</span><span class="s">Zweck, Architektur, Grenzen</span></a>
+  <a href="#prep"><span class="dot">1</span><span class="t">Voraussetzungen</span><span class="s">Secrets Manager, Rollen, Keys</span></a>
+  <a href="#provider"><span class="dot">2</span><span class="t">Provider anlegen</span><span class="s">UI-Wizard, Secret-Optionen</span></a>
+  <a href="#secrets"><span class="dot">3</span><span class="t">Secret-Schema</span><span class="s">Key-value, Pflichtfelder</span></a>
+  <a href="#models"><span class="dot">4</span><span class="t">Modelle &amp; Aliase</span><span class="s">Import, Alias, Load Balancing</span></a>
+  <a href="#api"><span class="dot">5</span><span class="t">API-Weg</span><span class="s">Provider, UUID, Modelle</span></a>
+  <a href="#infer"><span class="dot">6</span><span class="t">Inferencing</span><span class="s">Endpunkte, Auth, SDK</span></a>
+  <a href="#ops"><span class="dot">7</span><span class="t">Betrieb</span><span class="s">Fehlerbilder, Komplettablauf</span></a>
+</div>
+
+<nav><div class="wrap">
+  <a href="#basics">0 · Überblick</a>
+  <a href="#prep">1 · Voraussetzungen</a>
+  <a href="#provider">2 · Provider</a>
+  <a href="#secrets">3 · Secret-Schema</a>
+  <a href="#models">4 · Modelle</a>
+  <a href="#api">5 · API-Weg</a>
+  <a href="#infer">6 · Inferencing</a>
+  <a href="#ops">7 · Betrieb</a>
+</div></nav>
+
+<main>
+
+<!-- ================= 0 ÜBERBLICK ================= -->
+<section id="basics" class="aqua">
+  <div class="sec-head"><div class="badge">0</div><h2>Überblick: Wozu ein Model Gateway?</h2></div>
+  <p class="sec-sub">Sobald mehr als ein Modell im Einsatz ist, verteilen sich Endpunkte, Authentifizierungsverfahren und API-Dialekte über den ganzen Anwendungsbestand. Jeder Modellwechsel wird dann zum Code-Change in mehreren Repositories.</p>
+
+  <div class="card">
+    <h3>Das Problem und die Antwort</h3>
+    <p>Jeder Modellanbieter bringt eigene Endpunkte, eigene Auth-Verfahren und eigene Request-Formate mit. Das Model Gateway legt eine <b>einheitliche, OpenAI-kompatible Fassade</b> davor und routet Anfragen an den passenden Anbieter weiter. Die Zugangsdaten liegen dabei nicht im Gateway, sondern in einem Secrets Manager; das Gateway hält nur eine Referenz darauf.</p>
+    <div class="mnemo"><b>Das Gateway ist die Telefonzentrale</b> – Anrufer wählen immer dieselbe Nummer und nennen einen Namen. Wer dahinter wirklich abhebt und in welchem Haus der sitzt, entscheidet die Zentrale.</div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>Was das Gateway leistet</h3>
+      <ul class="clean">
+        <li><b>Einheitliche API</b> – OpenAI-kompatibel für alle Anbieter</li>
+        <li><b>Aliase</b> – Anwendungen adressieren Namen statt Modell-IDs</li>
+        <li><b>Load Balancing</b> – Verteilung über Modelle mit gleichem Alias</li>
+        <li><b>Zentrale Credentials</b> – im Secrets Manager, nicht in der Anwendung</li>
+        <li><b>Access Policies und Rate Limits</b> – Zugriff und Verbrauch steuerbar</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Was es nicht leistet</h3>
+      <ul class="clean">
+        <li>keine Garantie, dass jeder Anbieter jeden Endpunkt unterstützt</li>
+        <li>keine Vereinheitlichung von Modellverhalten oder Prompt-Format</li>
+        <li>kein Ersatz für einen Secrets Manager – der wird vorausgesetzt</li>
+        <li>keine automatische Modell-Erkennung bei exotischen Anbietern</li>
+      </ul>
+      <p style="font-size:.88rem;color:var(--ink-soft);margin-top:10px">Ein Alias vereinheitlicht die Adresse, nicht die Antwort. Ein Wechsel des dahinterliegenden Modells verändert weiterhin Qualität, Token-Verbrauch und Latenz.</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Die vier Bausteine</h3>
+    <table>
+      <thead><tr><th>Baustein</th><th>Wo</th><th>Aufgabe</th></tr></thead>
+      <tbody>
+        <tr><td><b>Secrets Manager</b></td><td>Software Hub vault oder externer Vault</td><td>hält die Zugangsdaten der Anbieter als <code>Key-value</code>-Secret</td></tr>
+        <tr><td><b>Provider</b></td><td>Model Gateway</td><td>benannte Verbindung zu einem Anbieter, verweist per Referenz auf ein Secret</td></tr>
+        <tr><td><b>Modell</b></td><td>Model Gateway</td><td>freigeschaltete Modell-ID unterhalb eines Providers</td></tr>
+        <tr><td><b>Alias</b></td><td>Model Gateway</td><td>frei gewählter Name, unter dem Anwendungen das Modell ansprechen</td></tr>
+      </tbody>
+    </table>
+    <p style="font-size:.88rem;color:var(--ink-soft)">Ein Provider kann viele Modelle führen; ein Alias kann auf mehrere Modelle zeigen. Genau daraus entsteht später das Load Balancing.</p>
+  </div>
+
+  <div class="warn"><b>Zwei Produktvarianten, eine Dokumentation:</b> Die UI-Beschreibung gilt für die On-Prem-Installation (Software Hub), große Teile der programmatischen Dokumentation sind dagegen für die Cloud-Variante geschrieben – dort mit IBM Cloud Secrets Manager, CRN-Referenzen und IAM-Bearer-Token. Das JSON-Schema der Secrets ist in beiden Fällen identisch, die Auth-Verfahren und die Art der Secret-Referenz sind es nicht. Wer Cloud-Beispiele unbesehen On-Prem übernimmt, baut CRNs in eine Umgebung ein, die keine kennt.</div>
+</section>
+
+<!-- ================= 1 VORAUSSETZUNGEN ================= -->
+<section id="prep" class="mint">
+  <div class="sec-head"><div class="badge">1</div><h2>Voraussetzungen schaffen</h2></div>
+  <p class="sec-sub">Der Wizard bricht ab, wenn ein Baustein fehlt – und zwar erst mitten im Ablauf, nicht am Anfang. Diese drei Dinge gehören vorher erledigt.</p>
+
+  <div class="card">
+    <h3>Was vor dem ersten Klick stehen muss</h3>
+    <ol class="steps">
+      <li><div><b>Secrets-Manager-Instanz bereitstellen</b><small>Ohne provisionierte Instanz lässt sich in Schritt 4 des Wizards nichts auswählen. Entweder der Software Hub vault oder ein angebundener externer Vault.</small></div></li>
+      <li><div><b>Zugangsdaten je Anbieter beschaffen</b><small>API-Key für OpenAI, Anthropic, Mistral und Vergleichbares; Access Key und Secret Key für AWS Bedrock; nur eine Host-Adresse für Ollama.</small></div></li>
+      <li><div><b>Berechtigungen prüfen</b><small>Lesezugriff auf die Secrets-Manager-Instanz und eine Administratorrolle für die Plattform. Ohne Adminrolle ist der Menüpunkt entweder nicht sichtbar oder das Absenden schlägt fehl.</small></div></li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h3>Base URL bei Provider <code>IBM watsonx</code></h3>
+    <p>Wird watsonx selbst als Anbieter eingetragen, hängt die <code>Base URL</code> davon ab, wie die Installation aufgesetzt wurde. Der Wert lässt sich am Cluster ermitteln – der Eintrag in der Spalte <code>HOST/PORT</code> ist die gesuchte Basis-URL.</p>
+<pre><code><span class="c"># Route der watsonx-Instanz ermitteln</span>
+oc get route -n &lt;namespace&gt;
+
+<span class="c"># Spalte HOST/PORT liefert die Base URL, z.B.</span>
+<span class="c"># cpd-watsonx.apps.cluster.example.com</span></code></pre>
+    <div class="note"><b>Hinweis:</b> Läuft das Gateway im selben Cluster wie der angesprochene Dienst, ist die interne Service-Adresse der stabilere Weg – sie umgeht Ingress und externes Zertifikat.</div>
+  </div>
+
+  <div class="warn"><b>Die eigene CA ist der häufigste stille Blocker:</b> Zeigt die Base URL auf einen Endpunkt mit selbst signiertem oder unternehmenseigenem Zertifikat, scheitert die Verbindung im TLS-Handshake. In der Oberfläche erscheint nur eine allgemeine Fehlermeldung, die eigentliche Ursache steht als <code>x509: certificate signed by unknown authority</code> im Log des Gateway-Pods. Die CA muss vorher im Trust-Bundle liegen.</div>
+</section>
+
+<!-- ================= 2 PROVIDER ================= -->
+<section id="provider" class="sky">
+  <div class="sec-head"><div class="badge">2</div><h2>Provider in der Oberfläche anlegen</h2></div>
+  <p class="sec-sub">Der Einstieg liegt im Navigationsmenü unter <b>Administration</b> → <b>Model Gateway</b>. Der Wizard führt in drei Etappen: Provider auswählen, Modelle auswählen, Modelle konfigurieren.</p>
+
+  <div class="card">
+    <h3>Der Ablauf im Wizard</h3>
+    <ol class="steps">
+      <li><div><b>Reiter <code>Model provider</code> öffnen</b><small>Dort <b>Add model provider</b> anklicken.</small></div></li>
+      <li><div><b>Anbieter wählen</b><small>Bei einem der gelisteten Anbieter auf <b>Add provider</b> klicken – ein Konfigurationsfenster öffnet sich.</small></div></li>
+      <li><div><b>Verbindung benennen</b><small>Name vergeben, Beschreibung optional. Der Name taucht später in jeder Modellliste auf.</small></div></li>
+      <li><div><b>Secrets-Manager-Instanz auswählen</b><small>Ist keine provisioniert, endet der Ablauf hier.</small></div></li>
+      <li><div><b>Secret festlegen</b><small>Bestehendes Secret wählen, neu anlegen oder für einen externen Vault vorbereiten – siehe Tabelle unten.</small></div></li>
+      <li><div><b>Mit <code>Add</code> bestätigen</b><small>Die Verbindung erscheint im Bereich <b>Added providers</b>.</small></div></li>
+      <li><div><b>Für weitere Anbieter wiederholen</b><small>Danach <b>Next</b> – die Modellliste enthält anschließend die Modelle aller verbundenen Anbieter.</small></div></li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h3>Die drei Wege zum Secret</h3>
+    <table>
+      <thead><tr><th>Situation</th><th>Auswahl</th><th>Folge</th></tr></thead>
+      <tbody>
+        <tr><td><b>Secret existiert bereits</b></td><td>vorhandenes Secret auswählen</td><td>schnellster Weg – aber nur zuverlässig, wenn das Secret dem erwarteten Schema entspricht</td></tr>
+        <tr><td><b>Kein Secret, Software Hub vault</b></td><td><b>Create new secret</b></td><td>die Oberfläche erzeugt Struktur und Inhalt korrekt</td></tr>
+        <tr><td><b>Kein Secret, externer Vault</b></td><td><b>Copy a key to create in your external vault</b></td><td>Felder ausfüllen, <b>Show JSON</b> erzeugt das fertige Objekt zum Anlegen im Vault</td></tr>
+      </tbody>
+    </table>
+    <p>Beim dritten Weg wird das JSON-Objekt im externen Vault angelegt und danach in der Oberfläche das <b>Refresh</b>-Symbol geklickt – erst dann taucht das Secret in der Auswahlliste auf.</p>
+    <div class="mnemo"><b>Der Provider-Eintrag ist ein Schild mit Fachnummer, kein Schlüssel</b> – im Gateway steht nur, in welchem Fach des Schlüsselkastens der Schlüssel liegt. Der Schlüssel selbst verlässt den Kasten nie.</div>
+  </div>
+
+  <div class="warn"><b>Secret-Namen sind global eindeutig:</b> Auch über verschiedene Anbieter hinweg lässt sich ein Name kein zweites Mal vergeben. Ein Schema wie <code>apikey</code> für jeden Provider funktioniert genau einmal – danach kollidiert jeder weitere Anlageversuch. Sinnvoll ist ein Präfix je Anbieter, etwa <code>gw-openai-prod</code>.</div>
+
+  <div class="warn"><b>Fremd angelegte Secrets erscheinen, funktionieren aber nicht:</b> Secrets, die nicht über die Gateway-Oberfläche entstanden sind, tauchen in der Auswahlliste trotzdem auf. Stimmt der Typ nicht (<code>Key-value</code> ist Pflicht) oder weicht die JSON-Struktur ab, scheitert erst der Verbindungsaufbau – die Auswahl selbst meldet nichts.</div>
+</section>
+
+<!-- ================= 3 SECRET-SCHEMA ================= -->
+<section id="secrets" class="lav">
+  <div class="sec-head"><div class="badge">3</div><h2>Secret-Schema je Anbieter</h2></div>
+  <p class="sec-sub">Das Secret ist immer vom Typ <code>Key-value</code> und enthält ein flaches JSON-Objekt. Welche Schlüssel Pflicht sind, hängt vom Anbieter ab – und genau hier entstehen die meisten Fehlkonfigurationen.</p>
+
+  <div class="card">
+    <h3>Pflicht- und Zusatzfelder</h3>
+    <table>
+      <thead><tr><th>Anbieter</th><th>Pflicht</th><th>Optional</th></tr></thead>
+      <tbody>
+        <tr><td><b>OpenAI</b></td><td><code>apikey</code></td><td><code>base_url</code></td></tr>
+        <tr><td><b>Anthropic</b></td><td><code>apikey</code></td><td>–</td></tr>
+        <tr><td><b>Azure OpenAI</b></td><td><code>apikey</code>, <code>resource_name</code>, <code>api_version</code></td><td><code>subscription_id</code>, <code>resource_group_name</code>, <code>account_name</code></td></tr>
+        <tr><td><b>AWS Bedrock</b></td><td><code>access_key_id</code>, <code>secret_access_key</code>, <code>region</code></td><td><code>session_token</code>, <code>base_url</code></td></tr>
+        <tr><td><b>IBM watsonx.ai</b></td><td><code>base_url</code></td><td><code>apikey</code>, <code>project_id</code>, <code>space_id</code>, <code>auth_url</code>, <code>api_version</code></td></tr>
+        <tr><td><b>Ollama</b></td><td><code>host</code></td><td><code>keep_alive</code>, <code>clean_on_close</code></td></tr>
+        <tr><td><b>Google Gemini, Groq, Mistral, Cohere, Cerebras, NVIDIA NIM, xAI</b></td><td><code>apikey</code></td><td>–</td></tr>
+      </tbody>
+    </table>
+    <p style="font-size:.88rem;color:var(--ink-soft)">Bei Azure OpenAI ist <code>api_version</code> mit <code>2024-10-21</code> vorbelegt; die drei optionalen Felder werden erst gebraucht, damit die Modellliste befüllt werden kann. Bei Ollama liegt <code>keep_alive</code> standardmäßig bei fünf Minuten.</p>
+  </div>
+
+  <div class="card">
+    <h3>Beispiel: watsonx als Anbieter</h3>
+    <p>Minimal genügt die Basis-URL. Alles Weitere ist optional, weil <code>project_id</code> und <code>space_id</code> auch pro Request über Header mitgegeben werden können.</p>
+<pre><code><span class="c">// minimal</span>
+{
+  "base_url": "&lt;watsonx-endpunkt&gt;"
+}
+
+<span class="c">// vollständig</span>
+{
+  "base_url": "&lt;watsonx-endpunkt&gt;",
+  "apikey": "&lt;api-key&gt;",
+  "project_id": "&lt;project-id&gt;",
+  "auth_url": "https://iam.cloud.ibm.com/identity/token",
+  "api_version": "2023-07-07"
+}</code></pre>
+    <div class="note"><b>Hinweis:</b> Statt fest hinterlegter Werte lassen sich <code>project_id</code> und <code>space_id</code> per Request-Header <code>X-IBM-Project-Id</code> beziehungsweise <code>X-IBM-Space-Id</code> übergeben. Das erlaubt einen Provider-Eintrag für mehrere Projekte.</div>
+  </div>
+
+  <div class="warn"><b>Das Feld <code>auth_url</code> ist ein Cloud-Artefakt:</b> Der Wert <code>https://iam.cloud.ibm.com/identity/token</code> stammt aus der Cloud-Variante. In einer abgeschotteten On-Prem-Installation ist diese Adresse nicht erreichbar – ein Eintrag dort führt zu Timeouts beim Verbindungsaufbau, nicht zu einer klaren Fehlermeldung. Im On-Prem-Fall bleibt das Feld leer oder zeigt auf den lokalen Authentifizierungsendpunkt.</div>
+
+  <div class="mnemo"><b>Ollama ist der Nachbar ohne Türschloss</b> – kein Schlüssel im Secret, nur eine Adresse. Erreichbarkeit ist dort die einzige Zugangskontrolle, also gehört sie auf Netzwerkebene geregelt.</div>
+</section>
+
+<!-- ================= 4 MODELLE & ALIASE ================= -->
+<section id="models" class="peach">
+  <div class="sec-head"><div class="badge">4</div><h2>Modelle auswählen und Aliase vergeben</h2></div>
+  <p class="sec-sub">Nach dem Anlegen der Provider zeigt der Wizard alle Modelle aller verbundenen Anbieter in einer gemeinsamen Liste. Auswählen, optional Aliase vergeben, absenden – hinter der harmlosen Alias-Spalte steckt allerdings mehr als ein Anzeigename.</p>
+
+  <div class="card">
+    <h3>Von der Liste zum fertigen Eintrag</h3>
+    <ol class="steps">
+      <li><div><b>Modelle auswählen</b><small>Ein oder mehrere Modelle markieren, dann <b>Next</b>.</small></div></li>
+      <li><div><b>Fehlende Modelle nachtragen</b><small>Über <b>Import model</b>: Anbieter wählen, Modell-ID eintragen (etwa <code>gpt-3.5-turbo-xxxx</code>), <b>Add</b>. Das Modell steht danach zur Auswahl.</small></div></li>
+      <li><div><b>Aliase vergeben</b><small>Optional, aber in der Praxis der eigentliche Zweck der Übung.</small></div></li>
+      <li><div><b>Absenden</b><small>Mit <b>Submit</b>. Verbindungen und Modelle erscheinen anschließend im Reiter <b>Model provider</b>, dort auch such- und sortierbar.</small></div></li>
+    </ol>
+    <p style="margin-top:12px">Die Modell-ID beim Import muss ein beim Anbieter tatsächlich existierender Bezeichner sein. Das Gateway prüft ihn beim Anlegen nicht – ein Tippfehler fällt erst beim ersten Request auf.</p>
+  </div>
+
+  <div class="card">
+    <h3>Der Alias und seine Nebenwirkung</h3>
+    <p>Ein Alias ist ein frei gewählter Name, unter dem Anwendungen ein Modell adressieren. Der eigentliche Nutzen: Anwendungen sprechen <code>chat-standard</code> an, und welches Modell dahinter liegt, wird zur Konfigurationsfrage statt zum Code-Change.</p>
+    <p>Derselbe Alias darf mehreren Modellen zugewiesen werden – <b>und genau dadurch wird Load Balancing nach dem Verfahren der geringsten Verbindungszahl aktiviert</b>. Innerhalb eines Anbieters ist ein Alias dagegen exklusiv: Zwei Modelle desselben Providers können ihn sich nicht teilen.</p>
+    <table>
+      <thead><tr><th>Konstellation</th><th>Erlaubt</th><th>Wirkung</th></tr></thead>
+      <tbody>
+        <tr><td><b>Ein Alias, ein Modell</b></td><td>ja</td><td>reine Umbenennung, entkoppelt Anwendung und Modell-ID</td></tr>
+        <tr><td><b>Ein Alias, mehrere Modelle verschiedener Anbieter</b></td><td>ja</td><td>Lastverteilung über die Modelle hinweg</td></tr>
+        <tr><td><b>Ein Alias, mehrere Modelle desselben Anbieters</b></td><td>nein</td><td>wird abgewiesen</td></tr>
+      </tbody>
+    </table>
+    <div class="mnemo"><b>Der Alias ist der Service vor den Pods</b> – die Anwendung kennt nur den Namen, dahinter kann ein Modell stehen oder fünf. Wer denselben Namen mehrfach vergibt, hat keinen Zweitnamen vergeben, sondern eine zweite Instanz hinter denselben Service gehängt.</div>
+  </div>
+
+  <div class="warn"><b>Vereinheitlichte Alias-Namen schalten unbemerkt Lastverteilung ein:</b> Wer aus Ordnungsliebe mehreren Modellen denselben Alias gibt, verteilt damit den Traffic über sie – und bekommt bei fachlich unterschiedlichen Modellen wechselnde Antwortqualität, ohne dass sich an der Anwendung etwas geändert hätte. Die Fehlersuche führt dann in den Prompt statt in die Gateway-Konfiguration. Ein Alias pro fachlicher Rolle, nicht pro Modellfamilie.</div>
+</section>
+
+<!-- ================= 5 API-WEG ================= -->
+<section id="api" class="butter">
+  <div class="sec-head"><div class="badge">5</div><h2>Der programmatische Weg</h2></div>
+  <p class="sec-sub">Die Oberfläche ist für den Erstaufbau bequem und für Wiederholbarkeit ungeeignet. Über die API entsteht dieselbe Konfiguration reproduzierbar – in drei Schritten: Secret ablegen, Provider registrieren, Modelle hinzufügen.</p>
+
+  <div class="card">
+    <h3>Die drei Schritte</h3>
+    <ol class="steps">
+      <li><div><b>Secret im Secrets Manager ablegen</b><small>Typ <code>Key-value</code>, Inhalt nach dem Schema aus Abschnitt 3.</small></div></li>
+      <li><div><b>Provider mit Verweis auf das Secret registrieren</b><small>Der Provider bekommt einen Namen und eine Referenz – nie den Wert selbst.</small></div></li>
+      <li><div><b>Modelle unter der Provider-UUID anlegen</b><small>Je Modell die ID beim Anbieter und optional den Alias.</small></div></li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h3>Provider-UUID ermitteln</h3>
+    <p>Fast jeder weitere Aufruf braucht die UUID des Providers. Sie steht in der Provider-Liste – der schnellste Weg, um von Namen auf IDs zu kommen:</p>
+<pre><code><span class="c"># alle konfigurierten Provider auflisten</span>
+curl -sS "${GATEWAY_URL}/v1/providers" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${TOKEN}"
+
+<span class="c"># nur Name und UUID – Feldname je nach Version pruefen</span>
+curl -sS "${GATEWAY_URL}/v1/providers" \
+  -H "Authorization: Bearer ${TOKEN}" | jq -r '.resources[] | "\(.name)  \(.id)"'</code></pre>
+    <div class="note"><b>Hinweis:</b> Der Name des umschließenden Arrays unterscheidet sich zwischen Versionen. Einmal ohne Filter abrufen, die Struktur ansehen, dann den <code>jq</code>-Ausdruck festlegen.</div>
+  </div>
+
+  <div class="card">
+    <h3>Provider registrieren und Modell hinzufügen</h3>
+    <p>Der Provider verweist über <code>data_reference</code> auf das abgelegte Secret. Wie diese Referenz aussieht, hängt von der Umgebung ab – in der Cloud-Variante ist es die CRN der Secrets-Manager-Instanz.</p>
+<pre><code><span class="c"># Provider anlegen (Cloud-Variante mit CRN-Referenz)</span>
+curl -sS "${GATEWAY_URL}/v1/providers/&lt;provider&gt;" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -d "$(jq -n \
+    --arg resource "$SM_CRN" \
+    --arg name "openai-prod" \
+    '{name: $name, data_reference: {resource: $resource}}')"
+
+<span class="c"># Modell unterhalb des Providers anlegen, mit Alias</span>
+curl -X POST "${GATEWAY_URL}/v1/providers/${PROVIDER_UUID}/models" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -d '{ "alias": "chat-standard", "id": "&lt;model_id&gt;" }'</code></pre>
+    <div class="mnemo"><b>Der Provider-Eintrag ist ein Adressbucheintrag</b> – Name plus Fachnummer im Schlüsselkasten. Wer stattdessen den Schlüssel selbst einträgt, hat den Sinn des Kastens aufgehoben.</div>
+  </div>
+
+  <div class="warn"><b>Die Beispiele der Dokumentation sind für die Cloud geschrieben:</b> <code>SM_CRN</code>, <code>ibmcloud secrets-manager</code> und der IAM-Bearer-Token existieren in der On-Prem-Installation nicht. Übernommen wird das Muster – Secret ablegen, referenzieren, Modelle anhängen – nicht die konkrete Referenzform und nicht das Auth-Verfahren. Auf welche Weise ein Software-Hub-Vault-Secret referenziert wird, gehört gegen die eigene Installation geprüft, statt aus dem Beispiel abgeleitet zu werden.</div>
+</section>
+
+<!-- ================= 6 INFERENCING ================= -->
+<section id="infer" class="rose">
+  <div class="sec-head"><div class="badge">6</div><h2>Requests über das Gateway</h2></div>
+  <p class="sec-sub">Steht die Konfiguration, sprechen Anwendungen nur noch OpenAI-Dialekt gegen einen Endpunkt. Vier Endpunktgruppen stehen bereit – vorausgesetzt, der dahinterliegende Anbieter unterstützt sie auch.</p>
+
+  <div class="card">
+    <h3>Authentifizierung: zwei Verfahren</h3>
+    <table>
+      <thead><tr><th>Variante</th><th>Verfahren</th><th>Lebensdauer</th></tr></thead>
+      <tbody>
+        <tr><td><b>On-Prem, Software Hub</b></td><td><code>Authorization: ZenApiKey &lt;token&gt;</code></td><td>bis zum Widerruf</td></tr>
+        <tr><td><b>On-Prem, Sonderfälle</b></td><td>Bearer-Token über den Plattform-Endpunkt</td><td>befristet, muss erneuert werden</td></tr>
+        <tr><td><b>Cloud</b></td><td>IAM-Bearer-Token aus einem API-Key</td><td>befristet, muss erneuert werden</td></tr>
+      </tbody>
+    </table>
+    <p>Der ZenApiKey entsteht aus Benutzername und API-Key, base64-kodiert. Den API-Key selbst erzeugt die Weboberfläche unter <b>Profile and settings</b> – er wird genau einmal angezeigt.</p>
+<pre><code><span class="c"># Token bauen – das -n ist entscheidend</span>
+echo -n "&lt;username&gt;:&lt;api_key&gt;" | base64 -w0
+
+<span class="c"># und verwenden</span>
+curl -sS "${GATEWAY_URL}/v1/models" \
+  -H "Authorization: ZenApiKey ${TOKEN}"</code></pre>
+    <div class="mnemo"><b>ZenApiKey ist die Jahreskarte, das Bearer-Token das Tagesticket</b> – für einen unbeaufsichtigt laufenden Dienst nimmt man die Jahreskarte, sonst baut man einen Token-Erneuerer, den niemand betreiben will.</div>
+    <div class="warn"><b><code>echo</code> ohne <code>-n</code> kodiert einen Zeilenumbruch mit:</b> Das Ergebnis sieht aus wie ein gültiges Token, wird aber mit <code>401</code> abgewiesen – ohne Hinweis darauf, dass ein unsichtbares Zeichen die Ursache ist. Dasselbe gilt für <code>base64</code> ohne <code>-w0</code> bei langen Eingaben: Der Umbruch zerlegt das Token.</div>
+  </div>
+
+  <div class="card">
+    <h3>Die Endpunkte</h3>
+    <table>
+      <thead><tr><th>Zweck</th><th>Pfad</th><th>Anmerkung</th></tr></thead>
+      <tbody>
+        <tr><td><b>Provider auflisten</b></td><td><code>/v1/providers</code></td><td>liefert Namen und UUIDs</td></tr>
+        <tr><td><b>Modelle eines Providers</b></td><td><code>/v1/providers/{uuid}/models</code></td><td>nur die freigeschalteten</td></tr>
+        <tr><td><b>Alle Modelle</b></td><td><code>/v1/models</code></td><td>über alle Provider hinweg</td></tr>
+        <tr><td><b>Chat</b></td><td><code>/v1/chat/completions</code></td><td>unterstützt Streaming</td></tr>
+        <tr><td><b>Text</b></td><td><code>/v1/completions</code></td><td>unterstützt Streaming</td></tr>
+        <tr><td><b>Embeddings</b></td><td><code>/v1/embeddings</code></td><td>–</td></tr>
+      </tbody>
+    </table>
+    <details>
+      <summary>Beispiel: Chat-Request und Anbindung eines OpenAI-SDK</summary>
+      <div class="inner">
+        <p>Im Feld <code>model</code> steht der Alias oder die Modellbezeichnung – nicht die interne UUID.</p>
+<pre><code>curl "${GATEWAY_URL}/v1/chat/completions" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: ZenApiKey ${TOKEN}" \
+  -d '{
+    "model": "chat-standard",
+    "messages": [
+      {"role": "system", "content": "Antworte knapp."},
+      {"role": "user", "content": "Was ist ein Reverse Proxy?"}
+    ]
+  }'</code></pre>
+        <p>Weil das Gateway die OpenAI-API nachbildet, funktioniert jedes OpenAI-SDK ohne Anpassung – es genügt, <code>base_url</code> und Schlüssel auszutauschen:</p>
+<pre><code>from openai import OpenAI
+
+client = OpenAI(
+    base_url="https://&lt;route&gt;/ml/gateway/v1",
+    api_key="&lt;token&gt;",
+)
+
+completion = client.chat.completions.create(
+    model="chat-standard",
+    messages=[{"role": "user", "content": "Hallo"}],
+)</code></pre>
+        <p style="font-size:.88rem;color:var(--ink-soft)">Damit lassen sich bestehende Anwendungen ohne Codeänderung umhängen. Genau darin liegt der Betriebsnutzen des Gateways.</p>
+      </div>
+    </details>
+  </div>
+
+  <div class="warn"><b>Nicht jeder Anbieter kann jeden Endpunkt:</b> Unterstützt ein Backend einen Endpunkt nicht, kommt der Fehler erst zur Laufzeit aus der Antwort – die Konfiguration selbst wird ohne Beanstandung angenommen. Besonders <code>/v1/embeddings</code> und <code>/v1/completions</code> sind längst nicht überall vorhanden. Jeden Provider nach dem Anlegen einmal gegen jeden Endpunkt anfassen, den die Anwendungen später benutzen sollen.</div>
+</section>
+
+<!-- ================= 7 BETRIEB ================= -->
+<section id="ops" class="mint">
+  <div class="sec-head"><div class="badge">7</div><h2>Betrieb: Fehlerbilder und Komplettablauf</h2></div>
+  <p class="sec-sub">Die meisten Störungen im Gateway sehen gleich aus – die Verbindung schlägt fehl, die Oberfläche nennt keinen Grund. Diese Tabelle ordnet Symptom und Ursache zu, danach folgt der gesamte Ablauf in vier Phasen.</p>
+
+  <div class="card">
+    <h3>Symptom und Ursache</h3>
+    <table>
+      <thead><tr><th>Symptom</th><th>Wahrscheinliche Ursache</th><th>Prüfen</th></tr></thead>
+      <tbody>
+        <tr><td><b>Verbindung schlägt beim Anlegen fehl</b></td><td>Zertifikat der Base URL nicht vertraut</td><td>Log des Gateway-Pods auf <code>x509</code></td></tr>
+        <tr><td><b>Secret auswählbar, Provider bleibt fehlerhaft</b></td><td>falscher Typ oder abweichendes JSON-Schema</td><td>Typ <code>Key-value</code>, Pflichtfelder aus Abschnitt 3</td></tr>
+        <tr><td><b>Secret lässt sich nicht anlegen</b></td><td>Name bereits vergeben – global, nicht pro Provider</td><td>bestehende Secret-Namen</td></tr>
+        <tr><td><b><code>401</code> trotz gültigem Schlüssel</b></td><td>Zeilenumbruch im base64-Token</td><td><code>echo -n</code>, <code>base64 -w0</code></td></tr>
+        <tr><td><b>Modell antwortet nicht, andere schon</b></td><td>Modell-ID beim Import falsch geschrieben</td><td>Bezeichner beim Anbieter</td></tr>
+        <tr><td><b>Antwortqualität schwankt ohne Änderung</b></td><td>mehrere Modelle teilen sich einen Alias</td><td>Alias-Zuordnung im Reiter <b>Model provider</b></td></tr>
+        <tr><td><b>Endpunkt liefert Fehler, andere funktionieren</b></td><td>Anbieter unterstützt diesen Endpunkt nicht</td><td>Anbieterdokumentation</td></tr>
+        <tr><td><b>Timeout beim Verbindungsaufbau</b></td><td><code>auth_url</code> zeigt nach außen, Umgebung abgeschottet</td><td>Feld <code>auth_url</code> im Secret</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>Die vier Phasen auf einen Blick</h3>
+    <ol class="steps">
+      <li><div><b>Phase A · Vorbereiten</b><small>Schritte 1–3: Secrets Manager, Anbieter-Zugangsdaten, Berechtigungen und Zertifikatsvertrauen.</small></div></li>
+      <li><div><b>Phase B · Verbinden</b><small>Schritte 4–6: Provider anlegen, Secret hinterlegen, Verbindung bestätigen.</small></div></li>
+      <li><div><b>Phase C · Modelle freigeben</b><small>Schritte 7–9: Modelle auswählen oder importieren, Aliase bewusst vergeben, absenden.</small></div></li>
+      <li><div><b>Phase D · In Betrieb nehmen</b><small>Schritte 10–12: Token erzeugen, Endpunkte durchtesten, Anwendungen umhängen.</small></div></li>
+    </ol>
+  </div>
+
+  <h3 style="margin:26px 0 6px;font-size:1.15rem">Phase A · Vorbereiten</h3>
+
+  <details>
+    <summary>Schritt 1 · Secrets Manager bereitstellen</summary>
+    <div class="inner">
+      <p>Ohne provisionierte Instanz endet der Wizard mitten im Ablauf, nachdem bereits Name und Beschreibung eingetragen wurden. Zuerst klären, ob der Software Hub vault genutzt wird oder ein externer Vault angebunden ist – die beiden Wege unterscheiden sich später bei der Secret-Erstellung deutlich.</p>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 2 · Zugangsdaten und Basis-URLs sammeln</summary>
+    <div class="inner">
+      <p>Je Anbieter genau die Felder aus Abschnitt 3 zusammentragen. Für watsonx als Anbieter wird die Basis-URL aus der Route ermittelt:</p>
+<pre><code>oc get route -n &lt;namespace&gt;
+<span class="c"># Spalte HOST/PORT ist die Base URL</span></code></pre>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 3 · Zertifikatsvertrauen herstellen</summary>
+    <div class="inner">
+      <p>Bei eigener CA muss deren Zertifikat im Trust-Bundle des Gateways liegen, bevor der erste Provider angelegt wird. Wird dieser Schritt übersprungen, erscheint später eine unspezifische Verbindungsmeldung, deren Ursache nur im Pod-Log steht.</p>
+<pre><code><span class="c"># Log auf TLS-Fehler pruefen</span>
+oc logs -n &lt;namespace&gt; deploy/&lt;gateway-deployment&gt; | grep -i x509</code></pre>
+    </div>
+  </details>
+
+  <h3 style="margin:26px 0 6px;font-size:1.15rem">Phase B · Verbinden</h3>
+
+  <details>
+    <summary>Schritt 4 · Provider anlegen</summary>
+    <div class="inner">
+      <p>Über <b>Administration</b> → <b>Model Gateway</b> → Reiter <b>Model provider</b> → <b>Add model provider</b>. Der Verbindungsname erscheint später in jeder Modellliste – ein sprechender Name mit Umgebungskennzeichnung erspart Verwechslungen zwischen Test und Produktion.</p>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 5 · Secret hinterlegen</summary>
+    <div class="inner">
+      <p>Beim Software Hub vault über <b>Create new secret</b>, beim externen Vault über <b>Copy a key to create in your external vault</b>. Im zweiten Fall erzeugt <b>Show JSON</b> das vollständige Objekt, das im Vault angelegt wird; danach muss die Liste über das <b>Refresh</b>-Symbol neu geladen werden, sonst bleibt das eben erstellte Secret unsichtbar.</p>
+      <p>Der Secret-Name muss global eindeutig sein. Bewährt hat sich ein Präfix je Anbieter und Umgebung.</p>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 6 · Verbindung bestätigen und wiederholen</summary>
+    <div class="inner">
+      <p>Mit <b>Add</b> abschließen. Die Verbindung erscheint unter <b>Added providers</b>. Für jeden weiteren Anbieter wiederholen, danach mit <b>Next</b> zur Modellauswahl. Sind mehrere Verbindungen angelegt, enthält die folgende Liste die Modelle aller Anbieter gemeinsam.</p>
+    </div>
+  </details>
+
+  <h3 style="margin:26px 0 6px;font-size:1.15rem">Phase C · Modelle freigeben</h3>
+
+  <details>
+    <summary>Schritt 7 · Modelle auswählen</summary>
+    <div class="inner">
+      <p>Nur die Modelle freigeben, die tatsächlich benutzt werden sollen. Jedes freigeschaltete Modell ist ein Zugang zu einem kostenpflichtigen Anbieter-Endpunkt – die Auswahl ist damit auch eine Kostenentscheidung.</p>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 8 · Fehlende Modelle importieren</summary>
+    <div class="inner">
+      <p>Erscheint ein Modell nicht in der Liste, über <b>Import model</b> nachtragen: Anbieter auswählen, Modell-ID eintragen, <b>Add</b>. Die ID wird nicht validiert, deshalb gehört sie aus der Anbieterdokumentation kopiert und nicht aus dem Gedächtnis getippt.</p>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 9 · Aliase vergeben und absenden</summary>
+    <div class="inner">
+      <p>Ein Alias pro fachlicher Rolle. Mehrere Modelle unter demselben Alias bedeuten Lastverteilung, nicht bloß einen gemeinsamen Namen – diese Entscheidung sollte bewusst fallen. Anschließend <b>Submit</b>.</p>
+    </div>
+  </details>
+
+  <h3 style="margin:26px 0 6px;font-size:1.15rem">Phase D · In Betrieb nehmen</h3>
+
+  <details>
+    <summary>Schritt 10 · Token erzeugen</summary>
+    <div class="inner">
+      <p>API-Key in der Weboberfläche unter <b>Profile and settings</b> erzeugen und sofort sichern – er wird nur einmal angezeigt. Daraus den ZenApiKey bilden:</p>
+<pre><code>echo -n "&lt;username&gt;:&lt;api_key&gt;" | base64 -w0</code></pre>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 11 · Endpunkte durchtesten</summary>
+    <div class="inner">
+      <p>Vor dem Umhängen der Anwendungen jeden benötigten Endpunkt einmal manuell aufrufen – erst die Auflistung, dann den fachlichen Aufruf. So wird sichtbar, ob ein Anbieter einen Endpunkt gar nicht bedient, bevor es eine Anwendung tut.</p>
+<pre><code><span class="c"># Erreichbarkeit und Modellliste</span>
+curl -sS "${GATEWAY_URL}/v1/models" \
+  -H "Authorization: ZenApiKey ${TOKEN}" | jq
+
+<span class="c"># fachlicher Aufruf gegen den Alias</span>
+curl -sS "${GATEWAY_URL}/v1/chat/completions" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: ZenApiKey ${TOKEN}" \
+  -d '{"model":"chat-standard","messages":[{"role":"user","content":"ping"}]}'</code></pre>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 12 · Anwendungen umhängen</summary>
+    <div class="inner">
+      <p>In bestehenden Anwendungen genügt der Austausch von Basis-URL und Schlüssel, weil die OpenAI-Kompatibilität erhalten bleibt. Die Modellbezeichnung wird durch den Alias ersetzt – ab diesem Punkt ist ein Modellwechsel eine Konfigurationsänderung im Gateway und kein Deployment mehr.</p>
+    </div>
+  </details>
+
+  <div class="card">
+    <h3>Einordnung</h3>
+    <p>Technisch ist das Model Gateway ein Reverse Proxy mit Alias-Schicht, Credential-Auslagerung und Lastverteilung – ein Muster, das es außerhalb von watsonx ebenfalls gibt. Der Mehrwert liegt weniger in der Funktion als in der Integration: Secrets Manager, Zugriffssteuerung und Verbrauchsgrenzen sind Teil derselben Plattform statt drei getrennter Betriebsgegenstände.</p>
+    <p>Der Aufwand steckt entsprechend nicht im Wizard, sondern davor: im Secrets Manager, im Zertifikatsvertrauen und in der Frage, welche Aliase es geben soll. Diese drei Punkte entscheiden, ob das Gateway funktioniert – die Klickstrecke selbst ist in zehn Minuten erledigt.</p>
+    <div class="mnemo"><b>Das Gateway ist eine Zwischendecke, kein Fundament</b> – es verbirgt die Leitungen und macht sie austauschbar, trägt aber nichts, was nicht schon vorher stand.</div>
+  </div>
+</section>
+
+</main>
+
+<footer>Zusammengefasst aus der IBM-Dokumentation zu watsonx 2.4.x („Setting up the model gateway in the UI") sowie den ergänzenden Kapiteln zur programmatischen Einrichtung, zum Inferencing und zur Token-Erzeugung. Teile der programmatischen Beispiele stammen aus der Cloud-Variante und gelten On-Prem nur sinngemäß. Kein Ersatz für die offizielle Doku – Versionsdetails vor Produktionseinsatz gegen ibm.com/docs prüfen.</footer>
+
+</body>
+</html>
