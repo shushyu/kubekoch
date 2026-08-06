@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kubernetes 1.37 – die neuen Alpha-Features im Überblick</title>
+<meta name="rezept-kategorie"    content="cluster-ops">
+<meta name="rezept-beschreibung" content="Alle 22 Alpha-Features aus Kubernetes 1.37 auf Deutsch: Pod-Checkpoint/Restore, DRA-Ausbau, nftables als kommender kube-proxy-Default, StatefulSet-Recreate und mehr.">
+<meta name="rezept-stand"        content="Kubernetes 1.37 · 08/2026">
+<meta name="rezept-suche"        content="kubernetes 1.37 alpha kep criu checkpoint dra nftables kube-proxy statefulset recreate emptydir bindmountoptions volumesnapshot kyaml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#33394a;
+  --ink-soft:#5c6376;
+  --paper:#fbfaf7;
+  --card:#ffffff;
+  --line:#e9e6df;
+  --code-bg:#31364a;
+  --code-ink:#e8eaf2;
+  --mint:#d9f2e4;      --mint-deep:#2f8f6b;
+  --sky:#dcebf9;       --sky-deep:#2d6fa8;
+  --lav:#e7e2f7;       --lav-deep:#6b5bb5;
+  --peach:#fbe6d7;     --peach-deep:#c2703d;
+  --butter:#faf0cf;    --butter-deep:#a5842a;
+  --rose:#f9e0e6;      --rose-deep:#b34f6d;
+  --aqua:#d7eff0;      --aqua-deep:#2b8288;
+  --r-lg:26px; --r-md:18px; --r-sm:12px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;scroll-padding-top:90px}
+body{font-family:'Inter',sans-serif;background:var(--paper);color:var(--ink);line-height:1.65;font-size:16px}
+h1,h2,h3,h4{font-family:'Sora',sans-serif;line-height:1.2}
+
+/* ---------- Kopf ---------- */
+header{max-width:1060px;margin:0 auto;padding:56px 24px 8px}
+.kicker{display:inline-block;background:var(--lav);color:var(--lav-deep);font-weight:600;font-size:.8rem;letter-spacing:.08em;text-transform:uppercase;padding:6px 14px;border-radius:999px;margin-bottom:18px}
+header h1{font-size:clamp(1.9rem,4.5vw,3rem);font-weight:800;letter-spacing:-.02em}
+header h1 span{color:var(--mint-deep)}
+.lede{color:var(--ink-soft);max-width:640px;margin-top:14px;font-size:1.05rem}
+
+/* ---------- Fahrplan ---------- */
+.route{max-width:1060px;margin:34px auto 10px;padding:0 24px;display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.route a{display:flex;flex-direction:column;gap:8px;text-decoration:none;color:var(--ink);background:var(--card);border:1.5px solid var(--line);border-radius:var(--r-md);padding:16px 14px;transition:transform .15s ease,box-shadow .15s ease}
+.route a:hover,.route a:focus-visible{transform:translateY(-3px);box-shadow:0 8px 22px rgba(60,60,90,.10);outline:none}
+.route .dot{width:34px;height:34px;border-radius:12px;display:grid;place-items:center;font-family:'Sora';font-weight:700;font-size:.9rem}
+.route .t{font-weight:600;font-size:.86rem;line-height:1.3}
+.route .s{font-size:.74rem;color:var(--ink-soft)}
+.route a:nth-child(1) .dot{background:var(--aqua);color:var(--aqua-deep)}
+.route a:nth-child(2) .dot{background:var(--mint);color:var(--mint-deep)}
+.route a:nth-child(3) .dot{background:var(--sky);color:var(--sky-deep)}
+.route a:nth-child(4) .dot{background:var(--lav);color:var(--lav-deep)}
+.route a:nth-child(5) .dot{background:var(--peach);color:var(--peach-deep)}
+.route a:nth-child(6) .dot{background:var(--butter);color:var(--butter-deep)}
+.route a:nth-child(7) .dot{background:var(--rose);color:var(--rose-deep)}
+.route a:nth-child(8) .dot{background:var(--mint);color:var(--mint-deep)}
+
+/* ---------- Sticky-Nav ---------- */
+nav{position:sticky;top:0;z-index:50;background:rgba(251,250,247,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);margin-top:26px}
+nav .wrap{max-width:1060px;margin:0 auto;padding:10px 24px;display:flex;gap:8px;overflow-x:auto}
+nav a{white-space:nowrap;text-decoration:none;font-size:.82rem;font-weight:600;color:var(--ink-soft);padding:7px 14px;border-radius:999px;border:1px solid transparent}
+nav a:hover{background:var(--card);border-color:var(--line);color:var(--ink)}
+
+/* ---------- Sektionen ---------- */
+main{max-width:1060px;margin:0 auto;padding:20px 24px 90px}
+section{margin-top:64px}
+.sec-head{display:flex;align-items:center;gap:16px;margin-bottom:8px}
+.badge{width:52px;height:52px;border-radius:16px;display:grid;place-items:center;font-family:'Sora';font-weight:800;font-size:1.25rem;flex-shrink:0}
+section h2{font-size:clamp(1.4rem,3vw,1.9rem);font-weight:700}
+.sec-sub{color:var(--ink-soft);margin-bottom:22px;max-width:720px}
+.aqua .badge{background:var(--aqua);color:var(--aqua-deep)}
+.mint .badge{background:var(--mint);color:var(--mint-deep)}
+.sky .badge{background:var(--sky);color:var(--sky-deep)}
+.lav .badge{background:var(--lav);color:var(--lav-deep)}
+.peach .badge{background:var(--peach);color:var(--peach-deep)}
+.butter .badge{background:var(--butter);color:var(--butter-deep)}
+.rose .badge{background:var(--rose);color:var(--rose-deep)}
+
+/* ---------- Karten & Schritte ---------- */
+.card{background:var(--card);border:1.5px solid var(--line);border-radius:var(--r-lg);padding:26px 28px;margin-bottom:20px}
+.card h3{font-size:1.08rem;margin-bottom:14px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+ol.steps{list-style:none;counter-reset:s;display:flex;flex-direction:column;gap:14px}
+ol.steps li{counter-increment:s;display:grid;grid-template-columns:34px 1fr;gap:14px;align-items:start}
+ol.steps li::before{content:counter(s);width:30px;height:30px;border-radius:10px;display:grid;place-items:center;font-family:'Sora';font-weight:700;font-size:.85rem;margin-top:2px}
+.aqua ol.steps li::before{background:var(--aqua);color:var(--aqua-deep)}
+.mint ol.steps li::before{background:var(--mint);color:var(--mint-deep)}
+.sky ol.steps li::before{background:var(--sky);color:var(--sky-deep)}
+.lav ol.steps li::before{background:var(--lav);color:var(--lav-deep)}
+.peach ol.steps li::before{background:var(--peach);color:var(--peach-deep)}
+.butter ol.steps li::before{background:var(--butter);color:var(--butter-deep)}
+.rose ol.steps li::before{background:var(--rose);color:var(--rose-deep)}
+.steps b{font-weight:600}
+.steps small{display:block;color:var(--ink-soft);font-size:.86rem;margin-top:2px}
+
+ul.clean{list-style:none;display:flex;flex-direction:column;gap:10px}
+ul.clean li{padding-left:24px;position:relative}
+ul.clean li::before{content:"";position:absolute;left:4px;top:.62em;width:9px;height:9px;border-radius:3px;background:var(--line)}
+.aqua ul.clean li::before{background:var(--aqua-deep)}
+.mint ul.clean li::before{background:var(--mint-deep)}
+.sky ul.clean li::before{background:var(--sky-deep)}
+.lav ul.clean li::before{background:var(--lav-deep)}
+.peach ul.clean li::before{background:var(--peach-deep)}
+.butter ul.clean li::before{background:var(--butter-deep)}
+.rose ul.clean li::before{background:var(--rose-deep)}
+
+/* ---------- Code ---------- */
+pre{background:var(--code-bg);color:var(--code-ink);border-radius:var(--r-sm);padding:16px 18px;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:.82rem;line-height:1.6;margin:10px 0}
+code{font-family:'JetBrains Mono',monospace;font-size:.85em;background:#efede7;border-radius:6px;padding:2px 6px}
+pre code{background:none;padding:0;font-size:1em}
+pre .c{color:#9aa3c0}
+
+/* ---------- Hinweisboxen ---------- */
+.note,.warn,.mnemo{border-radius:var(--r-md);padding:14px 18px;margin:14px 0;font-size:.92rem}
+.note{background:var(--sky)}
+.warn{background:var(--rose)}
+.mnemo{background:var(--butter)}
+.note b,.warn b,.mnemo b{font-weight:700}
+.mnemo::before{content:"🧠 Eselsbrücke · ";font-weight:700}
+.warn::before{content:"⚠️ ";font-weight:700}
+
+/* ---------- Tabellen ---------- */
+table{width:100%;border-collapse:separate;border-spacing:0;font-size:.88rem;margin:10px 0}
+th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-family:'Sora';font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft)}
+tr:last-child td{border-bottom:none}
+thead th:first-child{border-top-left-radius:var(--r-sm)}
+thead th:last-child{border-top-right-radius:var(--r-sm)}
+thead{background:var(--paper)}
+
+/* ---------- Details ---------- */
+details{border:1.5px solid var(--line);border-radius:var(--r-md);margin:12px 0;background:var(--card)}
+details summary{cursor:pointer;padding:14px 18px;font-weight:600;font-size:.94rem;list-style:none;display:flex;align-items:center;gap:10px}
+details summary::before{content:"+";font-family:'Sora';font-weight:700;width:24px;height:24px;border-radius:8px;background:var(--paper);display:grid;place-items:center;flex-shrink:0}
+details[open] summary::before{content:"–"}
+details .inner{padding:0 18px 18px}
+summary::-webkit-details-marker{display:none}
+
+/* ---------- DNS-Chips ---------- */
+.chips{display:flex;flex-wrap:wrap;gap:10px;margin:10px 0}
+.chip{background:var(--paper);border:1.5px solid var(--line);border-radius:999px;padding:6px 14px;font-family:'JetBrains Mono';font-size:.8rem}
+
+footer{max-width:1060px;margin:0 auto;padding:30px 24px 60px;color:var(--ink-soft);font-size:.82rem;border-top:1px solid var(--line)}
+
+@media(max-width:820px){
+  .route{grid-template-columns:repeat(2,1fr)}
+  .grid2{grid-template-columns:1fr}
+}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.route a{transition:none}}
+</style>
+</head>
+<body>
+
+<header>
+  <span class="kicker">Kubernetes 1.37 · Release 26.08.2026 · Alpha-Features</span>
+  <h1>Kubernetes 1.37:<br>alle 22 neuen <span>Alpha-Features</span></h1>
+  <p class="lede">Acht Abschnitte durch den Release: von Pod-Checkpoints über den großen DRA-Ausbau bis zum kommenden <b>nftables-Default für kube-proxy</b>. Alle Angaben mit KEP-Nummer und Feature-Gate – plus die wichtigsten Beta- und Stable-Sprünge am Ende.</p>
+</header>
+
+<div class="route">
+  <a href="#basics"><span class="dot">0</span><span class="t">Überblick</span><span class="s">Alle 22 auf einen Blick</span></a>
+  <a href="#pods"><span class="dot">1</span><span class="t">Pod-Lifecycle</span><span class="s">Checkpoint, Sysctls, tmpfs</span></a>
+  <a href="#probes"><span class="dot">2</span><span class="t">Probes &amp; Mounts</span><span class="s">TLS, h2c, noexec</span></a>
+  <a href="#dra"><span class="dot">3</span><span class="t">DRA</span><span class="s">GPUs, NUMA, CEL</span></a>
+  <a href="#sched"><span class="dot">4</span><span class="t">Scheduling</span><span class="s">Preemption, Gangs, Gruppen</span></a>
+  <a href="#storage"><span class="dot">5</span><span class="t">Storage</span><span class="s">Snapshots, emptyDir, Health</span></a>
+  <a href="#net"><span class="dot">6</span><span class="t">Netz, Auth &amp; Co.</span><span class="s">nftables, Webhooks, Recreate</span></a>
+  <a href="#beta"><span class="dot">7</span><span class="t">Beta &amp; Stable</span><span class="s">Rootless, KYAML, Pod-Certs</span></a>
+</div>
+
+<nav><div class="wrap">
+  <a href="#basics">0 · Überblick</a>
+  <a href="#pods">1 · Pod-Lifecycle</a>
+  <a href="#probes">2 · Probes &amp; Mounts</a>
+  <a href="#dra">3 · DRA</a>
+  <a href="#sched">4 · Scheduling</a>
+  <a href="#storage">5 · Storage</a>
+  <a href="#net">6 · Netz &amp; Co.</a>
+  <a href="#beta">7 · Beta &amp; Stable</a>
+</div></nav>
+
+<main>
+
+<!-- ================= 0 ÜBERBLICK ================= -->
+<section id="basics" class="aqua">
+  <div class="sec-head"><div class="badge">0</div><h2>Überblick: 22 Alpha-Features, sechs Schwerpunkte</h2></div>
+  <p class="sec-sub">Kubernetes 1.37 erscheint am 26. August 2026. Die Schwerpunkte: Workload-Lifecycle (Checkpoints, Gang Scheduling), der weitere Ausbau von Dynamic Resource Allocation (DRA), Security- und Storage-Verbesserungen – und der eingeleitete Wechsel von iptables zu nftables.</p>
+
+  <div class="card">
+    <h3>Alle 22 Alpha-Features mit KEP und Feature-Gate</h3>
+    <table>
+      <thead><tr><th>Feature</th><th>KEP</th><th>Feature-Gate</th><th>Abschnitt</th></tr></thead>
+      <tbody>
+        <tr><td><b>Pod-Level Checkpoint/Restore</b></td><td>5823</td><td><code>PodLevelCheckpointRestore</code></td><td>1</td></tr>
+        <tr><td><b>Default Pod Sysctls in Kubelet</b></td><td>5996</td><td><code>DefaultPodSysctls</code></td><td>1</td></tr>
+        <tr><td><b>Resize von Memory-backed Volumes</b></td><td>6030</td><td><code>InPlacePodVerticalScalingMemoryBackedVolumes</code></td><td>1</td></tr>
+        <tr><td><b>TLS für gRPC-Probes</b></td><td>4939</td><td><code>GRPCContainerProbeTLS</code></td><td>2</td></tr>
+        <tr><td><b>h2c-Probes (HTTP/2 cleartext)</b></td><td>5999</td><td><code>H2CContainerProbe</code></td><td>2</td></tr>
+        <tr><td><b>bindMountOptions an volumeMounts</b></td><td>5855</td><td><code>VolumeBindMountOptions</code></td><td>2</td></tr>
+        <tr><td><b>DRA Optional Node Preparation</b></td><td>5945</td><td><code>DRAOptionalNodePreparation</code></td><td>3</td></tr>
+        <tr><td><b>DRA Device Compatibility Groups</b></td><td>5963</td><td><code>DRADeviceCompatibilityGroups</code></td><td>3</td></tr>
+        <tr><td><b>DRA Standard-Attribut numaNode</b></td><td>6072</td><td>– (Listenform: <code>DRAListTypeAttributes</code>)</td><td>3</td></tr>
+        <tr><td><b>DRA Derived Attributes</b></td><td>6080</td><td><code>DRADerivedAttributes</code></td><td>3</td></tr>
+        <tr><td><b>Preemption für In-Place-Resize</b></td><td>5836</td><td><code>SchedulerPreemptionForPodResize</code></td><td>4</td></tr>
+        <tr><td><b>Workload-Aware-Scheduling Controller-APIs</b></td><td>6089</td><td><code>WorkloadWithJob</code></td><td>4</td></tr>
+        <tr><td><b>CompositePodGroup API</b></td><td>6012</td><td><code>CompositePodGroup</code></td><td>4</td></tr>
+        <tr><td><b>User-Felder für Atomic-Write-Volumes</b></td><td>5936</td><td><code>AtomicWriteVolumeUserFields</code></td><td>5</td></tr>
+        <tr><td><b>Topologie für Volume-Snapshots</b></td><td>5943</td><td><code>VolumeSnapshotTopology</code></td><td>5</td></tr>
+        <tr><td><b>emptyDir Permission Mode</b></td><td>5502</td><td><code>EmptyDirVolumeMode</code></td><td>5</td></tr>
+        <tr><td><b>Volume Health Monitor</b></td><td>1432</td><td><code>CSIVolumeHealth</code></td><td>5</td></tr>
+        <tr><td><b>nftables als kube-proxy-Default</b></td><td>5343</td><td>–</td><td>6</td></tr>
+        <tr><td><b>nftables Localhost-NodePort-Proxy</b></td><td>6032</td><td><code>KubeProxyNFTablesLocalhostNodePorts</code></td><td>6</td></tr>
+        <tr><td><b>API-Server-Auth gegen Admission-Webhooks</b></td><td>6060</td><td><code>APIServerWebhookAuthenticationToken</code></td><td>6</td></tr>
+        <tr><td><b>Recreate-Strategie für StatefulSets</b></td><td>3541</td><td><code>StatefulSetRecreateStrategy</code></td><td>6</td></tr>
+        <tr><td><b>Interne API-Typen eliminieren</b></td><td>6164</td><td>–</td><td>6</td></tr>
+      </tbody>
+    </table>
+    <div class="note"><b>Hinweis:</b> Alles hier ist Alpha – standardmäßig deaktiviert und nur per Feature-Gate nutzbar. Einzelne KEPs können bis zum Release-Termin noch aus dem Milestone fallen.</div>
+  </div>
+</section>
+
+<!-- ================= 1 POD-LIFECYCLE ================= -->
+<section id="pods" class="mint">
+  <div class="sec-head"><div class="badge">1</div><h2>Pod-Lifecycle: Checkpoints, Sysctl-Defaults, tmpfs-Resize</h2></div>
+  <p class="sec-sub">Drei Node-Features rütteln an einem alten Grundsatz: dass Pods flüchtig sind und jede Änderung einen Neustart kostet.</p>
+
+  <div class="card">
+    <h3>Pod-Level Checkpoint/Restore · KEP 5823</h3>
+    <p>Bisher ließen sich nur einzelne Container einfrieren (KEP-2008) – wenig hilfreich, weil Container im Pod Netz und Memory teilen. Jetzt lässt sich ein <b>kompletter Pod</b> samt RAM-Zustand, Prozessbaum, offenen File-Deskriptoren und Metadaten in eine Datei sichern und später exakt an diesem Punkt fortsetzen. Technisch orchestriert das kubelet die Runtime (containerd/CRI-O), die dafür das Linux-Werkzeug CRIU aufruft; beim Restore entstehen Prozesse mit den ursprünglichen PIDs. Die CRI-API bekommt dafür die Methoden <code>CheckpointPod</code> und <code>RestorePod</code>.</p>
+    <ul class="clean">
+      <li><b>Warmstarts klonen</b> – schwergewichtige Java-/ML-Apps einmal hochfahren, Snapshot ziehen, auf andere Nodes replizieren</li>
+      <li><b>Checkpoint statt Neuberechnung</b> – Langläufer nach Fehlern am letzten Stand fortsetzen</li>
+      <li><b>Wartung ohne Verlust</b> – Pods pausieren, verschieben, weiterlaufen lassen</li>
+      <li><b>Forensik</b> – eingefrorenen Zustand in Staging analysieren, ohne das Original zu stören</li>
+    </ul>
+    <div class="mnemo"><b>Spielstand speichern:</b> Bisher hieß Node-Wechsel „Level von vorn". Checkpoint/Restore ist das Savegame – laden und exakt dort weiterspielen, wo man aufgehört hat.</div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>Default Pod Sysctls · KEP 5996</h3>
+      <p>Kernel-Parameter mussten bisher pro Pod über <code>securityContext.sysctls</code> gesetzt werden – mühsam, wenn ein ganzer Node-Pool dieselben <code>net.*</code>-Werte braucht. Neu: <code>defaultPodSysctls</code> als Key-Value-Map in der <code>KubeletConfiguration</code>. Das kubelet wendet sie beim Anlegen der Pod-Sandbox auf alle Pods des Nodes an; explizite Werte im Pod-Manifest gewinnen weiterhin.</p>
+    </div>
+    <div class="card">
+      <h3>tmpfs-Resize ohne Neustart · KEP 6030</h3>
+      <p>Ein <code>emptyDir</code> mit <code>medium: Memory</code> landet als tmpfs im RAM – dessen <code>sizeLimit</code> war bisher in Stein gemeißelt. Jetzt wird das Feld über die <code>/resize</code>-Subresource mutierbar, der Fortschritt ist in einer neuen <i>VolumeStatus</i>-Struktur nachvollziehbar. Passt zum In-Place-Pod-Resizing: Auch der RAM-„Datenträger" wächst ohne Pod-Neustart mit.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 2 PROBES & MOUNTS ================= -->
+<section id="probes" class="sky">
+  <div class="sec-head"><div class="badge">2</div><h2>Probes &amp; Mounts: TLS, h2c und noexec</h2></div>
+  <p class="sec-sub">Drei kleine Felder mit großem Alltagsnutzen: Healthchecks sprechen endlich verschlüsseltes gRPC und HTTP/2, und beschreibbare Volumes lassen sich härten.</p>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>TLS für gRPC-Probes · KEP 4939</h3>
+      <p>Native gRPC-Probes gibt es seit 1.23 – aber nur im Klartext. gRPC-Server mit TLS lehnten die Probe-Requests ab, weshalb weiterhin Drittwerkzeuge wie <code>grpc_health_probe</code> per <code>exec</code> ins Image mussten. Das neue <code>mode</code>-Feld (<code>Plaintext</code> als Default oder <code>TLS</code>) macht das überflüssig; die Zertifikatsgültigkeit wird dabei nicht geprüft.</p>
+<pre><code>livenessProbe:
+  grpc:
+    port: 8443
+    mode: TLS</code></pre>
+    </div>
+    <div class="card">
+      <h3>h2c-Probes · KEP 5999</h3>
+      <p>Liveness-, Readiness- und Startup-Probes können HTTP-Endpunkte jetzt per unverschlüsseltem HTTP/2 (h2c) prüfen. Dafür bekommt <code>httpGet</code> ein <code>protocol</code>-Feld: <code>HTTP1</code> (Default) oder <code>HTTP2</code> bei weiterhin <code>scheme: HTTP</code>.</p>
+<pre><code>readinessProbe:
+  httpGet:
+    port: 8080
+    path: /readyz
+    protocol: HTTP2</code></pre>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>bindMountOptions: noexec, nosuid, nodev · KEP 5855</h3>
+    <p>Read-only-Rootfilesystem plus beschreibbares <code>/tmp</code>-Volume ist gängige Härtungspraxis – hat aber ein Loch: Ins beschreibbare Volume lässt sich ein Skript legen, ausführbar machen und starten. Das neue Feld <code>bindMountOptions</code> am <code>volumeMount</code> schließt das mit klassischen Mount-Flags: <code>noexec</code> (nichts ausführen), <code>nosuid</code> (keine Privilegien-Eskalation über suid-Bits), <code>nodev</code> (keine Device-Dateien).</p>
+<pre><code>volumeMounts:
+  - name: tmp
+    mountPath: /tmp
+    bindMountOptions: [noexec, nosuid]</code></pre>
+    <p style="font-size:.88rem;color:var(--ink-soft)">Unterstützen kubelet oder Runtime die Optionen nicht, wird der Pod auf diesem Node gar nicht erst geplant.</p>
+  </div>
+</section>
+
+<!-- ================= 3 DRA ================= -->
+<section id="dra" class="lav">
+  <div class="sec-head"><div class="badge">3</div><h2>DRA: vier Ausbaustufen für GPUs &amp; Co.</h2></div>
+  <p class="sec-sub">Dynamic Resource Allocation bekommt den größten Block des Releases: weniger Pflicht-Overhead auf den Nodes, hardwarebewusstes Scheduling und ein gemeinsames Vokabular für NUMA-Topologie.</p>
+
+  <div class="card">
+    <h3>Optional Node Preparation · KEP 5945</h3>
+    <p>Bisher wollte das kubelet vor jedem Container-Start per gRPC den lokalen DRA-Treiber erreichen, um das Device vorzubereiten – auch bei virtuellen oder Cloud-Ressourcen, die auf dem Node gar nichts brauchen. Admins mussten deshalb Dummy-Treiber als DaemonSet ausrollen. Das neue Bool-Feld <code>SkipNodeOperations</code> (in <code>ResourceSliceSpec</code> und <code>DeviceRequestAllocationResult</code>) lässt Treiber signalisieren: Node-seitig ist nichts zu tun. Das spart die No-op-DaemonSets, CPU und RAM – und verhindert Pods, die wegen eines toten lokalen Treibers in <code>Terminating</code> festhängen.</p>
+  </div>
+
+  <div class="card">
+    <h3>Device Compatibility Groups · KEP 5963</h3>
+    <p>Der Scheduler kannte bei geteilten Geräten bislang nur die Kapazität – nicht, ob sich Nutzungsmodi vertragen. Ergebnis: Ein Pod mit inkompatiblem Modus (etwa MIG neben vGPU auf derselben GPU) landete auf dem Node und drehte dann Schleifen in <code>CrashLoopBackOff</code> oder <code>UnexpectedAdmissionError</code>, ohne je umgeplant zu werden. Neu liefert der Treiber im <i>ResourceSlice</i> das Feld <code>compatibilityGroups</code> (Textlabels); beim Scheduling wird der Schnitt mit den Gruppen bereits laufender Pods gebildet. Kein Überschneiden, kein Placement – der Scheduler sucht direkt einen passenden Node.</p>
+    <div class="mnemo"><b>Freie Plätze heißt nicht freie Platzwahl:</b> Im Abteil ist noch Platz – aber Raucher- und Nichtraucherabteil bleiben getrennt, egal wie leer es ist. Kapazität und Kompatibilität sind zwei verschiedene Prüfungen.</div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>Standard-Attribut numaNode · KEP 6072</h3>
+      <p>Fünf Treiber, fünf verschiedene Attributnamen für dieselbe NUMA-Information – so ließ sich keine generische Regel bauen, die GPU, NIC und CPU auf denselben NUMA-Node zwingt. Jetzt wird <code>resource.kubernetes.io/numaNode</code> standardisiert: als einzelner Integer oder (hinter <code>DRAListTypeAttributes</code>) als Integer-Liste auf Basis der ACPI-SLIT-Latenzen. Der Scheduler bildet die Schnittmenge – CPU auf Node 4, NIC meldet [6, 4, 5, 7], also läuft der Workload auf 4.</p>
+    </div>
+    <div class="card">
+      <h3>Derived Attributes · KEP 6080</h3>
+      <p><code>matchAttributes</code> verlangt exakt gleiche Attributnamen und -werte – bei Vendor-Wildwuchs chancenlos, ohne Treibercode anzufassen. Mit <code>derivedAttributes</code> lassen sich im ResourceClaim per CEL-Ausdruck aus verschiedenen Treiber-Metadaten virtuelle, gemeinsame Schlüssel ableiten (z. B. eine NUMA-ID aus <code>gpu.nvidia.com</code> und <code>dra.net</code>), die dann ganz normal per <code>matchAttribute</code> verknüpft werden.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 4 SCHEDULING ================= -->
+<section id="sched" class="peach">
+  <div class="sec-head"><div class="badge">4</div><h2>Scheduling: Preemption, Gangs und Gruppen-Hierarchien</h2></div>
+  <p class="sec-sub">Der Scheduler lernt zwei Dinge: Platz schaffen für wachsende Pods – und ganze Workload-Gruppen als Einheit denken, statt Pod für Pod.</p>
+
+  <div class="card">
+    <h3>Preemption für In-Place-Resize · KEP 5836</h3>
+    <p>In-Place-Resize ändert CPU/RAM eines Pods ohne Neustart – aber wenn der Node voll ist, hängt der Antrag in <code>Deferred</code> und wartet, bis zufällig etwas frei wird. Dabei kann der Pod OOM-killed werden, obwohl niedriger priorisierte Nachbarn auf demselben Node verdrängbar wären. Genau das darf der Scheduler jetzt: Pods mit niedrigerer Priorität auf <b>diesem</b> Node preempten, um Platz für den Resize zu schaffen. Geprüft wird nur der Node des Ziel-Pods; Affinity-, Anti-Affinity- und Topology-Spread-Regeln der Erstplatzierung bleiben außen vor, <code>PriorityClass</code> und <code>preemptionPolicy</code> gelten wie beim normalen Scheduling. Verdrängte Pods gehen als <i>Unschedulable</i> zurück in die Queue – was den Cluster Autoscaler triggern kann. Neu am Node-Objekt: <code>podPreemptionPolicy</code>, um Resize-getriebene Preemption pro Node abzuschalten.</p>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>WAS Controller-APIs · KEP 6089</h3>
+      <p>Workload-Aware Scheduling (Gang Scheduling, Topologie, Workload-Preemption) existiert bislang als Scheduler-nahe Zwischen-APIs (<i>Workload</i>, <i>PodGroup</i>) – höhere Controller wie Job, JobSet oder RayJob konnten die Wünsche ihrer Nutzer nicht sauber im YAML entgegennehmen. KEP-6089 liefert wiederverwendbare API-Bausteine in <code>scheduling.k8s.io</code>, eine gemeinsame Go-Library (<code>workloadbuilder</code>) und erweitert die Job-API um einen <code>scheduling</code>-Block: Gang-Verhalten, Topologie-Constraints (z. B. Zone) und Disruption-Modus direkt im Job-Manifest.</p>
+    </div>
+    <div class="card">
+      <h3>CompositePodGroup API · KEP 6012</h3>
+      <p>AI-/ML-Workloads bestehen oft aus Gruppen von Gruppen – etwa N Prefill- und M Decode-Gruppen – und brauchen mehrstufiges Gang Scheduling: Die Elterngruppe darf erst starten, wenn genug Kindgruppen stehen. Die flachen Workload-/PodGroup-APIs konnten das nicht. <code>CompositePodGroup</code> bildet einen Baum aus Root-Gruppen und PodGroup-Blättern; Gang-, Topologie- und Preemption-Regeln gelten dann pro Ebene. Der <code>DisruptionMode</code> legt fest, ob Kindgruppen einzeln verdrängt werden dürfen oder nur alle zusammen – beim ML-Training macht ein verlorener Worker den Rest oft wertlos.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 5 STORAGE ================= -->
+<section id="storage" class="butter">
+  <div class="sec-head"><div class="badge">5</div><h2>Storage: Ownership, Topologie, Rechte, Gesundheit</h2></div>
+  <p class="sec-sub">Vier Baustellen, ein Muster: Dinge, die bisher nur mit Workarounds (root-initContainer, Blindflug bei Snapshots) gingen, bekommen native Felder.</p>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>User-Felder für Atomic-Write-Volumes · KEP 5936</h3>
+      <p>Dateien aus ConfigMap-, Secret-, DownwardAPI- und Projected-Volumes gehören bisher root (UID 0) – Anwendungen wie MongoDB verweigern solche Dateien aber, wenn sie selbst unprivilegiert laufen. Der alte Trick (root-initContainer mit <code>chown</code>) scheitert an strengen Pod-Security-Policies. Neu: <code>defaultUser</code> setzt die UID für alle Dateien des Volumes, <code>user</code> übersteuert sie pro Datei. Nur UID – GIDs laufen weiter über <code>fsGroup</code>/<code>supplementalGroups</code>; Windows und PVs sind außen vor.</p>
+    </div>
+    <div class="card">
+      <h3>Topologie für Volume-Snapshots · KEP 5943</h3>
+      <p>Volumes kennen Zonen – Snapshots bisher nicht. Ergebnis: Restore-Versuche in Zonen, in denen der Snapshot gar nicht verfügbar ist. Jetzt schreibt der CSI-Snapshotter die vom Treiber gemeldete Topologie als <code>nodeAffinity</code> in den <code>VolumeSnapshotContent</code>; Wunsch-Standorte lassen sich per <code>VolumeSnapshotClass.allowedTopologies</code> vorgeben. Beim Restore filtert im <code>WaitForFirstConsumer</code>-Modus ein Scheduler-Plugin unpassende Nodes, im <code>Immediate</code>-Modus provisioniert der external-provisioner nur im Schnitt aus Snapshot-Standort und <code>StorageClass.allowedTopologies</code> – oder bricht mit explizitem Topologie-Fehler ab.</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>emptyDir Permission Mode · KEP 5502</h3>
+    <p>emptyDir-Volumes entstehen bislang stur mit 0777 – teilen sich mehrere Container das Volume, kann jeder jedem die Dateien löschen. Das neue optionale <code>mode</code>-Feld erlaubt Unix-Rechte von 0000 bis 01777:</p>
+<pre><code>volumes:
+  - name: app-data
+    emptyDir:
+      mode: 0750</code></pre>
+    <div class="warn"><b>Der Modus, der nicht ankommt:</b> Zwei Fälle, in denen das Feld still wirkungslos bleibt – auf Windows-Nodes wird es schlicht ignoriert, und ein gesetztes <code>fsGroup</code> im <code>securityContext</code> kann Gruppe und Rechte nachträglich verändern. Das effektive Ergebnis kann also vom deklarierten <code>mode</code> abweichen, ohne dass irgendwo ein Fehler auftaucht.</div>
+  </div>
+
+  <div class="card">
+    <h3>Volume Health Monitor · KEP 1432</h3>
+    <p>Ein Klassiker seit 2019: Die Cloud-Disk ist längst gelöscht, das Filesystem korrupt oder der Multipath weg – aber die PVC steht weiter auf <i>Bound</i>, und man merkt es erst an hängenden I/O-Operationen. Die CSI-Spezifikation bekommt vier neue RPC-Calls, über die Treiber Volume- und Backend-Gesundheit melden: auf Controller-Ebene über den Sidecar <code>csi-external-health-monitor-controller</code> (Liste kranker Volumes, Status eines Volumes), auf Node-Ebene über das kubelet (Volume- und Backend-Sicht des Nodes). Standardisierte Zustände: <code>Inaccessible</code>, <code>DataLoss</code>, <code>Degraded</code>, <code>StorageUnreachable</code>, <code>StorageDegraded</code> – wie Kubernetes darauf reagiert, definiert das KEP bewusst nicht.</p>
+  </div>
+</section>
+
+<!-- ================= 6 NETZ, AUTH & CO. ================= -->
+<section id="net" class="rose">
+  <div class="sec-head"><div class="badge">6</div><h2>Netz, Auth, Apps &amp; API-Machinery</h2></div>
+  <p class="sec-sub">Der leise Umbau im Unterbau: kube-proxy wechselt das Rückgrat, der API-Server weist sich bei Webhooks aus, StatefulSets bekommen den Holzhammer – und intern verschwindet ein historischer Zwischenschritt.</p>
+
+  <div class="card">
+    <h3>nftables wird kube-proxy-Default · KEP 5343 + 6032</h3>
+    <p>Der Wechsel läuft gestuft: Ab 1.37 warnt kube-proxy per Log und Event, wenn kein <code>--proxy-mode</code> (bzw. <code>mode</code>-Feld) explizit gesetzt ist, und fällt noch auf iptables zurück. Einige Releases später kippt der Default auf nftables; iptables bleibt wählbar.</p>
+    <div class="warn"><b>localhost:NodePort bricht unter nftables:</b> iptables ermöglichte NodePort-Zugriffe über 127.0.0.1 per <code>route_localnet</code>-Kernel-Flag – nftables hat kein Äquivalent. Workloads, die sich auf <code>localhost:&lt;NodePort&gt;</code> verlassen, verlieren beim Backend-Wechsel kommentarlos die Verbindung. Abhilfe ist der neue optionale Userspace-TCP-Proxy (KEP-6032): aktiv nur, wenn Loopback explizit in <code>--nodeport-addresses</code> steht (z. B. <code>primary,localhost</code> – <code>all</code> genügt nicht), und nur für TCP; UDP und SCTP über localhost bleiben tot.</div>
+  </div>
+
+  <div class="card">
+    <h3>API-Server-Auth gegen Admission-Webhooks · KEP 6060</h3>
+    <p>Bisher authentifiziert sich der kube-apiserver gegenüber Admission-Webhooks standardmäßig gar nicht – wer das Service-Netz erreicht, kann AdmissionReviews im Namen des API-Servers fälschen und Policies umgehen (siehe CVE-2025-1974); mTLS/kubeconfig-Setups sind so umständlich, dass sie kaum jemand nutzt. Neu: kurzlebige JWTs (max. 10 Minuten, gecacht) über die TokenRequest API mit <code>AttestationClaims</code>. Der Claim <code>allowedAPIGroup</code> begrenzt, für welche API-Gruppen ein Token AdmissionReviews senden darf – der Core-API-Server bekommt <code>*</code>, aggregierte API-Server nur ihre eigenen Gruppen. Webhooks validieren lokal (Signatur, Audience, API-Gruppe), ohne Rückfrage beim API-Server; wer den Header noch nicht versteht, ignoriert ihn einfach. Gilt nur für Admission-Webhooks, nicht für Authn/Authz/Audit/Conversion.</p>
+  </div>
+
+  <div class="card">
+    <h3>Recreate-Strategie für StatefulSets · KEP 3541</h3>
+    <p>RollingUpdate ist bei StatefulSets bewusst vorsichtig – bleibt aber ein Pod im Update hängen (<code>ImagePullBackOff</code>, <code>Pending</code>), steht der ganze Rollout, und selbst nach dem Fix räumt der Controller den hängenden Pod nicht selbst weg. Die neue <code>Recreate</code>-Strategie löscht alle alten Pods auf einmal (PVCs und damit die Daten bleiben), wartet auf vollständigen Shutdown und startet dann die neue Version gemäß <code>podManagementPolicy</code> – mit bewusster Downtime, also nicht für jedes Szenario.</p>
+    <div class="warn"><b>Die Strategie, die nichts auslöst:</b> Nur <code>spec.updateStrategy.type</code> auf <code>Recreate</code> zu stellen startet keinen Rollout – es passiert schlicht nichts, bis <code>.spec.template</code> geändert oder <code>kubectl rollout restart</code> ausgeführt wird. Wer nach dem Umstellen auf das Neuausrollen wartet, wartet vergebens.</div>
+  </div>
+
+  <div class="card">
+    <h3>Interne API-Typen eliminieren · KEP 6164</h3>
+    <p>Historisch konvertiert der API-Server jede eingehende Ressource in eine interne <code>__internal</code>-Version (Validierung einmal schreiben statt je Version) und zurück. Bei überwiegend stabilen v1-APIs ist dieser Umweg heute vor allem teuer – besonders bei großen List-Abfragen. Phase 1 macht die internen Strukturen speicheridentisch zu v1, sodass die Konvertierung ohne Feld-für-Feld-Kopie auskommt: Bei einer Liste mit 1.000 Pods sinken die Memory-Allokationen von 21.000 auf 5, die Verarbeitung wird knapp sechsmal schneller bei einem Drittel des RAM-Verbrauchs. Phase 2 (ab v1.38+) macht die internen Typen zu Go-Aliassen der v1-Strukturen.</p>
+    <div class="mnemo"><b>Der Zwischenhändler fällt weg:</b> Bisher ging jede Lieferung erst ins Zentrallager (<code>__internal</code>) und wurde dort umgepackt, selbst wenn Absender und Empfänger längst dieselbe Sprache (v1) sprechen. Jetzt fährt der Lkw direkt.</div>
+  </div>
+</section>
+
+<!-- ================= 7 BETA & STABLE ================= -->
+<section id="beta" class="mint">
+  <div class="sec-head"><div class="badge">7</div><h2>Jenseits von Alpha: die Beta- und Stable-Sprünge</h2></div>
+  <p class="sec-sub">Neben den 22 Neulingen reifen alte Bekannte – zwei davon nach über fünf Jahren Anlauf seit Kubernetes 1.22.</p>
+
+  <div class="card">
+    <h3>Die Highlights des Releases außerhalb der Alphas</h3>
+    <table>
+      <thead><tr><th>Feature</th><th>KEP</th><th>Neuer Stand</th><th>Kurz gesagt</th></tr></thead>
+      <tbody>
+        <tr><td><b>Rootless-Modus (Kubelet-in-UserNS)</b></td><td>2033</td><td>Beta</td><td>alle K8s-Komponenten (kubelet, kube-*, CRI, OCI, CNI) als Non-root auf dem Host</td></tr>
+        <tr><td><b>Memory QoS mit cgroups v2</b></td><td>2570</td><td>Beta, default an</td><td>Memory-Steuerung über cgroup-v2-Mechanismen</td></tr>
+        <tr><td><b>KYAML</b></td><td>5295</td><td>Stable</td><td>YAML-Dialekt mit strikter Formatierung gegen Klassiker wie den „Norway-Bug"</td></tr>
+        <tr><td><b>Pod Certificates + Cluster Trust Bundles</b></td><td>4317 / 3257</td><td>Stable</td><td>X.509-Zertifikate für Pods (mTLS gegen den API-Server) plus Verteilung der Trust-Anchors über <code>certificates.k8s.io</code></td></tr>
+        <tr><td><b>Node-declared Features</b></td><td>5328</td><td>Stable</td><td>Nodes deklarieren selbst, welche K8s-Features sie unterstützen</td></tr>
+      </tbody>
+    </table>
+    <div class="note"><b>Hinweis:</b> Der vollständige Stand aller Änderungen steht im offiziellen Enhancements-Tracker und im Changelog zu v1.37 – der Artikel hier ist eine Auswahl.</div>
+  </div>
+</section>
+
+</main>
+
+<footer>Zusammengefasst und ins Deutsche übertragen nach dem Blog-Artikel „Kubernetes 1.37: Deep dive into new alpha features" von Kirill Kononovich (palark.com, 30.07.2026) sowie den dort verlinkten KEPs. Alpha-Stand vor Release – einzelne KEPs können noch aus dem Milestone fallen; Details vor Einsatz gegen den offiziellen K8s-Changelog prüfen.</footer>
+
+</body>
+</html>
