@@ -3,7 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>HTTP-Fehler-Triage</title>
+<title>HTTP-Fehler-Triage – vom Statuscode zum Kommando</title>
+<meta name="rezept-kategorie"    content="troubleshooting">
+<meta name="rezept-beschreibung" content="Interaktive Triage-Tabelle: HTTP-Fehler und stille Verbindungsabbrüche nach Station im Pfad, mit Prüfkommandos für oc und kubectl.">
+<meta name="rezept-stand"        content="OpenShift 4.18 / nginx-ingress · 08/2026">
+<meta name="rezept-suche"        content="502 503 504 500 404 403 429 499 421 dns tls nxdomain connection refused timeout redirect loop endpoints selector targetport backend-protocol proxy-read-timeout ingress route triage">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -63,16 +67,23 @@ header h1 span{color:var(--rose-deep)}
 .route button:nth-child(3) .dot{background:var(--sky);color:var(--sky-deep)}
 .route button:nth-child(4) .dot{background:var(--lav);color:var(--lav-deep)}
 .route button:nth-child(5) .dot{background:var(--peach);color:var(--peach-deep)}
+.route .hd{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.route .cnt{font-family:'JetBrains Mono',monospace;font-size:.72rem;color:var(--ink-soft)}
 .route button[aria-pressed="true"]{border-color:var(--ink-soft)}
+.route button[disabled]{opacity:.45;cursor:not-allowed}
+.route button[disabled]:hover{transform:none;box-shadow:none}
 .route button.lit{border-color:var(--sky-deep);box-shadow:0 8px 22px rgba(45,111,168,.14)}
 
 /* ---------- Liste ---------- */
 main{max-width:1060px;margin:0 auto;padding:8px 24px 70px}
 .count{font-family:'Sora';font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft);margin:30px 0 12px}
+.grp{font-family:'Sora';font-size:.74rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);margin:26px 0 10px;display:flex;align-items:center;gap:10px}
+.grp::after{content:"";flex:1;height:1px;background:var(--line)}
+.grp:first-child{margin-top:0}
 .row{background:var(--card);border:1.5px solid var(--line);border-radius:var(--r-lg);margin-bottom:14px;overflow:hidden;transition:border-color .15s,box-shadow .15s}
 .row.sel{border-color:var(--sky-deep);box-shadow:0 8px 22px rgba(45,111,168,.10)}
 .row-head{width:100%;display:flex;align-items:center;gap:16px;background:none;border:0;padding:18px 24px;cursor:pointer;text-align:left;color:inherit;font-family:'Inter',sans-serif}
-.badge{width:60px;height:44px;border-radius:14px;display:grid;place-items:center;font-family:'Sora';font-weight:800;font-size:1.05rem;flex-shrink:0}
+.badge{min-width:60px;padding:0 12px;height:44px;border-radius:14px;display:grid;place-items:center;font-family:'Sora';font-weight:800;font-size:1.05rem;flex-shrink:0}
 .rose .badge{background:var(--rose);color:var(--rose-deep)}
 .peach .badge{background:var(--peach);color:var(--peach-deep)}
 .aqua .badge{background:var(--aqua);color:var(--aqua-deep)}
@@ -143,7 +154,7 @@ footer{max-width:1060px;margin:0 auto;padding:26px 24px 60px;border-top:1px soli
 <header>
   <span class="kicker">Ingress → Service → Pod</span>
   <h1>HTTP-Fehler: <span>die Triage</span></h1>
-  <p class="lede">Vom Statuscode zum Kommando. Tippen filtert, die Stationen filtern nach Hop – oder lass dich durch den 5xx-Pfad durchfragen.</p>
+  <p class="lede">Vom Statuscode zum Kommando. Sortiert nach der Station, an der du zuerst nachschaust – nicht nach Zahl. Tippen filtert, die Stationen zeigen ihre Trefferzahl, oder lass dich durch den 5xx-Pfad durchfragen.</p>
 </header>
 
 <div class="controls">
@@ -195,6 +206,53 @@ const HOPS = [
 ];
 
 const E = [
+  /* ---------- 1 · Client / DNS ---------- */
+  {c:"DNS", n:"Name wird nicht aufgelöst", hop:"client", cls:"aqua", tag:"kein Code", o:1, why:[
+    "Wildcard-Record *.apps.<cluster> fehlt oder zeigt auf die alte VIP",
+    "Split-Horizon-DNS liefert intern eine andere IP als extern",
+    "Alter /etc/hosts-Eintrag vom Testen übrig",
+    "Negativer Cache hält NXDOMAIN noch fest"
+  ], cmd:[
+    "dig +short $HOST",
+    "oc get ingresscontroller default -n openshift-ingress-operator -o jsonpath='{.status.domain}'",
+    "oc get svc -n openshift-ingress router-default -o wide"
+  ]},
+  {c:"TLS", n:"Handshake schlägt fehl", hop:"client", cls:"aqua", tag:"kein Code", o:2, why:[
+    "Zertifikat abgelaufen oder Host steht nicht im SAN",
+    "Router liefert das Default-Zertifikat, weil das TLS-Secret im Ingress fehlt",
+    "Client kennt die interne CA nicht",
+    "SNI passt nicht zum angefragten Host"
+  ], cmd:[
+    "openssl s_client -connect $HOST:443 -servername $HOST </dev/null 2>/dev/null | openssl x509 -noout -subject -dates",
+    "oc get ingress $ING -n $NS -o jsonpath='{.spec.tls}'",
+    "oc get secret $TLS_SECRET -n $NS -o jsonpath='{.data.tls\\.crt}' | base64 -d | openssl x509 -noout -text | grep -A1 'Subject Alternative'"
+  ]},
+
+  /* ---------- 2 · Load Balancer ---------- */
+  {c:"refused", n:"Connection refused", hop:"lb", cls:"aqua", tag:"kein Code", o:1, why:[
+    "Kein Listener auf dem Port — Service Type LoadBalancer hat keine externe IP bekommen",
+    "MetalLB-Pool erschöpft, Service bleibt auf Pending",
+    "Port am vorgelagerten LB nicht freigeschaltet"
+  ], cmd:[
+    "oc get svc -n openshift-ingress router-default -o wide",
+    "oc get pods -n openshift-ingress -o wide"
+  ]},
+  {c:"timeout", n:"Connection timed out", hop:"lb", cls:"aqua", tag:"kein Code", o:2, why:[
+    "Firewall verwirft still statt abzulehnen — kein RST, nur Stille",
+    "Route zum VIP fehlt oder zeigt ins Leere",
+    "LB-Health-Check schlägt fehl, alle Backends sind aus dem Pool genommen"
+  ], cmd:[
+    "oc get pods -n openshift-ingress -o wide",
+    "oc logs -n openshift-ingress deploy/router-default --tail=50"
+  ]},
+  {c:"408", n:"Request Timeout", hop:"lb", cls:"peach", tag:"4xx", why:[
+    "Client sendet zu langsam",
+    "Keepalive am LB kürzer als am Controller — Klassiker bei Cloud-LBs"
+  ], cmd:[
+    "oc get ingresscontroller default -n openshift-ingress-operator -o yaml | grep -i timeout"
+  ]},
+
+  /* ---------- 3 · Ingress / Route ---------- */
   {c:"400", n:"Bad Request", hop:"ing", cls:"peach", tag:"4xx", why:[
     "Malformed Header oder ungültige Query-Parameter",
     "Klartext-HTTP an einen TLS-Port geschickt",
@@ -202,14 +260,6 @@ const E = [
   ], cmd:[
     "oc logs -n $NS deploy/$APP --tail=100 | grep -i 'bad request'",
     "curl -vk https://$HOST/$PATH 2>&1 | head -40"
-  ]},
-  {c:"401", n:"Unauthorized", hop:"pod", cls:"peach", tag:"4xx", why:[
-    "Token abgelaufen oder falscher Issuer",
-    "Auth-Header wird vom Proxy nicht durchgereicht",
-    "OAuth-Proxy-Sidecar hat keine gültige Session"
-  ], cmd:[
-    "oc get ingress $ING -n $NS -o yaml | grep -A5 auth",
-    "curl -sI -H \"Authorization: Bearer $TOKEN\" https://$HOST/$PATH"
   ]},
   {c:"403", n:"Forbidden", hop:"ing", cls:"peach", tag:"4xx", why:[
     "auth-url oder auth-signin Annotation lehnt ab",
@@ -231,25 +281,19 @@ const E = [
     "oc describe ingress $ING -n $NS",
     "oc exec -n $NS deploy/$APP -- curl -sI localhost:8080/$PATH"
   ]},
-  {c:"405", n:"Method Not Allowed", hop:"pod", cls:"peach", tag:"4xx", why:[
-    "Backend akzeptiert die Methode nicht",
-    "Redirect 301/302 wandelt POST in GET",
-    "force-ssl-redirect greift vor dem POST"
-  ], cmd:[
-    "curl -X POST -sI https://$HOST/$PATH",
-    "oc get ingress $ING -n $NS -o yaml | grep -i redirect"
-  ]},
-  {c:"408", n:"Request Timeout", hop:"lb", cls:"rose", tag:"5xx-nah", why:[
-    "Client sendet zu langsam",
-    "Keepalive am LB kürzer als am Controller — Klassiker bei Cloud-LBs"
-  ], cmd:[
-    "oc get ingresscontroller default -n openshift-ingress-operator -o yaml | grep -i timeout"
-  ]},
   {c:"413", n:"Payload Too Large", hop:"ing", cls:"peach", tag:"4xx", why:[
     "proxy-body-size — Default 1M bei nginx-ingress",
     "Upload größer als das Limit am vorgelagerten LB"
   ], cmd:[
     "oc annotate ingress $ING -n $NS nginx.ingress.kubernetes.io/proxy-body-size=50m --overwrite"
+  ]},
+  {c:"421", n:"Misdirected Request", hop:"ing", cls:"peach", tag:"4xx", why:[
+    "HTTP/2 Connection Coalescing schickt den Request über eine Verbindung zum falschen Zertifikat",
+    "SNI und Host-Header weichen voneinander ab",
+    "Zwei Hosts teilen sich ein Zertifikat, aber nicht denselben Ingress"
+  ], cmd:[
+    "curl -vk --http1.1 https://$HOST/$PATH -o /dev/null 2>&1 | tail -20",
+    "oc get ingress -A -o jsonpath='{range .items[*]}{.metadata.namespace}{\" \"}{.spec.tls}{\"\\n\"}{end}' | grep $HOST"
   ]},
   {c:"429", n:"Too Many Requests", hop:"ing", cls:"peach", tag:"4xx", why:[
     "limit-rps oder limit-connections Annotation",
@@ -273,16 +317,25 @@ const E = [
   ], cmd:[
     "oc logs -n openshift-ingress deploy/router-default --tail=300 | grep ' 499 '"
   ]},
-  {c:"500", n:"Internal Server Error", hop:"pod", cls:"rose", tag:"5xx", why:[
-    "Bug in der Anwendung — der Stacktrace liegt im Pod-Log",
-    "Fehlendes Secret oder ConfigMap-Key",
-    "Datenbank nicht erreichbar"
+  {c:"504", n:"Gateway Timeout", hop:"ing", cls:"rose", tag:"5xx", why:[
+    "Backend langsamer als proxy-read-timeout — Default 60s",
+    "Langer DB-Query oder Deadlock",
+    "Timeout am vorgelagerten LB kürzer als am Ingress"
   ], cmd:[
-    "oc logs -n $NS deploy/$APP --tail=200",
-    "oc logs -n $NS deploy/$APP --previous --tail=100",
-    "oc get events -n $NS --sort-by=.lastTimestamp | tail -20"
+    "oc annotate ingress $ING -n $NS nginx.ingress.kubernetes.io/proxy-read-timeout=300 --overwrite",
+    "oc exec -n $NS deploy/$APP -- curl -so /dev/null -w '%{time_total}\\n' localhost:8080/$PATH"
   ]},
-  {c:"502", n:"Bad Gateway", hop:"ing", cls:"rose", tag:"5xx", why:[
+  {c:"loop", n:"Zu viele Redirects", hop:"ing", cls:"aqua", tag:"kein Code", o:1, why:[
+    "force-ssl-redirect am Ingress und Redirect in der Anwendung greifen gleichzeitig",
+    "TLS endet am LB, die App sieht http und leitet erneut auf https um",
+    "X-Forwarded-Proto wird nicht durchgereicht"
+  ], cmd:[
+    "curl -sIL https://$HOST/$PATH | grep -E 'HTTP/|[Ll]ocation'",
+    "oc get ingress $ING -n $NS -o yaml | grep -i redirect"
+  ]},
+
+  /* ---------- 4 · Service ---------- */
+  {c:"502", n:"Bad Gateway", hop:"svc", cls:"rose", tag:"5xx", why:[
     "Falscher targetPort im Service",
     "Pod crasht oder Readiness wird zu früh grün",
     "Backend spricht HTTPS, der Ingress schickt HTTP — backend-protocol fehlt",
@@ -303,15 +356,44 @@ const E = [
     "oc get pods -n $NS --show-labels",
     "oc get pods -n $NS -o wide | grep -v Running"
   ]},
-  {c:"504", n:"Gateway Timeout", hop:"ing", cls:"rose", tag:"5xx", why:[
-    "Backend langsamer als proxy-read-timeout — Default 60s",
-    "Langer DB-Query oder Deadlock",
-    "Timeout am vorgelagerten LB kürzer als am Ingress"
+
+  /* ---------- 5 · Pod / App ---------- */
+  {c:"401", n:"Unauthorized", hop:"pod", cls:"peach", tag:"4xx", why:[
+    "Token abgelaufen oder falscher Issuer",
+    "Auth-Header wird vom Proxy nicht durchgereicht",
+    "OAuth-Proxy-Sidecar hat keine gültige Session"
   ], cmd:[
-    "oc annotate ingress $ING -n $NS nginx.ingress.kubernetes.io/proxy-read-timeout=300 --overwrite",
-    "oc exec -n $NS deploy/$APP -- curl -so /dev/null -w '%{time_total}\\n' localhost:8080/$PATH"
+    "oc get ingress $ING -n $NS -o yaml | grep -A5 auth",
+    "curl -sI -H \"Authorization: Bearer $TOKEN\" https://$HOST/$PATH",
+    "oc logs -n $NS deploy/$APP -c oauth-proxy --tail=100"
+  ]},
+  {c:"405", n:"Method Not Allowed", hop:"pod", cls:"peach", tag:"4xx", why:[
+    "Backend akzeptiert die Methode nicht",
+    "Redirect 301/302 wandelt POST in GET",
+    "force-ssl-redirect greift vor dem POST"
+  ], cmd:[
+    "curl -X POST -sI https://$HOST/$PATH",
+    "oc get ingress $ING -n $NS -o yaml | grep -i redirect"
+  ]},
+  {c:"500", n:"Internal Server Error", hop:"pod", cls:"rose", tag:"5xx", why:[
+    "Bug in der Anwendung — der Stacktrace liegt im Pod-Log",
+    "Fehlendes Secret oder ConfigMap-Key",
+    "Datenbank nicht erreichbar"
+  ], cmd:[
+    "oc logs -n $NS deploy/$APP --tail=200",
+    "oc logs -n $NS deploy/$APP --previous --tail=100",
+    "oc get events -n $NS --sort-by=.lastTimestamp | tail -20"
   ]}
 ];
+
+/* Reihenfolge: Station im Pfad, darin Codes aufsteigend.
+   Eintraege ohne Statuscode stehen in ihrer Station vorn. */
+const HOP_I = Object.fromEntries(HOPS.map((h,i)=>[h.id,i]));
+const codeKey = e => /^\d+$/.test(e.c) ? +e.c : -100 + (e.o||0);
+E.sort((a,b) => HOP_I[a.hop]-HOP_I[b.hop]
+             || codeKey(a)-codeKey(b)
+             || a.n.localeCompare(b.n,"de"));
+const HOP_N = Object.fromEntries(HOPS.map(h => [h.id, E.filter(e=>e.hop===h.id).length]));
 
 const WALK = [
   {q:"Taucht der Request im Controller-Log auf?", hop:"ing",
@@ -357,11 +439,14 @@ const esc = s => s.replace(/[&<>]/g, m => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[m
 const tr = s => cli === "oc" ? s : s.replace(/\boc\b/g, "kubectl");
 
 function drawRail(){
-  rail.innerHTML = HOPS.map(h =>
-    `<button data-hop="${h.id}" aria-pressed="${hopFilter===h.id}">
-       <span class="dot">${h.k}</span>
+  rail.innerHTML = HOPS.map(h => {
+    const n = HOP_N[h.id];
+    return `<button data-hop="${h.id}" aria-pressed="${hopFilter===h.id}"
+       ${n ? "" : "disabled"} title="${n} ${n===1?"Eintrag":"Einträge"}">
+       <span class="hd"><span class="dot">${h.k}</span><span class="cnt">${n}</span></span>
        <span class="t">${h.n}</span>
-       <span class="s">${h.s}</span></button>`).join("");
+       <span class="s">${h.s}</span></button>`;
+  }).join("");
 }
 
 function filtered(){
@@ -373,10 +458,12 @@ function filtered(){
   });
 }
 
+const CLIP = [];
 function cmdBlock(c){
-  const t = esc(tr(c));
-  return `<div class="cmd"><pre><code>${t}</code></pre>
-    <button class="copy" data-cmd="${t}">kopieren</button></div>`;
+  const raw = tr(c);
+  const i = CLIP.push(raw) - 1;
+  return `<div class="cmd"><pre><code>${esc(raw)}</code></pre>
+    <button class="copy" data-clip="${i}" aria-label="Kommando kopieren">kopieren</button></div>`;
 }
 
 function drawList(){
@@ -387,7 +474,12 @@ function drawList(){
     list.innerHTML = `<div class="empty">Kein Treffer. <code>Esc</code> setzt Suchfeld und Station zurück.</div>`;
     return;
   }
-  list.innerHTML = view.map((e,i) =>
+  let last = null;
+  list.innerHTML = view.map((e,i) => {
+    const grp = (!hopFilter && e.hop !== last)
+      ? `<p class="grp">${HOPS.findIndex(x=>x.id===e.hop)+1} · ${HOPS.find(x=>x.id===e.hop).n}</p>` : "";
+    last = e.hop;
+    return grp +
     `<div class="row ${e.cls}${i===sel?" sel":""}" data-i="${i}">
       <button class="row-head" aria-expanded="false">
         <span class="badge">${e.c}</span>
@@ -401,7 +493,8 @@ function drawList(){
         <h3 class="lbl">Prüfen</h3>
         ${e.cmd.map(cmdBlock).join("")}
       </div>
-    </div>`).join("");
+    </div>`;
+  }).join("");
 }
 
 function trailHtml(){
@@ -470,8 +563,9 @@ function setCli(c){
 }
 
 async function copy(btn){
-  try { await navigator.clipboard.writeText(btn.dataset.cmd); }
-  catch { const t=document.createElement("textarea"); t.value=btn.dataset.cmd;
+  const raw = CLIP[+btn.dataset.clip];
+  try { await navigator.clipboard.writeText(raw); }
+  catch { const t=document.createElement("textarea"); t.value=raw;
     document.body.appendChild(t); t.select(); document.execCommand("copy"); t.remove(); }
   btn.textContent="kopiert"; btn.classList.add("done");
   live.textContent="Kommando kopiert";
@@ -497,6 +591,7 @@ document.addEventListener("click", e => {
   }
   const hp = e.target.closest("#rail button");
   if (hp){
+    if (hp.disabled) return;
     hopFilter = hopFilter === hp.dataset.hop ? null : hp.dataset.hop;
     sel=-1; drawRail(); if (mode==="ref") drawList(); return;
   }
@@ -533,7 +628,7 @@ document.addEventListener("keydown", e => {
   }
 });
 
-drawRail(); drawList(); $("#q").focus();
+drawRail(); drawList();
 </script>
 </body>
 </html>

@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IBM Fusion 2.9.x – Backup &amp; Restore auf OpenShift</title>
+<meta name="rezept-kategorie"    content="storage">
+<meta name="rezept-beschreibung" content="Application Protection, Service Protection und die Trennung von Data- und Catalog-Bucket – inklusive Hub-Spoke-Modell und der Abgrenzung zum etcd-Backup.">
+<meta name="rezept-stand"        content="IBM Fusion 2.9.x HCI / 2.12.x Software · 08/2026">
+<meta name="rezept-suche"        content="fusion backup restore service protection application protection catalog bucket data bucket hub spoke backupstoragelocation backuppolicy backuppolicyassignment oadp velero etcd data-protection.isf.ibm.com ibm-spectrum-fusion-ns">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#33394a;
+  --ink-soft:#5c6376;
+  --paper:#fbfaf7;
+  --card:#ffffff;
+  --line:#e9e6df;
+  --code-bg:#31364a;
+  --code-ink:#e8eaf2;
+  --mint:#d9f2e4;      --mint-deep:#2f8f6b;
+  --sky:#dcebf9;       --sky-deep:#2d6fa8;
+  --lav:#e7e2f7;       --lav-deep:#6b5bb5;
+  --peach:#fbe6d7;     --peach-deep:#c2703d;
+  --butter:#faf0cf;    --butter-deep:#a5842a;
+  --rose:#f9e0e6;      --rose-deep:#b34f6d;
+  --aqua:#d7eff0;      --aqua-deep:#2b8288;
+  --r-lg:26px; --r-md:18px; --r-sm:12px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;scroll-padding-top:90px}
+body{font-family:'Inter',sans-serif;background:var(--paper);color:var(--ink);line-height:1.65;font-size:16px}
+h1,h2,h3,h4{font-family:'Sora',sans-serif;line-height:1.2}
+
+/* ---------- Kopf ---------- */
+header{max-width:1060px;margin:0 auto;padding:56px 24px 8px}
+.kicker{display:inline-block;background:var(--lav);color:var(--lav-deep);font-weight:600;font-size:.8rem;letter-spacing:.08em;text-transform:uppercase;padding:6px 14px;border-radius:999px;margin-bottom:18px}
+header h1{font-size:clamp(1.9rem,4.5vw,3rem);font-weight:800;letter-spacing:-.02em}
+header h1 span{color:var(--mint-deep)}
+.lede{color:var(--ink-soft);max-width:640px;margin-top:14px;font-size:1.05rem}
+
+/* ---------- Fahrplan ---------- */
+.route{max-width:1060px;margin:34px auto 10px;padding:0 24px;display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.route a{display:flex;flex-direction:column;gap:8px;text-decoration:none;color:var(--ink);background:var(--card);border:1.5px solid var(--line);border-radius:var(--r-md);padding:16px 14px;transition:transform .15s ease,box-shadow .15s ease}
+.route a:hover,.route a:focus-visible{transform:translateY(-3px);box-shadow:0 8px 22px rgba(60,60,90,.10);outline:none}
+.route .dot{width:34px;height:34px;border-radius:12px;display:grid;place-items:center;font-family:'Sora';font-weight:700;font-size:.9rem}
+.route .t{font-weight:600;font-size:.86rem;line-height:1.3}
+.route .s{font-size:.74rem;color:var(--ink-soft)}
+.route a:nth-child(1) .dot{background:var(--aqua);color:var(--aqua-deep)}
+.route a:nth-child(2) .dot{background:var(--mint);color:var(--mint-deep)}
+.route a:nth-child(3) .dot{background:var(--sky);color:var(--sky-deep)}
+.route a:nth-child(4) .dot{background:var(--lav);color:var(--lav-deep)}
+.route a:nth-child(5) .dot{background:var(--peach);color:var(--peach-deep)}
+.route a:nth-child(6) .dot{background:var(--butter);color:var(--butter-deep)}
+.route a:nth-child(7) .dot{background:var(--rose);color:var(--rose-deep)}
+.route a:nth-child(8) .dot{background:var(--mint);color:var(--mint-deep)}
+
+/* ---------- Sticky-Nav ---------- */
+nav{position:sticky;top:0;z-index:50;background:rgba(251,250,247,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);margin-top:26px}
+nav .wrap{max-width:1060px;margin:0 auto;padding:10px 24px;display:flex;gap:8px;overflow-x:auto}
+nav a{white-space:nowrap;text-decoration:none;font-size:.82rem;font-weight:600;color:var(--ink-soft);padding:7px 14px;border-radius:999px;border:1px solid transparent}
+nav a:hover{background:var(--card);border-color:var(--line);color:var(--ink)}
+
+/* ---------- Sektionen ---------- */
+main{max-width:1060px;margin:0 auto;padding:20px 24px 90px}
+section{margin-top:64px}
+.sec-head{display:flex;align-items:center;gap:16px;margin-bottom:8px}
+.badge{width:52px;height:52px;border-radius:16px;display:grid;place-items:center;font-family:'Sora';font-weight:800;font-size:1.25rem;flex-shrink:0}
+section h2{font-size:clamp(1.4rem,3vw,1.9rem);font-weight:700}
+.sec-sub{color:var(--ink-soft);margin-bottom:22px;max-width:720px}
+.aqua .badge{background:var(--aqua);color:var(--aqua-deep)}
+.mint .badge{background:var(--mint);color:var(--mint-deep)}
+.sky .badge{background:var(--sky);color:var(--sky-deep)}
+.lav .badge{background:var(--lav);color:var(--lav-deep)}
+.peach .badge{background:var(--peach);color:var(--peach-deep)}
+.butter .badge{background:var(--butter);color:var(--butter-deep)}
+.rose .badge{background:var(--rose);color:var(--rose-deep)}
+
+/* ---------- Karten & Schritte ---------- */
+.card{background:var(--card);border:1.5px solid var(--line);border-radius:var(--r-lg);padding:26px 28px;margin-bottom:20px}
+.card h3{font-size:1.08rem;margin-bottom:14px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+ol.steps{list-style:none;counter-reset:s;display:flex;flex-direction:column;gap:14px}
+ol.steps li{counter-increment:s;display:grid;grid-template-columns:34px 1fr;gap:14px;align-items:start}
+ol.steps li::before{content:counter(s);width:30px;height:30px;border-radius:10px;display:grid;place-items:center;font-family:'Sora';font-weight:700;font-size:.85rem;margin-top:2px}
+.aqua ol.steps li::before{background:var(--aqua);color:var(--aqua-deep)}
+.mint ol.steps li::before{background:var(--mint);color:var(--mint-deep)}
+.sky ol.steps li::before{background:var(--sky);color:var(--sky-deep)}
+.lav ol.steps li::before{background:var(--lav);color:var(--lav-deep)}
+.peach ol.steps li::before{background:var(--peach);color:var(--peach-deep)}
+.butter ol.steps li::before{background:var(--butter);color:var(--butter-deep)}
+.rose ol.steps li::before{background:var(--rose);color:var(--rose-deep)}
+.steps b{font-weight:600}
+.steps small{display:block;color:var(--ink-soft);font-size:.86rem;margin-top:2px}
+
+ul.clean{list-style:none;display:flex;flex-direction:column;gap:10px}
+ul.clean li{padding-left:24px;position:relative}
+ul.clean li::before{content:"";position:absolute;left:4px;top:.62em;width:9px;height:9px;border-radius:3px;background:var(--line)}
+.aqua ul.clean li::before{background:var(--aqua-deep)}
+.mint ul.clean li::before{background:var(--mint-deep)}
+.sky ul.clean li::before{background:var(--sky-deep)}
+.lav ul.clean li::before{background:var(--lav-deep)}
+.peach ul.clean li::before{background:var(--peach-deep)}
+.butter ul.clean li::before{background:var(--butter-deep)}
+.rose ul.clean li::before{background:var(--rose-deep)}
+
+/* ---------- Code ---------- */
+pre{background:var(--code-bg);color:var(--code-ink);border-radius:var(--r-sm);padding:16px 18px;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:.82rem;line-height:1.6;margin:10px 0}
+code{font-family:'JetBrains Mono',monospace;font-size:.85em;background:#efede7;border-radius:6px;padding:2px 6px}
+pre code{background:none;padding:0;font-size:1em}
+pre .c{color:#9aa3c0}
+
+/* ---------- Hinweisboxen ---------- */
+.note,.warn,.mnemo{border-radius:var(--r-md);padding:14px 18px;margin:14px 0;font-size:.92rem}
+.note{background:var(--sky)}
+.warn{background:var(--rose)}
+.mnemo{background:var(--butter)}
+.note b,.warn b,.mnemo b{font-weight:700}
+.mnemo::before{content:"🧠 Eselsbrücke · ";font-weight:700}
+.warn::before{content:"⚠️ ";font-weight:700}
+
+/* ---------- Tabellen ---------- */
+table{width:100%;border-collapse:separate;border-spacing:0;font-size:.88rem;margin:10px 0}
+th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-family:'Sora';font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft)}
+tr:last-child td{border-bottom:none}
+thead th:first-child{border-top-left-radius:var(--r-sm)}
+thead th:last-child{border-top-right-radius:var(--r-sm)}
+thead{background:var(--paper)}
+
+/* ---------- Details ---------- */
+details{border:1.5px solid var(--line);border-radius:var(--r-md);margin:12px 0;background:var(--card)}
+details summary{cursor:pointer;padding:14px 18px;font-weight:600;font-size:.94rem;list-style:none;display:flex;align-items:center;gap:10px}
+details summary::before{content:"+";font-family:'Sora';font-weight:700;width:24px;height:24px;border-radius:8px;background:var(--paper);display:grid;place-items:center;flex-shrink:0}
+details[open] summary::before{content:"–"}
+details .inner{padding:0 18px 18px}
+summary::-webkit-details-marker{display:none}
+
+/* ---------- DNS-Chips ---------- */
+.chips{display:flex;flex-wrap:wrap;gap:10px;margin:10px 0}
+.chip{background:var(--paper);border:1.5px solid var(--line);border-radius:999px;padding:6px 14px;font-family:'JetBrains Mono';font-size:.8rem}
+
+footer{max-width:1060px;margin:0 auto;padding:30px 24px 60px;color:var(--ink-soft);font-size:.82rem;border-top:1px solid var(--line)}
+
+@media(max-width:820px){
+  .route{grid-template-columns:repeat(2,1fr)}
+  .grid2{grid-template-columns:1fr}
+}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.route a{transition:none}}
+</style>
+</head>
+<body>
+
+<header>
+  <span class="kicker">IBM Fusion 2.9.x / 2.12.x · OpenShift 4.18 · Backup &amp; Restore</span>
+  <h1>Fusion Backup &amp; Restore:<br>Application- und <span>Service Protection</span></h1>
+  <p class="lede">Acht Abschnitte vom Bucket-Design bis zur Wiederherstellung auf einem neuen Cluster. Fusion sichert Applikationen samt PVCs, der Catalog sichert die Backup-Verwaltung selbst – <b>die OpenShift Control Plane sichert es nicht</b>. Dazu das Hub-Spoke-Modell für mehrere Cluster und die Stellen, an denen die Dokumentation schweigt.</p>
+</header>
+
+<div class="route">
+  <a href="#basics"><span class="dot">0</span><span class="t">Überblick</span><span class="s">Zwei Schutzarten, Abgrenzung</span></a>
+  <a href="#buckets"><span class="dot">1</span><span class="t">Buckets</span><span class="s">Data, Catalog, Trennung</span></a>
+  <a href="#hubspoke"><span class="dot">2</span><span class="t">Hub &amp; Spoke</span><span class="s">Rollen, Agent, Reichweite</span></a>
+  <a href="#objects"><span class="dot">3</span><span class="t">Objekte</span><span class="s">Location, Policy, Assignment</span></a>
+  <a href="#usecases"><span class="dot">4</span><span class="t">Use Cases</span><span class="s">Drei Fälle aus der Praxis</span></a>
+  <a href="#grenzen"><span class="dot">5</span><span class="t">Grenzen</span><span class="s">etcd, System-Namespaces</span></a>
+  <a href="#rbac"><span class="dot">6</span><span class="t">Rechte</span><span class="s">RBAC, Self-Service, OADP</span></a>
+  <a href="#howto"><span class="dot">7</span><span class="t">Ablauf</span><span class="s">DR auf neuem Cluster</span></a>
+</div>
+
+<nav><div class="wrap">
+  <a href="#basics">0 · Überblick</a>
+  <a href="#buckets">1 · Buckets</a>
+  <a href="#hubspoke">2 · Hub &amp; Spoke</a>
+  <a href="#objects">3 · Objekte</a>
+  <a href="#usecases">4 · Use Cases</a>
+  <a href="#grenzen">5 · Grenzen</a>
+  <a href="#rbac">6 · Rechte</a>
+  <a href="#howto">7 · Ablauf</a>
+</div></nav>
+
+<main>
+
+<!-- ============ 0 ============ -->
+<section id="basics" class="aqua">
+  <div class="sec-head"><div class="badge">0</div><h2>Zwei Schutzarten, zwei Aufgaben</h2></div>
+  <p class="sec-sub">Fusion Backup &amp; Restore kennt zwei Dinge, die leicht verwechselt werden: den Schutz deiner Anwendungen und den Schutz des Backup-Werkzeugs selbst. Wer das vermischt, baut ein Konzept mit einer Lücke, die erst im Ernstfall auffällt.</p>
+
+  <div class="card">
+    <h3>Was Fusion sichert – und was nicht</h3>
+    <table>
+      <thead><tr><th>Schutzart</th><th>Sichert</th><th>Sichert nicht</th></tr></thead>
+      <tbody>
+        <tr><td><b>Application Protection</b></td><td>Alle namespace-scoped Ressourcen einer Anwendung plus abhängige cluster-scoped Ressourcen, dazu die PVC-Daten</td><td>Namespaces, die nicht als Anwendung erfasst sind</td></tr>
+        <tr><td><b>Service Protection</b></td><td>Den Backup-&amp;-Restore-Service selbst: Locations, Policies, Policy Assignments, Backup-CRs</td><td>etcd, Control Plane, Node-Konfiguration, Anwendungsdaten</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="mnemo"><b>Die Umzugsfirma</b> – Application Protection fährt Möbel ins Lager. Service Protection sichert die Aktenordner der Firma: Inventarlisten, Kundenadressen, Auftragszettel. Zwei völlig verschiedene Güter, zwei getrennte Lagerorte.</div>
+
+  <div class="warn"><b>Achtung:</b> „Service Protection" liest sich wie ein Cluster-Backup und wird regelmäßig für eines gehalten. Es sichert weder etcd noch die OpenShift Control Plane. Wer sich darauf verlässt, hat ein Backup-Konzept, das grün meldet und den wichtigsten Fall nicht abdeckt – siehe Abschnitt 5.</div>
+
+  <div class="card">
+    <h3>Wo die Objekte liegen</h3>
+    <p>Der Fusion-Namespace ist per Default <code>ibm-spectrum-fusion-ns</code>, kann aber abweichen. Der Service-Namespace des Backup-Tools ist ebenfalls konfigurierbar – hart auf <code>ibm-backup-restore</code> zu verweisen, ist deshalb ungenau. Beide Werte solltest du am laufenden Cluster ablesen statt anzunehmen.</p>
+    <pre><code><span class="c"># Fusion-Instanz und ihren Namespace finden</span>
+oc get spectrumfusion -A
+
+<span class="c"># Service-Namespace des Backup-&amp;-Restore-Service auslesen</span>
+oc -n &lt;fusion-namespace&gt; get fusionserviceinstance \
+  ibm-backup-restore-service-instance -o json | jq '.spec.parameters'</code></pre>
+  </div>
+</section>
+
+<!-- ============ 1 ============ -->
+<section id="buckets" class="mint">
+  <div class="sec-head"><div class="badge">1</div><h2>Data-Bucket und Catalog-Bucket</h2></div>
+  <p class="sec-sub">Zwei S3-Buckets mit unterschiedlichem Inhalt und unterschiedlicher Lebensdauer. Der eine enthält Nutzdaten, der andere das Wissen darüber, wo diese Nutzdaten liegen.</p>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>Data-Bucket</h3>
+      <p>Ziel der Application Backups. Hier liegen die Kubernetes-Objekte der Anwendungen und die Inhalte ihrer PVCs. Wächst mit der Datenmenge, wird regelmäßig beschrieben, unterliegt der Retention der Backup Policy.</p>
+    </div>
+    <div class="card">
+      <h3>Catalog-Bucket</h3>
+      <p>Ziel der Service Protection. Enthält keine Anwendungsdaten, sondern die Verwaltung: welche Locations es gibt, welche Policies, welche Zuordnungen, welche Backups existieren. Klein, aber ohne ihn ist der Data-Bucket ein Lager ohne Inventarliste.</p>
+    </div>
+  </div>
+
+  <div class="mnemo"><b>Lager und Inventarliste</b> – ein Lager ohne Liste ist ein Haufen unbeschrifteter Kisten. Eine Liste ohne Lager ist Papier. Nur beides zusammen ergibt eine Wiederherstellung.</div>
+
+  <div class="card">
+    <h3>Warum Fusion die Liste braucht</h3>
+    <p>Fusion findet Backups nicht dadurch, dass es ein Bucket durchsucht. Es kennt sie über die Backup-CRs im Cluster. Ist der Cluster weg, sind auch die CRs weg – und damit die Kenntnis darüber, dass im Data-Bucket überhaupt etwas liegt. Der Catalog-Restore stellt genau diese Kenntnis wieder her, keine einzige Anwendung.</p>
+  </div>
+
+  <div class="warn"><b>Achtung:</b> Läuft dein S3 lokal auf demselben Cluster, stirbt der Catalog-Bucket im Totalausfall mit. IBM verlangt für diesen Fall eine zusätzliche externe Sicherung der S3-Daten. Bis dahin melden alle Backups Erfolg und sind im Ernstfall trotzdem unerreichbar.</div>
+
+  <div class="note"><b>Hinweis:</b> Die Regel „ein Bucket ausschließlich für den Catalog, ein separates für Anwendungen" ist eine Aussage aus dem IBM-Support, in der Dokumentation zu Fusion HCI 2.9.x aber nicht als harte Supportanforderung belegt. Technisch nachvollziehbar wegen der Trennung von Metadaten und Nutzdaten – lass sie dir für dein Design trotzdem im Ticket schriftlich geben.</div>
+</section>
+
+<!-- ============ 2 ============ -->
+<section id="hubspoke" class="sky">
+  <div class="sec-head"><div class="badge">2</div><h2>Hub und Spoke bei mehreren Clustern</h2></div>
+  <p class="sec-sub">Ab dem zweiten Cluster stellt sich die Frage, wo Policies und Locations gepflegt werden. Fusion beantwortet sie mit einer festen Rollenverteilung: ein Hub verwaltet, beliebig viele Spokes führen aus.</p>
+
+  <div class="card">
+    <h3>Rollenverteilung</h3>
+    <ul class="clean">
+      <li><b>Hub</b> – hält Scheduling, Retention, Policy-Handling und Location-Management. Von hier aus werden Policies auf Anwendungen beliebiger Cluster angewendet.</li>
+      <li><b>Spoke</b> – trägt nur den Backup-&amp;-Restore-Agent. Er nimmt Jobs entgegen und führt sie lokal aus. Fusion muss trotzdem installiert sein, nur eben in der Agent-Rolle.</li>
+      <li><b>Jobs-Seite</b> – zeigt im Hub alle Backup- und Restore-Jobs über alle Cluster hinweg, filterbar pro Cluster.</li>
+    </ul>
+  </div>
+
+  <div class="mnemo"><b>Disponent und Fahrer</b> – der Hub ist die Zentrale mit den Auftragszetteln, der Spoke der Fahrer vor Ort. Die Möbel fahren direkt vom Haus ins Lager, nicht über die Zentrale. Im Hub liegen nur die Papiere.</div>
+
+  <div class="card">
+    <h3>Was das für den Catalog bedeutet</h3>
+    <p>Service Protection wird ausschließlich auf dem Hub konfiguriert. Die Backup-Informationen der Spokes sind dabei automatisch enthalten, auf den Spokes ist keine eigene Konfiguration nötig. Ein Catalog-Bucket für die gesamte Landschaft, nicht einer pro Cluster.</p>
+    <p style="margin-top:10px">Nebeneffekt, den man selten bewusst einkauft: Die Architektur trennt die Workloads im Spoke so ab, dass sie die Backup-Locations nicht erreichen. Ein kompromittierter Spoke kommt nicht an die Backups. Das ist zugleich die sauberste Antwort auf die Frage, wie man Plattform-Nutzer von den Backup-Zielen fernhält.</p>
+  </div>
+
+  <div class="warn"><b>Achtung:</b> Service Protection über Hub und Spokes greift nur auf Remote-S3-Backups. Reine lokale Snapshot-Backups sind nicht unterstützt – sie tauchen nach einem Catalog-Restore schlicht nicht wieder auf, ohne dass vorher etwas fehlgeschlagen wäre.</div>
+
+  <details>
+    <summary>Anbindung eines Spoke-Clusters</summary>
+    <div class="inner">
+      <p>Die Verbindung wird über ein Connection Snippet aufgebaut, das auf dem Hub erzeugt und bei der Agent-Installation im Spoke eingetragen wird. Das Snippet ist eine Stunde gültig; daraus erzeugt der Hub über seine Certificate Authority ein dauerhaftes Zertifikat für die Verbindung. Netzunterbrechungen zwischen Hub und Spoke von bis zu einer Stunde übersteht die Kopplung.</p>
+      <p style="margin-top:10px">Für die Agent-Installation wird eine StorageClass ausgewählt; der interne Datenkatalog braucht mindestens 200 GB ReadWriteOnce. Die YAML-Variante des Snippets ist für automatisierte Deployments gedacht, über die Oberfläche wird das Snippet direkt eingetragen.</p>
+    </div>
+  </details>
+</section>
+
+<!-- ============ 3 ============ -->
+<section id="objects" class="lav">
+  <div class="sec-head"><div class="badge">3</div><h2>Location, Policy, Assignment</h2></div>
+  <p class="sec-sub">Drei Objekttypen tragen die gesamte Konfiguration. Wer sie kennt, versteht auch, was im Catalog-Backup überhaupt drinsteckt – denn genau diese Objekte werden dort gesichert.</p>
+
+  <div class="card">
+    <h3>Die drei Bausteine</h3>
+    <table>
+      <thead><tr><th>Objekt</th><th>Beantwortet</th><th>Wesentliche Angaben</th></tr></thead>
+      <tbody>
+        <tr><td><b>BackupStorageLocation</b></td><td>Wohin wird gesichert?</td><td>Typ des Endpoints, Bucket-Name, Credentials, typabhängige Zusatzparameter</td></tr>
+        <tr><td><b>BackupPolicy</b></td><td>Wie oft und wie lange?</td><td>Frequenz, Retention, zugeordnete Location</td></tr>
+        <tr><td><b>BackupPolicyAssignment</b></td><td>Für welche Anwendung?</td><td>Verknüpfung von Policy und Anwendung – ohne Assignment läuft kein geplantes Backup</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="mnemo"><b>Zeitung abonnieren</b> – die Location ist die Lieferadresse, die Policy das Abo mit Erscheinungsrhythmus und Aufbewahrungsdauer, das Assignment die Anmeldung für einen konkreten Haushalt. Ohne Anmeldung liegt das Abo nur in der Schublade.</div>
+
+  <div class="note"><b>Hinweis:</b> Als Location-Typen stehen unter anderem Azure, IBM Cloud, S3-kompatibler Object Storage, AWS und Storage Protect zur Auswahl. Eine eigene UI-Kategorie namens „Service Protection Location" ist in der HCI-2.9.x-Doku nicht belegt – beim Service-Restore führt ein Assistent durch das Anlegen der Location. Prüfe die Bezeichnung an deiner installierten Version, statt sie aus einem Design-Dokument zu übernehmen.</div>
+
+  <details>
+    <summary>Backup-CR als Beispiel</summary>
+    <div class="inner">
+      <p>Backups lassen sich auch deklarativ anlegen. Interessant ist das Feld <code>appCluster</code>: Es benennt den Cluster, auf dem die Anwendung liegt, und ist nur für Anwendungen auf einem Spoke nötig. Fehlt es, geht Fusion von einer Anwendung auf dem Hub aus.</p>
+      <pre><code>apiVersion: data-protection.isf.ibm.com/v1alpha1
+kind: Backup
+metadata:
+  name: backup-app1-daily-20260810
+  namespace: ibm-spectrum-fusion-ns
+spec:
+  appCluster: apps.spoke1.example.com
+  application: app1
+  backupPolicy: s3-daily</code></pre>
+      <p style="margin-top:10px">Diese Kommandos laufen ausschließlich vom Hub aus – auch dann, wenn die Backup-CR fachlich zu einem Spoke gehört.</p>
+    </div>
+  </details>
+</section>
+
+<!-- ============ 4 ============ -->
+<section id="usecases" class="peach">
+  <div class="sec-head"><div class="badge">4</div><h2>Drei Use Cases aus der Praxis</h2></div>
+  <p class="sec-sub">Die Fälle, um die es in Design-Diskussionen tatsächlich geht – und welcher davon mit welchem Werkzeug bedient wird.</p>
+
+  <div class="card">
+    <h3>Fall 1 · Das Backup-Werkzeug ist kaputt</h3>
+    <p>Nach einem Update funktioniert Backup &amp; Restore nicht mehr. Die Anwendungsdaten liegen unverändert im Data-Bucket, aber die Verwaltung ist beschädigt. Die Reihenfolge ist zwingend: erst den Operator reparieren oder neu installieren, dann den Catalog wiederherstellen. Ein Catalog-Restore auf einen kaputten Operator läuft nicht durch.</p>
+  </div>
+
+  <div class="card">
+    <h3>Fall 2 · Ein System-Namespace ist beschädigt</h3>
+    <p>Ein <code>openshift-*</code>- oder <code>kube-*</code>-Namespace wurde durch einen Konfigurationsfehler unbrauchbar. Fusion ist dafür nicht gebaut: Es sichert Anwendungen, nicht den Cluster. Sicherbar sind solche Namespaces zwar, ein vollständiger Restore scheitert aber an Objekten, die OpenShift nicht überschreiben lässt. Nutzbar bleibt das als Ersatzteillager für einzelne Ressourcen, etwa ein verlorenes Secret.</p>
+  </div>
+
+  <div class="card">
+    <h3>Fall 3 · Eine Anwendung soll zurück</h3>
+    <p>Inkonsistenz, Admin-Fehler, fehlgeschlagenes Deployment. Der Standardfall: Wiederherstellung des kompletten Namespaces aus dem Data-Bucket. Genau dafür ist das Werkzeug gebaut, und hier verhält es sich wie erwartet.</p>
+  </div>
+
+  <div class="warn"><b>Achtung:</b> Der oft genannte vierte Fall – „ein OCP- oder Fusion-Upgrade zerstört den Cluster" – ist mit Fusion Backup &amp; Restore nicht abgedeckt. Weder Control Plane noch etcd sind Bestandteil eines Fusion-Backups. Eine dokumentierte IBM-Empfehlung, ein fehlgeschlagenes Fusion-Upgrade per Service Protection zurückzurollen, existiert nicht.</div>
+</section>
+
+<!-- ============ 5 ============ -->
+<section id="grenzen" class="butter">
+  <div class="sec-head"><div class="badge">5</div><h2>Grenzen und das getrennte etcd-Backup</h2></div>
+  <p class="sec-sub">Fusion deckt die Anwendungsebene ab. Alles darunter braucht ein zweites, unabhängiges Verfahren nach Red-Hat-Vorgabe.</p>
+
+  <div class="mnemo"><b>Umzug ist keine Sanierung</b> – die Umzugsfirma trägt Möbel, sie repariert keine tragenden Wände. Für das Gebäude ist jemand anderes zuständig.</div>
+
+  <div class="card">
+    <h3>Was das etcd-Backup abdeckt – und was nicht</h3>
+    <ul class="clean">
+      <li><b>Vor jedem Cluster-Update</b> verlangt Red Hat einen etcd-Snapshot. Das ist keine Empfehlung, sondern Voraussetzung für jede spätere Wiederherstellung.</li>
+      <li><b>Restore nur innerhalb derselben z-Stream-Version.</b> Ein Snapshot aus einer anderen Minor-Version ist als Wiederherstellungspunkt nicht nutzbar.</li>
+      <li><b>Kein Versions-Rollback.</b> Red Hat betrachtet den etcd-Restore bei einem katastrophal fehlgeschlagenen Update als letzten Ausweg, ausdrücklich nicht als unterstützten Weg zurück auf die Vorversion.</li>
+    </ul>
+    <p style="margin-top:14px">Für ein gescheitertes Minor-Upgrade bleibt damit nur der Neuaufbau des Clusters plus anschließende Wiederherstellung über Service Protection und Application Backups – der Ablauf aus Abschnitt 7.</p>
+  </div>
+
+  <div class="note"><b>Hinweis:</b> Die Einschränkung, dass <code>openshift-*</code>-Namespaces nur teilweise wiederherstellbar sind, ist in der geprüften HCI-2.9.x-Doku nicht als Liste ausgeschlossener Ressourcen hinterlegt. Plausibel ist sie, belegt bislang nicht. Wer das im Konzept festschreibt, sollte es im Testcluster einmal praktisch nachweisen.</div>
+
+  <div class="warn"><b>Achtung:</b> Bei einem Service-Restore werden vorhandene Backup-&amp;-Restore-Objekte durch den Stand des gewählten Service-Backups ersetzt. Auf einem laufenden Cluster mit aktiven Policies ist das kein harmloser Vorgang – seit dem Backup angelegte Policies und Assignments verschwinden dabei.</div>
+</section>
+
+<!-- ============ 6 ============ -->
+<section id="rbac" class="rose">
+  <div class="sec-head"><div class="badge">6</div><h2>Zugriffsrechte und Self-Service</h2></div>
+  <p class="sec-sub">Plattform-Nutzer sollen Backups anstoßen können, ohne an die Locations oder an die darunterliegende Velero-Ebene zu kommen. Fusion liefert dafür einen Teil der Antwort, den Rest baust du selbst.</p>
+
+  <div class="card">
+    <h3>Was Fusion mitbringt</h3>
+    <p>Für die eigenen Backup-&amp;-Restore-CRs stehen je CR vier Rollen bereit: <code>admin</code>, <code>crdview</code>, <code>edit</code> und <code>view</code>. Sie werden über namespace-lokale RoleBindings an Anwender oder ServiceAccounts vergeben und lassen sich gezielt kombinieren – etwa Backup erlauben, Restore entziehen. Daneben gibt es die Rolle eines Backup-&amp;-Restore-Administrators, der über die CRs arbeitet, ohne Zugriff auf die Fusion-Oberfläche zu haben.</p>
+  </div>
+
+  <div class="warn"><b>Achtung:</b> Ein Fusion-seitiges Modell, das den direkten Zugriff auf die darunterliegenden OADP-/Velero-CRDs aktiv sperrt, ist nicht dokumentiert. Wer nur die Fusion-Rollen vergibt, hat die Velero-APIs damit nicht abgeriegelt – das läuft über normales OpenShift-RBAC auf diese separaten APIs und muss eigens getestet werden.</div>
+
+  <div class="note"><b>Hinweis:</b> Im Hub-Spoke-Betrieb löst sich ein Teil des Problems architektonisch: Workloads im Spoke erreichen die Backup-Locations ohnehin nicht. Die RBAC-Frage bleibt dann auf den Hub beschränkt.</div>
+</section>
+
+<!-- ============ 7 ============ -->
+<section id="howto" class="mint">
+  <div class="sec-head"><div class="badge">7</div><h2>Wiederherstellung auf einem neuen Cluster</h2></div>
+  <p class="sec-sub">Der komplette Ablauf in vier Phasen. Die erste Phase liegt vor dem Ernstfall – wer sie überspringt, kommt in Phase C nicht weiter.</p>
+
+  <div class="card">
+    <h3>Die vier Phasen auf einen Blick</h3>
+    <ol class="steps">
+      <li><div><b>Phase A · Vorbereiten</b><small>Schritte 1–4: Voraussetzungen, die im Normalbetrieb geschaffen werden müssen.</small></div></li>
+      <li><div><b>Phase B · Cluster bereitstellen</b><small>Schritte 5–6: neuer oder gesunder OpenShift-Cluster mit Fusion.</small></div></li>
+      <li><div><b>Phase C · Verwaltung zurückholen</b><small>Schritte 7–9: Backup &amp; Restore installieren, Location anlegen, Service Recover.</small></div></li>
+      <li><div><b>Phase D · Anwendungen zurückholen</b><small>Schritt 10: Restore je Anwendung aus den wiederhergestellten Backup-CRs.</small></div></li>
+    </ol>
+  </div>
+
+  <h3 style="margin:26px 0 6px;font-size:1.15rem">Phase A · Vorbereiten</h3>
+
+  <details>
+    <summary>Schritt 1 · Service Protection einrichten und laufen lassen</summary>
+    <div class="inner">
+      <p>Ohne ein aktuelles Catalog-Backup gibt es später nichts, worauf sich der Recover stützen kann. Im Hub-Spoke-Betrieb wird das ausschließlich auf dem Hub konfiguriert; die Spoke-Informationen sind automatisch enthalten.</p>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 2 · Auf Remote-S3 prüfen</summary>
+    <div class="inner">
+      <p>Anwendungen, die nur per lokalem Snapshot gesichert sind, tauchen nach dem Recover nicht wieder auf. Prüfe für jede geschützte Anwendung, ob ihre Policy auf eine S3-Location zeigt und nicht auf reine Snapshots.</p>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 3 · Lokales S3 extern zusätzlich sichern</summary>
+    <div class="inner">
+      <p>Liegt der Object Storage auf demselben Cluster, ist er im Totalausfall mit weg. Service Protection stellt Metadaten aus dem Cloud Storage wieder her – existiert dieser Storage nicht mehr, endet der Ablauf hier. Eine externe Kopie der S3-Daten ist in diesem Aufbau Pflicht, keine Kür.</p>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 4 · Fusion-Namespace dokumentieren</summary>
+    <div class="inner">
+      <p>Der Fusion-Namespace muss zwischen Sicherung und Wiederherstellung identisch sein. Weicht er auf dem Zielcluster ab, schlägt der Recover fehl – ein Detail, das im Runbook stehen muss und nicht im Kopf einer Person.</p>
+      <pre><code>oc get spectrumfusion -A</code></pre>
+    </div>
+  </details>
+
+  <h3 style="margin:26px 0 6px;font-size:1.15rem">Phase B · Cluster bereitstellen</h3>
+
+  <details>
+    <summary>Schritt 5 · Neuen oder gesunden OpenShift-Cluster bereitstellen</summary>
+    <div class="inner">
+      <p>Der Zielcluster kann ein frisch installierter oder ein bereits vorhandener gesunder Cluster sein. Er ist die Voraussetzung für alles Weitere – ein Recover in einen defekten Cluster hinein ist kein vorgesehener Weg.</p>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 6 · IBM Fusion installieren</summary>
+    <div class="inner">
+      <p>Fusion muss stehen, bevor der Backup-&amp;-Restore-Service installiert werden kann. Achte auf denselben Namespace wie auf dem Quellcluster (Schritt 4).</p>
+    </div>
+  </details>
+
+  <h3 style="margin:26px 0 6px;font-size:1.15rem">Phase C · Verwaltung zurückholen</h3>
+
+  <details>
+    <summary>Schritt 7 · Backup &amp; Restore installieren</summary>
+    <div class="inner">
+      <p>Der Recover setzt einen funktionsfähigen Backup-&amp;-Restore-Service voraus. Das ist derselbe Punkt, an dem Fall 1 aus Abschnitt 4 hängt: Erst das Werkzeug, dann der Catalog. Andersherum läuft nichts.</p>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 8 · Location auf den Catalog-Bucket anlegen</summary>
+    <div class="inner">
+      <p>Der neue Cluster kennt den Catalog-Bucket noch nicht – die Location-Definition lag ja selbst im Catalog. Sie wird daher beim Service-Restore über einen Assistenten neu angelegt, mit Endpoint, Bucket und Credentials des Catalog-Buckets.</p>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 9 · Service Recover ausführen</summary>
+    <div class="inner">
+      <p>Der Recover stellt Locations, Policies, Policy Assignments und die Backup-CRs wieder her. Danach kennt der Cluster wieder alle vorhandenen Backups – wiederhergestellt ist damit die Verwaltung, noch keine einzige Anwendung.</p>
+      <pre><code><span class="c"># Nach dem Recover: sind die Backup-CRs wieder da?</span>
+oc -n &lt;fusion-namespace&gt; get backups.data-protection.isf.ibm.com</code></pre>
+    </div>
+  </details>
+
+  <h3 style="margin:26px 0 6px;font-size:1.15rem">Phase D · Anwendungen zurückholen</h3>
+
+  <details>
+    <summary>Schritt 10 · Restore je Anwendung</summary>
+    <div class="inner">
+      <p>Erst jetzt werden die eigentlichen Daten geholt: Anwendung für Anwendung aus den wiederhergestellten Backup-CRs, jeweils mit Auswahl des Zielclusters. Das ist der Punkt, an dem der Data-Bucket wieder gebraucht wird – bis hierhin lief alles über den Catalog.</p>
+    </div>
+  </details>
+
+  <div class="note"><b>Hinweis:</b> Der Ablauf baut die Backup-Verwaltung plus anschließende Anwendungs-Wiederherstellung auf. Er klont keinen Cluster und stellt keine Control Plane wieder her – Cluster-Konfiguration, Operatoren und Netzwerkeinstellungen des Zielclusters bleiben deine Aufgabe.</div>
+</section>
+
+</main>
+
+<footer>Zusammengefasst aus der IBM-Dokumentation zu Fusion HCI Systems 2.9.x (Service protection, Recovering service backups, Custom backup and restore workflows, Self-service Backup &amp; Restore) sowie Fusion Software 2.10.x–2.12.x (Hub and spoke model, Backup &amp; Restore spoke, Backup and restore as code) und der Red-Hat-Dokumentation zu OpenShift 4.18 (Control plane backup and restore). Kein Ersatz für die offizielle Doku – die Doku-Linien für Fusion HCI und Fusion Software sind getrennt und nicht übertragbar; Versionsdetails vor Produktionseinsatz gegen ibm.com/docs bzw. docs.redhat.com prüfen.</footer>
+
+</body>
+</html>
