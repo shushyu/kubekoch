@@ -1,0 +1,1048 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kubernetes Troubleshooting – Entscheidungsbaum von Pod bis Control Plane</title>
+<meta name="rezept-kategorie"    content="troubleshooting">
+<meta name="rezept-beschreibung" content="Entscheidungsbaum für die Fehlersuche: Pods, Nodes, Services, Ingress, PVCs und Control Plane – je Symptom der passende Befehl, die wahrscheinliche Ursache und der Fix.">
+<meta name="rezept-stand"        content="Kubernetes 1.30+ / OpenShift 4.x · 08/2026">
+<meta name="rezept-suche"        content="troubleshooting pending imagepullbackoff errimagepull crashloopbackoff oomkilled exit code 137 143 notready failedscheduling taints tolerations endpointslices endpoints ingress 404 tls pvc terminating finalizers componentstatuses etcd coredns readyz livez kubectl debug">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#33394a;
+  --ink-soft:#5c6376;
+  --paper:#fbfaf7;
+  --card:#ffffff;
+  --line:#e9e6df;
+  --code-bg:#31364a;
+  --code-ink:#e8eaf2;
+  --mint:#d9f2e4;      --mint-deep:#2f8f6b;
+  --sky:#dcebf9;       --sky-deep:#2d6fa8;
+  --lav:#e7e2f7;       --lav-deep:#6b5bb5;
+  --peach:#fbe6d7;     --peach-deep:#c2703d;
+  --butter:#faf0cf;    --butter-deep:#a5842a;
+  --rose:#f9e0e6;      --rose-deep:#b34f6d;
+  --aqua:#d7eff0;      --aqua-deep:#2b8288;
+  --r-lg:26px; --r-md:18px; --r-sm:12px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;scroll-padding-top:90px}
+body{font-family:'Inter',sans-serif;background:var(--paper);color:var(--ink);line-height:1.65;font-size:16px}
+h1,h2,h3,h4{font-family:'Sora',sans-serif;line-height:1.2}
+
+/* ---------- Kopf ---------- */
+header{max-width:1060px;margin:0 auto;padding:56px 24px 8px}
+.kicker{display:inline-block;background:var(--lav);color:var(--lav-deep);font-weight:600;font-size:.8rem;letter-spacing:.08em;text-transform:uppercase;padding:6px 14px;border-radius:999px;margin-bottom:18px}
+header h1{font-size:clamp(1.9rem,4.5vw,3rem);font-weight:800;letter-spacing:-.02em}
+header h1 span{color:var(--mint-deep)}
+.lede{color:var(--ink-soft);max-width:640px;margin-top:14px;font-size:1.05rem}
+
+/* ---------- Fahrplan ---------- */
+.route{max-width:1060px;margin:34px auto 10px;padding:0 24px;display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.route a{display:flex;flex-direction:column;gap:8px;text-decoration:none;color:var(--ink);background:var(--card);border:1.5px solid var(--line);border-radius:var(--r-md);padding:16px 14px;transition:transform .15s ease,box-shadow .15s ease}
+.route a:hover,.route a:focus-visible{transform:translateY(-3px);box-shadow:0 8px 22px rgba(60,60,90,.10);outline:none}
+.route .dot{width:34px;height:34px;border-radius:12px;display:grid;place-items:center;font-family:'Sora';font-weight:700;font-size:.9rem}
+.route .t{font-weight:600;font-size:.86rem;line-height:1.3}
+.route .s{font-size:.74rem;color:var(--ink-soft)}
+.route a:nth-child(1) .dot{background:var(--aqua);color:var(--aqua-deep)}
+.route a:nth-child(2) .dot{background:var(--mint);color:var(--mint-deep)}
+.route a:nth-child(3) .dot{background:var(--sky);color:var(--sky-deep)}
+.route a:nth-child(4) .dot{background:var(--lav);color:var(--lav-deep)}
+.route a:nth-child(5) .dot{background:var(--peach);color:var(--peach-deep)}
+.route a:nth-child(6) .dot{background:var(--butter);color:var(--butter-deep)}
+.route a:nth-child(7) .dot{background:var(--rose);color:var(--rose-deep)}
+.route a:nth-child(8) .dot{background:var(--mint);color:var(--mint-deep)}
+
+/* ---------- Sticky-Nav ---------- */
+nav{position:sticky;top:0;z-index:50;background:rgba(251,250,247,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);margin-top:26px}
+nav .wrap{max-width:1060px;margin:0 auto;padding:10px 24px;display:flex;gap:8px;overflow-x:auto}
+nav a{white-space:nowrap;text-decoration:none;font-size:.82rem;font-weight:600;color:var(--ink-soft);padding:7px 14px;border-radius:999px;border:1px solid transparent}
+nav a:hover{background:var(--card);border-color:var(--line);color:var(--ink)}
+
+/* ---------- Sektionen ---------- */
+main{max-width:1060px;margin:0 auto;padding:20px 24px 90px}
+section{margin-top:64px}
+.sec-head{display:flex;align-items:center;gap:16px;margin-bottom:8px}
+.badge{width:52px;height:52px;border-radius:16px;display:grid;place-items:center;font-family:'Sora';font-weight:800;font-size:1.25rem;flex-shrink:0}
+section h2{font-size:clamp(1.4rem,3vw,1.9rem);font-weight:700}
+.sec-sub{color:var(--ink-soft);margin-bottom:22px;max-width:720px}
+.aqua .badge{background:var(--aqua);color:var(--aqua-deep)}
+.mint .badge{background:var(--mint);color:var(--mint-deep)}
+.sky .badge{background:var(--sky);color:var(--sky-deep)}
+.lav .badge{background:var(--lav);color:var(--lav-deep)}
+.peach .badge{background:var(--peach);color:var(--peach-deep)}
+.butter .badge{background:var(--butter);color:var(--butter-deep)}
+.rose .badge{background:var(--rose);color:var(--rose-deep)}
+
+/* ---------- Karten & Schritte ---------- */
+.card{background:var(--card);border:1.5px solid var(--line);border-radius:var(--r-lg);padding:26px 28px;margin-bottom:20px}
+.card h3{font-size:1.08rem;margin-bottom:14px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+ol.steps{list-style:none;counter-reset:s;display:flex;flex-direction:column;gap:14px}
+ol.steps li{counter-increment:s;display:grid;grid-template-columns:34px 1fr;gap:14px;align-items:start}
+ol.steps li::before{content:counter(s);width:30px;height:30px;border-radius:10px;display:grid;place-items:center;font-family:'Sora';font-weight:700;font-size:.85rem;margin-top:2px}
+.aqua ol.steps li::before{background:var(--aqua);color:var(--aqua-deep)}
+.mint ol.steps li::before{background:var(--mint);color:var(--mint-deep)}
+.sky ol.steps li::before{background:var(--sky);color:var(--sky-deep)}
+.lav ol.steps li::before{background:var(--lav);color:var(--lav-deep)}
+.peach ol.steps li::before{background:var(--peach);color:var(--peach-deep)}
+.butter ol.steps li::before{background:var(--butter);color:var(--butter-deep)}
+.rose ol.steps li::before{background:var(--rose);color:var(--rose-deep)}
+.steps b{font-weight:600}
+.steps small{display:block;color:var(--ink-soft);font-size:.86rem;margin-top:2px}
+
+ul.clean{list-style:none;display:flex;flex-direction:column;gap:10px}
+ul.clean li{padding-left:24px;position:relative}
+ul.clean li::before{content:"";position:absolute;left:4px;top:.62em;width:9px;height:9px;border-radius:3px;background:var(--line)}
+.aqua ul.clean li::before{background:var(--aqua-deep)}
+.mint ul.clean li::before{background:var(--mint-deep)}
+.sky ul.clean li::before{background:var(--sky-deep)}
+.lav ul.clean li::before{background:var(--lav-deep)}
+.peach ul.clean li::before{background:var(--peach-deep)}
+.butter ul.clean li::before{background:var(--butter-deep)}
+.rose ul.clean li::before{background:var(--rose-deep)}
+
+/* ---------- Code ---------- */
+pre{background:var(--code-bg);color:var(--code-ink);border-radius:var(--r-sm);padding:16px 18px;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:.82rem;line-height:1.6;margin:10px 0}
+code{font-family:'JetBrains Mono',monospace;font-size:.85em;background:#efede7;border-radius:6px;padding:2px 6px}
+pre code{background:none;padding:0;font-size:1em}
+pre .c{color:#9aa3c0}
+
+/* ---------- Hinweisboxen ---------- */
+.note,.warn,.mnemo{border-radius:var(--r-md);padding:14px 18px;margin:14px 0;font-size:.92rem}
+.note{background:var(--sky)}
+.warn{background:var(--rose)}
+.mnemo{background:var(--butter)}
+.note b,.warn b,.mnemo b{font-weight:700}
+.mnemo::before{content:"🧠 Eselsbrücke · ";font-weight:700}
+.warn::before{content:"⚠️ ";font-weight:700}
+
+/* ---------- Tabellen ---------- */
+table{width:100%;border-collapse:separate;border-spacing:0;font-size:.88rem;margin:10px 0}
+th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-family:'Sora';font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft)}
+tr:last-child td{border-bottom:none}
+thead th:first-child{border-top-left-radius:var(--r-sm)}
+thead th:last-child{border-top-right-radius:var(--r-sm)}
+thead{background:var(--paper)}
+
+/* ---------- Details ---------- */
+details{border:1.5px solid var(--line);border-radius:var(--r-md);margin:12px 0;background:var(--card)}
+details summary{cursor:pointer;padding:14px 18px;font-weight:600;font-size:.94rem;list-style:none;display:flex;align-items:center;gap:10px}
+details summary::before{content:"+";font-family:'Sora';font-weight:700;width:24px;height:24px;border-radius:8px;background:var(--paper);display:grid;place-items:center;flex-shrink:0}
+details[open] summary::before{content:"–"}
+details .inner{padding:0 18px 18px}
+summary::-webkit-details-marker{display:none}
+
+/* ---------- DNS-Chips ---------- */
+.chips{display:flex;flex-wrap:wrap;gap:10px;margin:10px 0}
+.chip{background:var(--paper);border:1.5px solid var(--line);border-radius:999px;padding:6px 14px;font-family:'JetBrains Mono';font-size:.8rem}
+
+footer{max-width:1060px;margin:0 auto;padding:30px 24px 60px;color:var(--ink-soft);font-size:.82rem;border-top:1px solid var(--line)}
+
+@media(max-width:820px){
+  .route{grid-template-columns:repeat(2,1fr)}
+  .grid2{grid-template-columns:1fr}
+}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.route a{transition:none}}
+</style>
+</head>
+<body>
+
+<header>
+  <span class="kicker">Kubernetes Troubleshooting · Pods bis Control Plane · Entscheidungsbaum</span>
+  <h1>Fehlersuche nach Plan:<br>vom Symptom zur <span>Ursache</span></h1>
+  <p class="lede">Acht Abschnitte, sechs Ressourcentypen, immer dasselbe Muster: ein Einstiegsbefehl, eine Verzweigung nach Status, pro Zweig der Diagnosebefehl und der Fix. <b>Wer den Baum kennt, rät nicht mehr, sondern schließt aus.</b> Befehle sind gegenüber der Vorlage auf den aktuellen Stand gebracht.</p>
+</header>
+
+<div class="route">
+  <a href="#method"><span class="dot">0</span><span class="t">Methode</span><span class="s">Einstieg, Reihenfolge, Grundregeln</span></a>
+  <a href="#pods"><span class="dot">1</span><span class="t">Pods</span><span class="s">Pending, ImagePull, CrashLoop</span></a>
+  <a href="#nodes"><span class="dot">2</span><span class="t">Nodes</span><span class="s">NotReady, Pressure, kubelet</span></a>
+  <a href="#services"><span class="dot">3</span><span class="t">Services</span><span class="s">Selector, EndpointSlices, DNS</span></a>
+  <a href="#ingress"><span class="dot">4</span><span class="t">Ingress</span><span class="s">404, TLS, Hostname</span></a>
+  <a href="#storage"><span class="dot">5</span><span class="t">PVC / Storage</span><span class="s">Pending, Mount, Terminating</span></a>
+  <a href="#controlplane"><span class="dot">6</span><span class="t">Control Plane</span><span class="s">apiserver, etcd, CoreDNS</span></a>
+  <a href="#howto"><span class="dot">7</span><span class="t">Ablauf</span><span class="s">Triage, Fix, Verifikation</span></a>
+</div>
+
+<nav><div class="wrap">
+  <a href="#method">0 · Methode</a>
+  <a href="#pods">1 · Pods</a>
+  <a href="#nodes">2 · Nodes</a>
+  <a href="#services">3 · Services</a>
+  <a href="#ingress">4 · Ingress</a>
+  <a href="#storage">5 · PVC / Storage</a>
+  <a href="#controlplane">6 · Control Plane</a>
+  <a href="#howto">7 · Ablauf</a>
+</div></nav>
+
+<main>
+
+<!-- ================= 0 METHODE ================= -->
+<section id="method" class="aqua">
+  <div class="sec-head"><div class="badge">0</div><h2>Methode: erst einordnen, dann graben</h2></div>
+  <p class="sec-sub">Fehlersuche unter Druck scheitert selten am fehlenden Wissen, sondern an der Reihenfolge. Der Einstieg ist immer derselbe: Status abfragen, Symptom einem Zweig zuordnen, erst dann Logs öffnen.</p>
+
+  <div class="card">
+    <h3>Einstiegsbefehl je Ressource</h3>
+    <table>
+      <thead><tr><th>Symptom</th><th>Einstieg</th><th>Abschnitt</th></tr></thead>
+      <tbody>
+        <tr><td><b>Anwendung startet nicht</b></td><td><code>kubectl get pods</code></td><td>1 · Pods</td></tr>
+        <tr><td><b>Pods verschwinden oder starten nirgends</b></td><td><code>kubectl get nodes</code></td><td>2 · Nodes</td></tr>
+        <tr><td><b>Service antwortet nicht</b></td><td><code>kubectl get svc</code>, EndpointSlices</td><td>3 · Services</td></tr>
+        <tr><td><b>Von außen nicht erreichbar</b></td><td><code>kubectl get ingress</code></td><td>4 · Ingress</td></tr>
+        <tr><td><b>Pod hängt beim Volume</b></td><td><code>kubectl get pvc</code></td><td>5 · PVC</td></tr>
+        <tr><td><b>kubectl selbst zickt</b></td><td><code>kubectl get --raw '/readyz?verbose'</code></td><td>6 · Control Plane</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>Fünf Grundregeln</h3>
+      <ol class="steps">
+        <li><div><b>Einfach anfangen</b><small><code>get</code> und <code>describe</code> zeigen den Zustand oft schon vollständig.</small></div></li>
+        <li><div><b>Den Logs folgen</b><small>Logs und Events erzählen, was passiert ist – meist auch, was zu tun ist.</small></div></li>
+        <li><div><b>Konfiguration vor Komplexität</b><small>Die Mehrheit der Störungen sind Fehlkonfigurationen, keine Bugs: YAML, Labels, Selectors, Limits.</small></div></li>
+        <li><div><b>Tiefer graben, wenn nötig</b><small><code>top</code>, <code>port-forward</code>, <code>exec</code> und <code>debug</code> für Laufzeitverhalten.</small></div></li>
+        <li><div><b>Vorbeugen</b><small>Requests/Limits, Probes und Monitoring verhindern die Wiederholung.</small></div></li>
+      </ol>
+    </div>
+    <div class="card">
+      <h3>Die immer gleiche Kette</h3>
+      <ul class="clean">
+        <li><b>get</b> – welcher Status steht da wirklich</li>
+        <li><b>describe</b> – Events und Conditions am Objekt</li>
+        <li><b>events</b> – Zeitleiste im Namespace</li>
+        <li><b>logs</b> – nur wenn der Container überhaupt gestartet ist</li>
+        <li><b>exec / debug</b> – zuletzt, wenn die Sicht von innen fehlt</li>
+      </ul>
+      <div class="mnemo"><b>Triage in der Notaufnahme</b> – erst wird gesichtet und einsortiert, dann behandelt. Wer sofort das Röntgengerät anwirft, verliert Zeit am falschen Patienten.</div>
+    </div>
+  </div>
+
+  <div class="warn"><b>Achtung:</b> Ein grüner Befehl ist kein grüner Zustand. <code>kubectl apply</code> bestätigt nur die Annahme des Manifests, <code>Running</code> sagt nichts über die Fachfunktion, und <code>get svc</code> zeigt einen Service auch dann, wenn kein einziger Pod dahintersteht. Jeder der folgenden Abschnitte hat genau so einen Fall.</div>
+</section>
+
+<!-- ================= 1 PODS ================= -->
+<section id="pods" class="mint">
+  <div class="sec-head"><div class="badge">1</div><h2>Pods: fünf Zweige nach Status</h2></div>
+  <p class="sec-sub">Der häufigste Einstieg. Die Spalte STATUS entscheidet, welcher Zweig überhaupt sinnvoll ist – und schließt gleichzeitig die anderen vier aus.</p>
+
+  <div class="card">
+    <h3>Einstieg und Verzweigung</h3>
+    <p>Ohne diesen ersten Blick ist jede weitere Suche Raten. Wichtig sind beide Spalten: STATUS und READY.</p>
+    <pre><code>kubectl get pods -n &lt;namespace&gt; -o wide</code></pre>
+    <table>
+      <thead><tr><th>Status</th><th>Bedeutung</th><th>Zweig</th></tr></thead>
+      <tbody>
+        <tr><td><b>Pending</b></td><td>nicht platziert oder Volume fehlt</td><td>A</td></tr>
+        <tr><td><b>ImagePullBackOff / ErrImagePull</b></td><td>Image kommt nicht auf den Node</td><td>B</td></tr>
+        <tr><td><b>CrashLoopBackOff</b></td><td>Container startet und stirbt wiederholt</td><td>C</td></tr>
+        <tr><td><b>Running, aber READY 0/1</b></td><td>Probe schlägt fehl oder Anwendung antwortet nicht</td><td>D</td></tr>
+        <tr><td><b>Error / Unknown</b></td><td>Node oder kubelet meldet nicht sauber</td><td>E</td></tr>
+      </tbody>
+    </table>
+    <div class="mnemo"><b>Der Status ist das Fieberthermometer</b> – er sagt nicht, was fehlt, aber er sagt zuverlässig, in welchem Zimmer man zu suchen anfängt.</div>
+  </div>
+
+    <div class="card">
+    <h3>Zweige auf einen Blick</h3>
+    <p>Links die Ressource, in der Mitte der Zweig nach Status, rechts die Ursachen, die dieser Zweig abdeckt. Ein Klick auf einen Zweig öffnet die Langfassung mit den Befehlen.</p>
+<div style="overflow-x:auto">
+<svg viewBox="0 0 900 542" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Entscheidungsbaum: Zweige und ihre Ursachen" style="width:100%;min-width:640px;height:auto;display:block">
+  <style>a{cursor:pointer}a rect{transition:stroke-width .15s ease}a:hover rect,a:focus-visible rect{stroke-width:3.5}</style>
+  <rect x="8" y="240.0" width="156" height="62" rx="16" fill="var(--card)" stroke="var(--mint-deep)" stroke-width="2"/>
+  <text x="86" y="265.0" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="14" fill="var(--mint-deep)">Pod</text>
+  <text x="86" y="284.0" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="9.5" fill="var(--ink-soft)">kubectl get pods</text>
+  <path d="M 164 271.0 C 188 271.0, 178 73.0, 202 73.0" fill="none" stroke="var(--mint-deep)" stroke-width="1.6" opacity=".55"/>
+  <a href="#pods-a">
+    <rect x="202" y="14.0" width="236" height="118.0" rx="14" fill="var(--mint)" stroke="var(--mint-deep)" stroke-width="1.8"/>
+    <text x="218" y="71.0" font-family="Sora,sans-serif" font-weight="700" font-size="13" fill="var(--mint-deep)">Pending</text>
+    <text x="218" y="88.0" font-family="Inter,sans-serif" font-size="10.5" fill="var(--mint-deep)" opacity=".85">Langfassung öffnen</text>
+  </a>
+  <path d="M 438 73.0 C 456 73.0, 454 34.0, 468 34.0" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+  <circle cx="472" cy="34.0" r="3.5" fill="var(--mint-deep)"/>
+  <text x="484" y="38.0" font-family="Inter,sans-serif" font-size="12.5" fill="var(--ink)">Requests passen auf keinen Node</text>
+  <path d="M 438 73.0 C 456 73.0, 454 60.0, 468 60.0" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+  <circle cx="472" cy="60.0" r="3.5" fill="var(--mint-deep)"/>
+  <text x="484" y="64.0" font-family="Inter,sans-serif" font-size="12.5" fill="var(--ink)">nodeSelector oder Affinity ohne Treffer</text>
+  <path d="M 438 73.0 C 456 73.0, 454 86.0, 468 86.0" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+  <circle cx="472" cy="86.0" r="3.5" fill="var(--mint-deep)"/>
+  <text x="484" y="90.0" font-family="Inter,sans-serif" font-size="12.5" fill="var(--ink)">Taint ohne Toleration</text>
+  <path d="M 438 73.0 C 456 73.0, 454 112.0, 468 112.0" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+  <circle cx="472" cy="112.0" r="3.5" fill="var(--mint-deep)"/>
+  <text x="484" y="116.0" font-family="Inter,sans-serif" font-size="12.5" fill="var(--ink)">PVC noch nicht gebunden</text>
+  <path d="M 164 271.0 C 188 271.0, 178 198.0, 202 198.0" fill="none" stroke="var(--mint-deep)" stroke-width="1.6" opacity=".55"/>
+  <a href="#pods-b">
+    <rect x="202" y="152.0" width="236" height="92.0" rx="14" fill="var(--mint)" stroke="var(--mint-deep)" stroke-width="1.8"/>
+    <text x="218" y="196.0" font-family="Sora,sans-serif" font-weight="700" font-size="13" fill="var(--mint-deep)">ImagePullBackOff</text>
+    <text x="218" y="213.0" font-family="Inter,sans-serif" font-size="10.5" fill="var(--mint-deep)" opacity=".85">Langfassung öffnen</text>
+  </a>
+  <path d="M 438 198.0 C 456 198.0, 454 172.0, 468 172.0" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+  <circle cx="472" cy="172.0" r="3.5" fill="var(--mint-deep)"/>
+  <text x="484" y="176.0" font-family="Inter,sans-serif" font-size="12.5" fill="var(--ink)">Name oder Tag falsch</text>
+  <path d="M 438 198.0 C 456 198.0, 454 198.0, 468 198.0" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+  <circle cx="472" cy="198.0" r="3.5" fill="var(--mint-deep)"/>
+  <text x="484" y="202.0" font-family="Inter,sans-serif" font-size="12.5" fill="var(--ink)">Pull-Secret fehlt oder falscher Namespace</text>
+  <path d="M 438 198.0 C 456 198.0, 454 224.0, 468 224.0" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+  <circle cx="472" cy="224.0" r="3.5" fill="var(--mint-deep)"/>
+  <text x="484" y="228.0" font-family="Inter,sans-serif" font-size="12.5" fill="var(--ink)">Registry vom Node nicht erreichbar</text>
+  <path d="M 164 271.0 C 188 271.0, 178 310.0, 202 310.0" fill="none" stroke="var(--mint-deep)" stroke-width="1.6" opacity=".55"/>
+  <a href="#pods-c">
+    <rect x="202" y="264.0" width="236" height="92.0" rx="14" fill="var(--mint)" stroke="var(--mint-deep)" stroke-width="1.8"/>
+    <text x="218" y="308.0" font-family="Sora,sans-serif" font-weight="700" font-size="13" fill="var(--mint-deep)">CrashLoopBackOff</text>
+    <text x="218" y="325.0" font-family="Inter,sans-serif" font-size="10.5" fill="var(--mint-deep)" opacity=".85">Langfassung öffnen</text>
+  </a>
+  <path d="M 438 310.0 C 456 310.0, 454 284.0, 468 284.0" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+  <circle cx="472" cy="284.0" r="3.5" fill="var(--mint-deep)"/>
+  <text x="484" y="288.0" font-family="Inter,sans-serif" font-size="12.5" fill="var(--ink)">Anwendungsfehler, Config oder Env</text>
+  <path d="M 438 310.0 C 456 310.0, 454 310.0, 468 310.0" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+  <circle cx="472" cy="310.0" r="3.5" fill="var(--mint-deep)"/>
+  <text x="484" y="314.0" font-family="Inter,sans-serif" font-size="12.5" fill="var(--ink)">OOMKilled am Memory-Limit</text>
+  <path d="M 438 310.0 C 456 310.0, 454 336.0, 468 336.0" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+  <circle cx="472" cy="336.0" r="3.5" fill="var(--mint-deep)"/>
+  <text x="484" y="340.0" font-family="Inter,sans-serif" font-size="12.5" fill="var(--ink)">Exit 137 = SIGKILL, 143 = SIGTERM</text>
+  <path d="M 164 271.0 C 188 271.0, 178 409.0, 202 409.0" fill="none" stroke="var(--mint-deep)" stroke-width="1.6" opacity=".55"/>
+  <a href="#pods-de">
+    <rect x="202" y="376.0" width="236" height="66.0" rx="14" fill="var(--mint)" stroke="var(--mint-deep)" stroke-width="1.8"/>
+    <text x="218" y="407.0" font-family="Sora,sans-serif" font-weight="700" font-size="13" fill="var(--mint-deep)">Running, READY 0/1</text>
+    <text x="218" y="424.0" font-family="Inter,sans-serif" font-size="10.5" fill="var(--mint-deep)" opacity=".85">Langfassung öffnen</text>
+  </a>
+  <path d="M 438 409.0 C 456 409.0, 454 396.0, 468 396.0" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+  <circle cx="472" cy="396.0" r="3.5" fill="var(--mint-deep)"/>
+  <text x="484" y="400.0" font-family="Inter,sans-serif" font-size="12.5" fill="var(--ink)">Readiness-Probe erfüllt nicht</text>
+  <path d="M 438 409.0 C 456 409.0, 454 422.0, 468 422.0" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+  <circle cx="472" cy="422.0" r="3.5" fill="var(--mint-deep)"/>
+  <text x="484" y="426.0" font-family="Inter,sans-serif" font-size="12.5" fill="var(--ink)">Pfad, Port oder Startzeit der Probe</text>
+  <path d="M 164 271.0 C 188 271.0, 178 495.0, 202 495.0" fill="none" stroke="var(--mint-deep)" stroke-width="1.6" opacity=".55"/>
+  <a href="#pods-de">
+    <rect x="202" y="462.0" width="236" height="66.0" rx="14" fill="var(--mint)" stroke="var(--mint-deep)" stroke-width="1.8"/>
+    <text x="218" y="493.0" font-family="Sora,sans-serif" font-weight="700" font-size="13" fill="var(--mint-deep)">Error oder Unknown</text>
+    <text x="218" y="510.0" font-family="Inter,sans-serif" font-size="10.5" fill="var(--mint-deep)" opacity=".85">Langfassung öffnen</text>
+  </a>
+  <path d="M 438 495.0 C 456 495.0, 454 482.0, 468 482.0" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+  <circle cx="472" cy="482.0" r="3.5" fill="var(--mint-deep)"/>
+  <text x="484" y="486.0" font-family="Inter,sans-serif" font-size="12.5" fill="var(--ink)">Node meldet nicht mehr</text>
+  <path d="M 438 495.0 C 456 495.0, 454 508.0, 468 508.0" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+  <circle cx="472" cy="508.0" r="3.5" fill="var(--mint-deep)"/>
+  <text x="484" y="512.0" font-family="Inter,sans-serif" font-size="12.5" fill="var(--ink)">weiter in Abschnitt 2</text>
+</svg>
+</div>
+  </div>
+
+  <details id="pods-a">
+    <summary>Zweig A · Pending: der Pod findet keinen Platz</summary>
+    <div class="inner">
+      <p>Pending heißt fast immer: Der scheduler hat keine Entscheidung getroffen. Der Grund steht als Event am Pod, nicht im Log – ein Log gibt es noch gar nicht, weil kein Container existiert.</p>
+      <pre><code>kubectl describe pod &lt;pod&gt; -n &lt;namespace&gt;
+kubectl get events -n &lt;namespace&gt; --field-selector reason=FailedScheduling</code></pre>
+      <p><b>Zu wenig CPU oder Memory:</b> Entscheidend ist nicht die Auslastung, sondern die Summe der Requests. Ein Node kann bei 20 % CPU-Last voll belegt sein.</p>
+      <pre><code><span class="c"># tatsächliche Last (benötigt metrics-server)</span>
+kubectl top nodes
+<span class="c"># reservierte Requests pro Node</span>
+kubectl describe node &lt;node&gt; | grep -A 8 "Allocated resources"</code></pre>
+      <p>Lösung: Requests senken oder Kapazität schaffen (Node hinzufügen, andere Workloads verschieben).</p>
+      <p><b>nodeSelector oder Affinity passt nicht:</b> Der Pod verlangt Labels, die kein Node trägt.</p>
+      <pre><code>kubectl get pod &lt;pod&gt; -n &lt;namespace&gt; -o jsonpath='{.spec.nodeSelector}'
+kubectl get nodes --show-labels</code></pre>
+      <p>Lösung: Node-Labels ergänzen oder den Selector korrigieren.</p>
+      <p><b>Taints ohne passende Toleration:</b> Der Node wehrt den Pod aktiv ab.</p>
+      <pre><code>kubectl get nodes -o custom-columns=NAME:.metadata.name,TAINTS:.spec.taints</code></pre>
+      <p>Lösung: Toleration am Pod ergänzen oder den Taint entfernen, wenn er nicht gewollt war.</p>
+      <p><b>Volume fehlt:</b> Wenn <code>describe</code> auf ein ungebundenes PVC zeigt, liegt die Ursache in Abschnitt 5, nicht beim scheduler.</p>
+    </div>
+  </details>
+
+  <details id="pods-b">
+    <summary>Zweig B · ImagePullBackOff und ErrImagePull</summary>
+    <div class="inner">
+      <p>Die genaue Fehlermeldung der Registry steht in den Events des Pods – sie unterscheidet die drei möglichen Ursachen.</p>
+      <pre><code>kubectl describe pod &lt;pod&gt; -n &lt;namespace&gt;</code></pre>
+      <p><b>„not found":</b> Name oder Tag stimmen nicht. Prüfen und im Deployment korrigieren, nicht am laufenden Pod.</p>
+      <p><b>„unauthorized":</b> Pull-Secret fehlt, ist falsch oder liegt im falschen Namespace.</p>
+      <pre><code>kubectl get secrets -n &lt;namespace&gt;
+kubectl get pod &lt;pod&gt; -n &lt;namespace&gt; -o jsonpath='{.spec.imagePullSecrets}'</code></pre>
+      <p><b>„connection refused" oder Timeout:</b> Die Registry ist vom Node aus nicht erreichbar – Netz, Proxy, DNS oder Firewall. Der Test gehört auf den Node, nicht auf den Laptop.</p>
+      <pre><code><span class="c"># Debug-Pod auf dem Node, Host-Dateisystem liegt unter /host</span>
+kubectl debug node/&lt;node&gt; -it --image=busybox
+wget -S --spider https://&lt;registry-host&gt;/v2/
+<span class="c"># auf OpenShift stattdessen:</span>
+oc debug node/&lt;node&gt;</code></pre>
+    </div>
+  </details>
+
+  <div class="warn"><b>Achtung:</b> Pull-Secrets sind namespace-lokal. Ein korrekt angelegtes Secret im falschen Namespace erzeugt keine Fehlermeldung beim Anlegen – der Pod scheitert später mit „unauthorized", und die Suche läuft in Richtung Registry-Berechtigungen, obwohl nur das Secret am falschen Ort liegt.</div>
+
+  <details id="pods-c">
+    <summary>Zweig C · CrashLoopBackOff: der Container stirbt immer wieder</summary>
+    <div class="inner">
+      <p>Hier gibt es bereits ein Log – und zwar zwei: das des aktuellen und das des vorherigen Versuchs. Das interessante ist meist das vorherige, weil der aktuelle Container oft noch gar nicht gestartet ist.</p>
+      <pre><code>kubectl logs &lt;pod&gt; -n &lt;namespace&gt;
+kubectl logs &lt;pod&gt; -n &lt;namespace&gt; --previous</code></pre>
+      <p><b>Anwendungsfehler:</b> Environment-Variablen, ConfigMaps, Abhängigkeiten prüfen und im Deployment beziehungsweise in ConfigMap/Secret korrigieren.</p>
+      <p><b>OOMKilled:</b> Der Container hat sein Memory-Limit gerissen. Der Beweis steht im letzten Terminierungsgrund, nicht in den Logs.</p>
+      <pre><code>kubectl get pod &lt;pod&gt; -n &lt;namespace&gt; \
+  -o jsonpath='{.status.containerStatuses[*].lastState.terminated.reason}'
+kubectl describe pod &lt;pod&gt; -n &lt;namespace&gt; | grep -A 5 "Limits:"</code></pre>
+      <p>Lösung: Memory-Limit anheben oder den Speicherverbrauch der Anwendung begrenzen (Heap-Größe, Worker-Anzahl).</p>
+      <p><b>Exit Code 137 oder 143:</b> 137 ist 128+9 (SIGKILL), 143 ist 128+15 (SIGTERM). Das sind Signale, keine Diagnosen – sie sagen, dass jemand beendet hat, nicht wer.</p>
+    </div>
+  </details>
+
+  <div class="warn"><b>Achtung:</b> Exit Code 137 wird reflexhaft als OOM gelesen. Genauso häufig stammt er von einer fehlgeschlagenen Liveness-Probe: Das kubelet killt den Container hart, der Speicher war nie das Problem. Der Unterschied steht in <code>lastState.terminated.reason</code> – <code>OOMKilled</code> oder <code>Error</code> – und in den Events. Wer stattdessen das Memory-Limit erhöht, verschiebt den Neustart nur nach hinten.</div>
+
+  <details id="pods-de">
+    <summary>Zweige D und E · Running ohne Funktion, Error, Unknown</summary>
+    <div class="inner">
+      <p><b>READY 0/1 bei Running:</b> Der Container läuft, die Readiness-Probe ist nicht erfüllt. Pfad, Port oder Startzeit der Probe passen nicht zur Anwendung.</p>
+      <pre><code>kubectl describe pod &lt;pod&gt; -n &lt;namespace&gt; | grep -A 3 Readiness</code></pre>
+      <p><b>READY 1/1, aber fachlich kaputt:</b> Am Service vorbei direkt auf den Pod testen. Antwortet er hier korrekt, liegt der Fehler im Service oder Ingress – nicht in der Anwendung.</p>
+      <pre><code>kubectl port-forward pod/&lt;pod&gt; 8080:&lt;container-port&gt; -n &lt;namespace&gt;
+curl -sv localhost:8080</code></pre>
+      <p><b>Error oder Unknown:</b> Meist meldet der Node nicht mehr. Erst die Objektsicht, dann weiter in Abschnitt 2.</p>
+      <pre><code>kubectl describe pod &lt;pod&gt; -n &lt;namespace&gt;
+kubectl get events -n &lt;namespace&gt; --field-selector involvedObject.name=&lt;pod&gt;</code></pre>
+    </div>
+  </details>
+</section>
+
+<!-- ================= 2 NODES ================= -->
+<section id="nodes" class="sky">
+  <div class="sec-head"><div class="badge">2</div><h2>Nodes: NotReady oder unauffällig überlastet</h2></div>
+  <p class="sec-sub">Zwei Zweige: Der Node meldet sich gar nicht mehr sauber, oder er meldet Ready und die Pods scheitern trotzdem. Der zweite Fall ist der unangenehmere.</p>
+
+  <div class="card">
+    <h3>Einstieg</h3>
+    <p>Die Spalte STATUS teilt den Baum, <code>-o wide</code> liefert gleich Kernel und Runtime-Version für den Fall, dass ein einzelner Node aus der Reihe fällt.</p>
+    <pre><code>kubectl get nodes -o wide</code></pre>
+    <ul class="clean">
+      <li><b>NotReady</b> – Zweig A: Conditions und kubelet</li>
+      <li><b>Ready, aber Pods scheitern</b> – Zweig B: Ressourcen und Belegung</li>
+    </ul>
+  </div>
+
+    <div class="card">
+    <h3>Zweige auf einen Blick</h3>
+    <p>Links die Ressource, in der Mitte der Zweig nach Status, rechts die Ursachen, die dieser Zweig abdeckt. Ein Klick auf einen Zweig öffnet die Langfassung mit den Befehlen.</p>
+<div style="overflow-x:auto">
+<svg viewBox="0 0 900 206" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Entscheidungsbaum: Zweige und ihre Ursachen" style="width:100%;min-width:640px;height:auto;display:block">
+  <style>a{cursor:pointer}a rect{transition:stroke-width .15s ease}a:hover rect,a:focus-visible rect{stroke-width:3.5}</style>
+  <rect x="8" y="72.0" width="156" height="62" rx="16" fill="var(--card)" stroke="var(--sky-deep)" stroke-width="2"/>
+  <text x="86" y="97.0" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="14" fill="var(--sky-deep)">Node</text>
+  <text x="86" y="116.0" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="9.5" fill="var(--ink-soft)">kubectl get nodes</text>
+  <path d="M 164 103.0 C 188 103.0, 178 60.0, 202 60.0" fill="none" stroke="var(--sky-deep)" stroke-width="1.6" opacity=".55"/>
+  <a href="#nodes-a">
+    <rect x="202" y="14.0" width="236" height="92.0" rx="14" fill="var(--sky)" stroke="var(--sky-deep)" stroke-width="1.8"/>
+    <text x="218" y="58.0" font-family="Sora,sans-serif" font-weight="700" font-size="13" fill="var(--sky-deep)">NotReady</text>
+    <text x="218" y="75.0" font-family="Inter,sans-serif" font-size="10.5" fill="var(--sky-deep)" opacity=".85">Langfassung öffnen</text>
+  </a>
+  <path d="M 438 60.0 C 456 60.0, 454 34.0, 468 34.0" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+  <circle cx="472" cy="34.0" r="3.5" fill="var(--sky-deep)"/>
+  <text x="484" y="38.0" font-family="Inter,sans-serif" font-size="12.5" fill="var(--ink)">DiskPressure, Platte voll</text>
+  <path d="M 438 60.0 C 456 60.0, 454 60.0, 468 60.0" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+  <circle cx="472" cy="60.0" r="3.5" fill="var(--sky-deep)"/>
+  <text x="484" y="64.0" font-family="Inter,sans-serif" font-size="12.5" fill="var(--ink)">MemoryPressure</text>
+  <path d="M 438 60.0 C 456 60.0, 454 86.0, 468 86.0" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+  <circle cx="472" cy="86.0" r="3.5" fill="var(--sky-deep)"/>
+  <text x="484" y="90.0" font-family="Inter,sans-serif" font-size="12.5" fill="var(--ink)">kubelet gestoppt oder in Schleife</text>
+  <path d="M 164 103.0 C 188 103.0, 178 159.0, 202 159.0" fill="none" stroke="var(--sky-deep)" stroke-width="1.6" opacity=".55"/>
+  <a href="#nodes-b">
+    <rect x="202" y="126.0" width="236" height="66.0" rx="14" fill="var(--sky)" stroke="var(--sky-deep)" stroke-width="1.8"/>
+    <text x="218" y="157.0" font-family="Sora,sans-serif" font-weight="700" font-size="13" fill="var(--sky-deep)">Ready, Pods scheitern</text>
+    <text x="218" y="174.0" font-family="Inter,sans-serif" font-size="10.5" fill="var(--sky-deep)" opacity=".85">Langfassung öffnen</text>
+  </a>
+  <path d="M 438 159.0 C 456 159.0, 454 146.0, 468 146.0" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+  <circle cx="472" cy="146.0" r="3.5" fill="var(--sky-deep)"/>
+  <text x="484" y="150.0" font-family="Inter,sans-serif" font-size="12.5" fill="var(--ink)">Summe der Requests ausgeschöpft</text>
+  <path d="M 438 159.0 C 456 159.0, 454 172.0, 468 172.0" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+  <circle cx="472" cy="172.0" r="3.5" fill="var(--sky-deep)"/>
+  <text x="484" y="176.0" font-family="Inter,sans-serif" font-size="12.5" fill="var(--ink)">Pod-Limit des Nodes erreicht</text>
+</svg>
+</div>
+  </div>
+
+  <details id="nodes-a">
+    <summary>Zweig A · Node NotReady</summary>
+    <div class="inner">
+      <p>Die Conditions am Node benennen die Ursache direkt – Speicher, Platte, PID-Druck oder fehlende Netzwerkkonfiguration.</p>
+      <pre><code>kubectl describe node &lt;node&gt; | grep -A 10 Conditions</code></pre>
+      <p><b>DiskPressure oder MemoryPressure:</b> Der Blick gehört auf den Node selbst. Ohne SSH führt der Weg über einen Debug-Pod mit Zugriff auf das Host-Dateisystem.</p>
+      <pre><code>kubectl debug node/&lt;node&gt; -it --image=busybox
+<span class="c"># im Debug-Pod liegt das Host-Dateisystem unter /host</span>
+chroot /host df -h
+chroot /host free -h</code></pre>
+      <p>Lösung: Platte aufräumen (Images, Logs), Workloads verschieben, im Zweifel <code>kubectl drain</code> und den Node warten.</p>
+      <p><b>kubelet läuft nicht:</b> Auf dem Node prüfen und die Logs mitlesen.</p>
+      <pre><code>chroot /host systemctl status kubelet
+chroot /host journalctl -u kubelet -f</code></pre>
+      <p>Lösung: kubelet neu starten. Kommt es danach erneut hoch und fällt wieder aus, liegt die Ursache eine Ebene tiefer – Zertifikate, Container-Runtime oder Netzwerk-Plugin.</p>
+    </div>
+  </details>
+
+  <details id="nodes-b">
+    <summary>Zweig B · Node Ready, Pods scheitern trotzdem</summary>
+    <div class="inner">
+      <p>Ready heißt nur, dass das kubelet meldet. Ob noch Platz für neue Pods ist, steht in der Belegung – und die berechnet sich aus Requests, nicht aus Auslastung.</p>
+      <pre><code>kubectl describe node &lt;node&gt; | grep -A 8 "Allocated resources"
+kubectl top node &lt;node&gt;</code></pre>
+      <p>Auch das Pod-Limit pro Node ist eine harte Grenze, die nichts mit CPU oder Memory zu tun hat.</p>
+      <pre><code>kubectl get node &lt;node&gt; -o jsonpath='{.status.allocatable.pods}'</code></pre>
+      <p>Lösung: Pods abziehen, Requests korrigieren oder Kapazität ergänzen.</p>
+    </div>
+  </details>
+
+  <div class="warn"><b>Achtung:</b> Ein Node kann Ready melden und trotzdem seit Stunden keine Pods mehr annehmen, weil <code>kubectl top</code> 30 % Auslastung zeigt, die Summe der Requests aber bei 100 % liegt. Die beiden Zahlen messen Verschiedenes: Auslastung ist Ist, Allocated ist reserviert. Wer nur auf <code>top</code> schaut, sucht die Ursache im Cluster-Netz statt im Sizing.</div>
+
+  <div class="mnemo"><b>Requests sind reservierte Tische, Auslastung sind besetzte Stühle</b> – ein Restaurant mit lauter Reservierungen ist voll, auch wenn halb leer aussieht.</div>
+</section>
+
+<!-- ================= 3 SERVICES ================= -->
+<section id="services" class="lav">
+  <div class="sec-head"><div class="badge">3</div><h2>Services: Selector, Endpunkte, Erreichbarkeit</h2></div>
+  <p class="sec-sub">Ein Service ist nur eine Regel mit einem Label-Selector. Ob dahinter etwas steht, sagt nicht das Service-Objekt, sondern die Liste seiner Endpunkte.</p>
+
+  <div class="card">
+    <h3>Einstieg</h3>
+    <p>EndpointSlices sind der aktuelle Weg, die Zuordnung von Pods zum Service zu prüfen. Die alte Endpoints-API gilt als veraltet und schneidet bei sehr vielen Pods still ab.</p>
+    <pre><code>kubectl get svc &lt;service&gt; -n &lt;namespace&gt;
+kubectl get endpointslices -n &lt;namespace&gt; \
+  -l kubernetes.io/service-name=&lt;service&gt; -o wide</code></pre>
+    <ul class="clean">
+      <li><b>Keine Endpunkte</b> – Zweig A: Selector oder Pod-Zustand</li>
+      <li><b>Endpunkte vorhanden, trotzdem keine Antwort</b> – Zweig B: Netz, Ports, DNS</li>
+    </ul>
+    <div class="mnemo"><b>Der Service ist das Klingelschild, die EndpointSlice die Namensliste dahinter</b> – ein Schild ohne Eintrag klingelt ins Leere, ohne dass jemand einen Fehler meldet.</div>
+  </div>
+
+    <div class="card">
+    <h3>Zweige auf einen Blick</h3>
+    <p>Links die Ressource, in der Mitte der Zweig nach Status, rechts die Ursachen, die dieser Zweig abdeckt. Ein Klick auf einen Zweig öffnet die Langfassung mit den Befehlen.</p>
+<div style="overflow-x:auto">
+<svg viewBox="0 0 900 232" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Entscheidungsbaum: Zweige und ihre Ursachen" style="width:100%;min-width:640px;height:auto;display:block">
+  <style>a{cursor:pointer}a rect{transition:stroke-width .15s ease}a:hover rect,a:focus-visible rect{stroke-width:3.5}</style>
+  <rect x="8" y="85.0" width="156" height="62" rx="16" fill="var(--card)" stroke="var(--lav-deep)" stroke-width="2"/>
+  <text x="86" y="110.0" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="14" fill="var(--lav-deep)">Service</text>
+  <text x="86" y="129.0" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="9.5" fill="var(--ink-soft)">get svc + EndpointSlices</text>
+  <path d="M 164 116.0 C 188 116.0, 178 47.0, 202 47.0" fill="none" stroke="var(--lav-deep)" stroke-width="1.6" opacity=".55"/>
+  <a href="#svc-a">
+    <rect x="202" y="14.0" width="236" height="66.0" rx="14" fill="var(--lav)" stroke="var(--lav-deep)" stroke-width="1.8"/>
+    <text x="218" y="45.0" font-family="Sora,sans-serif" font-weight="700" font-size="13" fill="var(--lav-deep)">Keine Endpunkte</text>
+    <text x="218" y="62.0" font-family="Inter,sans-serif" font-size="10.5" fill="var(--lav-deep)" opacity=".85">Langfassung öffnen</text>
+  </a>
+  <path d="M 438 47.0 C 456 47.0, 454 34.0, 468 34.0" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+  <circle cx="472" cy="34.0" r="3.5" fill="var(--lav-deep)"/>
+  <text x="484" y="38.0" font-family="Inter,sans-serif" font-size="12.5" fill="var(--ink)">Selector passt nicht zu Pod-Labels</text>
+  <path d="M 438 47.0 C 456 47.0, 454 60.0, 468 60.0" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+  <circle cx="472" cy="60.0" r="3.5" fill="var(--lav-deep)"/>
+  <text x="484" y="64.0" font-family="Inter,sans-serif" font-size="12.5" fill="var(--ink)">Pods sind nicht Ready</text>
+  <path d="M 164 116.0 C 188 116.0, 178 159.0, 202 159.0" fill="none" stroke="var(--lav-deep)" stroke-width="1.6" opacity=".55"/>
+  <a href="#svc-b">
+    <rect x="202" y="100.0" width="236" height="118.0" rx="14" fill="var(--lav)" stroke="var(--lav-deep)" stroke-width="1.8"/>
+    <text x="218" y="157.0" font-family="Sora,sans-serif" font-weight="700" font-size="13" fill="var(--lav-deep)">Endpunkte da, keine Antwort</text>
+    <text x="218" y="174.0" font-family="Inter,sans-serif" font-size="10.5" fill="var(--lav-deep)" opacity=".85">Langfassung öffnen</text>
+  </a>
+  <path d="M 438 159.0 C 456 159.0, 454 120.0, 468 120.0" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+  <circle cx="472" cy="120.0" r="3.5" fill="var(--lav-deep)"/>
+  <text x="484" y="124.0" font-family="Inter,sans-serif" font-size="12.5" fill="var(--ink)">DNS löst nicht auf, siehe CoreDNS</text>
+  <path d="M 438 159.0 C 456 159.0, 454 146.0, 468 146.0" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+  <circle cx="472" cy="146.0" r="3.5" fill="var(--lav-deep)"/>
+  <text x="484" y="150.0" font-family="Inter,sans-serif" font-size="12.5" fill="var(--ink)">NetworkPolicy blockt</text>
+  <path d="M 438 159.0 C 456 159.0, 454 172.0, 468 172.0" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+  <circle cx="472" cy="172.0" r="3.5" fill="var(--lav-deep)"/>
+  <text x="484" y="176.0" font-family="Inter,sans-serif" font-size="12.5" fill="var(--ink)">targetPort ungleich Container-Port</text>
+  <path d="M 438 159.0 C 456 159.0, 454 198.0, 468 198.0" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+  <circle cx="472" cy="198.0" r="3.5" fill="var(--lav-deep)"/>
+  <text x="484" y="202.0" font-family="Inter,sans-serif" font-size="12.5" fill="var(--ink)">Typ ClusterIP, von außen nicht erreichbar</text>
+</svg>
+</div>
+  </div>
+
+  <details id="svc-a">
+    <summary>Zweig A · Keine Endpunkte</summary>
+    <div class="inner">
+      <p>Entweder passt der Selector nicht zu den Pod-Labels, oder die Pods sind nicht Ready – nur Ready-Pods landen in der Endpunktliste.</p>
+      <pre><code>kubectl describe svc &lt;service&gt; -n &lt;namespace&gt;
+kubectl get pods -n &lt;namespace&gt; --show-labels
+kubectl get pods -n &lt;namespace&gt; -l &lt;key&gt;=&lt;value&gt;</code></pre>
+      <p>Liefert der letzte Befehl Pods, aber die EndpointSlice bleibt leer, ist der Selector richtig und die Readiness das Problem – zurück zu Abschnitt 1, Zweig D.</p>
+      <p>Lösung: Labels im Deployment oder den Selector im Service korrigieren. Der Selector eines bestehenden Service lässt sich ändern, der Selector eines Deployments nicht – dort ist ein Neuanlegen nötig.</p>
+    </div>
+  </details>
+
+  <details id="svc-b">
+    <summary>Zweig B · Endpunkte da, Service antwortet nicht</summary>
+    <div class="inner">
+      <p>Der Test gehört in den Cluster hinein, weil DNS und ClusterIP von außen gar nicht existieren. Ein kurzlebiger Debug-Pod reicht.</p>
+      <pre><code><span class="c"># Image mit Netzwerkwerkzeugen; in getrennten Umgebungen gespiegelt vorhalten</span>
+kubectl run debug --rm -it --restart=Never -n &lt;namespace&gt; \
+  --image=nicolaka/netshoot -- sh</code></pre>
+      <p>In der Shell zuerst die Namensauflösung, dann die Verbindung prüfen. <code>telnet</code> fehlt in den meisten Images – <code>nc</code> oder <code>wget</code> tun dasselbe.</p>
+      <pre><code>nslookup &lt;service&gt;.&lt;namespace&gt;.svc.cluster.local
+nc -zv &lt;service&gt;.&lt;namespace&gt; &lt;port&gt;
+wget -qO- http://&lt;service&gt;.&lt;namespace&gt;:&lt;port&gt;/</code></pre>
+      <p>Schlägt schon die Auflösung fehl, liegt es an CoreDNS – siehe Abschnitt 6. Antwortet DNS, aber die Verbindung nicht, sind NetworkPolicies oder ein falscher <code>targetPort</code> die üblichen Ursachen.</p>
+      <pre><code>kubectl get networkpolicies -n &lt;namespace&gt;
+kubectl get svc &lt;service&gt; -n &lt;namespace&gt; \
+  -o jsonpath='{.spec.ports[*].targetPort}'</code></pre>
+      <p><b>Von außen:</b> Ein Service vom Typ ClusterIP ist von außen grundsätzlich nicht erreichbar – das ist kein Fehler, sondern die Definition.</p>
+      <pre><code>kubectl get svc &lt;service&gt; -n &lt;namespace&gt; -o jsonpath='{.spec.type}'</code></pre>
+    </div>
+  </details>
+
+  <div class="warn"><b>Achtung:</b> <code>port</code> und <code>targetPort</code> werden gern verwechselt. Stimmt der <code>targetPort</code> nicht mit dem Container-Port überein, ist der Service trotzdem grün, die EndpointSlice gefüllt und die Pods Ready – die Verbindung läuft nur in einen Timeout. Kein einziger Statuswert zeigt diesen Fehler an; er fällt erst beim Verbindungstest auf.</div>
+</section>
+
+<!-- ================= 4 INGRESS ================= -->
+<section id="ingress" class="peach">
+  <div class="sec-head"><div class="badge">4</div><h2>Ingress: 404, Zertifikat oder Name</h2></div>
+  <p class="sec-sub">Ein Ingress ist nur eine Regel für einen Controller. Ohne passenden Controller passiert schlicht nichts – und zwar geräuschlos.</p>
+
+  <div class="card">
+    <h3>Einstieg</h3>
+    <p>Zuerst prüfen, ob das Objekt überhaupt bedient wird: Eine leere Spalte ADDRESS heißt, dass kein Controller die Regel übernommen hat.</p>
+    <pre><code>kubectl get ingress -n &lt;namespace&gt;
+kubectl describe ingress &lt;ingress&gt; -n &lt;namespace&gt;</code></pre>
+    <table>
+      <thead><tr><th>Symptom</th><th>Wahrscheinliche Ursache</th><th>Zweig</th></tr></thead>
+      <tbody>
+        <tr><td><b>404 Not Found</b></td><td>Pfad, Servicename oder Port stimmen nicht</td><td>A</td></tr>
+        <tr><td><b>Zertifikatswarnung, TLS-Fehler</b></td><td>Secret fehlt, falscher Typ oder falscher Host</td><td>B</td></tr>
+        <tr><td><b>Host löst nicht auf</b></td><td>DNS zeigt nicht auf den Ingress</td><td>C</td></tr>
+      </tbody>
+    </table>
+    <div class="mnemo"><b>Der Ingress ist der Pförtner mit Besucherliste</b> – steht der Name nicht exakt auf der Liste, wird abgewiesen, auch wenn die Person im Gebäude längst am Platz sitzt.</div>
+  </div>
+
+    <div class="card">
+    <h3>Zweige auf einen Blick</h3>
+    <p>Links die Ressource, in der Mitte der Zweig nach Status, rechts die Ursachen, die dieser Zweig abdeckt. Ein Klick auf einen Zweig öffnet die Langfassung mit den Befehlen.</p>
+<div style="overflow-x:auto">
+<svg viewBox="0 0 900 404" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Entscheidungsbaum: Zweige und ihre Ursachen" style="width:100%;min-width:640px;height:auto;display:block">
+  <style>a{cursor:pointer}a rect{transition:stroke-width .15s ease}a:hover rect,a:focus-visible rect{stroke-width:3.5}</style>
+  <rect x="8" y="171.0" width="156" height="62" rx="16" fill="var(--card)" stroke="var(--peach-deep)" stroke-width="2"/>
+  <text x="86" y="196.0" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="14" fill="var(--peach-deep)">Ingress</text>
+  <text x="86" y="215.0" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="9.5" fill="var(--ink-soft)">kubectl get ingress</text>
+  <path d="M 164 202.0 C 188 202.0, 178 47.0, 202 47.0" fill="none" stroke="var(--peach-deep)" stroke-width="1.6" opacity=".55"/>
+  <a href="#ingress">
+    <rect x="202" y="14.0" width="236" height="66.0" rx="14" fill="var(--peach)" stroke="var(--peach-deep)" stroke-width="1.8"/>
+    <text x="218" y="45.0" font-family="Sora,sans-serif" font-weight="700" font-size="13" fill="var(--peach-deep)">ADDRESS bleibt leer</text>
+    <text x="218" y="62.0" font-family="Inter,sans-serif" font-size="10.5" fill="var(--peach-deep)" opacity=".85">Langfassung öffnen</text>
+  </a>
+  <path d="M 438 47.0 C 456 47.0, 454 34.0, 468 34.0" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+  <circle cx="472" cy="34.0" r="3.5" fill="var(--peach-deep)"/>
+  <text x="484" y="38.0" font-family="Inter,sans-serif" font-size="12.5" fill="var(--ink)">kein ingressClassName gesetzt</text>
+  <path d="M 438 47.0 C 456 47.0, 454 60.0, 468 60.0" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+  <circle cx="472" cy="60.0" r="3.5" fill="var(--peach-deep)"/>
+  <text x="484" y="64.0" font-family="Inter,sans-serif" font-size="12.5" fill="var(--ink)">keine Default-IngressClass vorhanden</text>
+  <path d="M 164 202.0 C 188 202.0, 178 146.0, 202 146.0" fill="none" stroke="var(--peach-deep)" stroke-width="1.6" opacity=".55"/>
+  <a href="#ing-a">
+    <rect x="202" y="100.0" width="236" height="92.0" rx="14" fill="var(--peach)" stroke="var(--peach-deep)" stroke-width="1.8"/>
+    <text x="218" y="144.0" font-family="Sora,sans-serif" font-weight="700" font-size="13" fill="var(--peach-deep)">404 Not Found</text>
+    <text x="218" y="161.0" font-family="Inter,sans-serif" font-size="10.5" fill="var(--peach-deep)" opacity=".85">Langfassung öffnen</text>
+  </a>
+  <path d="M 438 146.0 C 456 146.0, 454 120.0, 468 120.0" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+  <circle cx="472" cy="120.0" r="3.5" fill="var(--peach-deep)"/>
+  <text x="484" y="124.0" font-family="Inter,sans-serif" font-size="12.5" fill="var(--ink)">Pfad oder pathType passt nicht</text>
+  <path d="M 438 146.0 C 456 146.0, 454 146.0, 468 146.0" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+  <circle cx="472" cy="146.0" r="3.5" fill="var(--peach-deep)"/>
+  <text x="484" y="150.0" font-family="Inter,sans-serif" font-size="12.5" fill="var(--ink)">Servicename oder Port falsch</text>
+  <path d="M 438 146.0 C 456 146.0, 454 172.0, 468 172.0" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+  <circle cx="472" cy="172.0" r="3.5" fill="var(--peach-deep)"/>
+  <text x="484" y="176.0" font-family="Inter,sans-serif" font-size="12.5" fill="var(--ink)">Service ohne Endpunkte</text>
+  <path d="M 164 202.0 C 188 202.0, 178 258.0, 202 258.0" fill="none" stroke="var(--peach-deep)" stroke-width="1.6" opacity=".55"/>
+  <a href="#ing-b">
+    <rect x="202" y="212.0" width="236" height="92.0" rx="14" fill="var(--peach)" stroke="var(--peach-deep)" stroke-width="1.8"/>
+    <text x="218" y="256.0" font-family="Sora,sans-serif" font-weight="700" font-size="13" fill="var(--peach-deep)">TLS-Fehler</text>
+    <text x="218" y="273.0" font-family="Inter,sans-serif" font-size="10.5" fill="var(--peach-deep)" opacity=".85">Langfassung öffnen</text>
+  </a>
+  <path d="M 438 258.0 C 456 258.0, 454 232.0, 468 232.0" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+  <circle cx="472" cy="232.0" r="3.5" fill="var(--peach-deep)"/>
+  <text x="484" y="236.0" font-family="Inter,sans-serif" font-size="12.5" fill="var(--ink)">Secret fehlt oder falscher Typ</text>
+  <path d="M 438 258.0 C 456 258.0, 454 258.0, 468 258.0" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+  <circle cx="472" cy="258.0" r="3.5" fill="var(--peach-deep)"/>
+  <text x="484" y="262.0" font-family="Inter,sans-serif" font-size="12.5" fill="var(--ink)">Host nicht im SAN des Zertifikats</text>
+  <path d="M 438 258.0 C 456 258.0, 454 284.0, 468 284.0" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+  <circle cx="472" cy="284.0" r="3.5" fill="var(--peach-deep)"/>
+  <text x="484" y="288.0" font-family="Inter,sans-serif" font-size="12.5" fill="var(--ink)">Zertifikat abgelaufen</text>
+  <path d="M 164 202.0 C 188 202.0, 178 357.0, 202 357.0" fill="none" stroke="var(--peach-deep)" stroke-width="1.6" opacity=".55"/>
+  <a href="#ing-c">
+    <rect x="202" y="324.0" width="236" height="66.0" rx="14" fill="var(--peach)" stroke="var(--peach-deep)" stroke-width="1.8"/>
+    <text x="218" y="355.0" font-family="Sora,sans-serif" font-weight="700" font-size="13" fill="var(--peach-deep)">Host löst nicht auf</text>
+    <text x="218" y="372.0" font-family="Inter,sans-serif" font-size="10.5" fill="var(--peach-deep)" opacity=".85">Langfassung öffnen</text>
+  </a>
+  <path d="M 438 357.0 C 456 357.0, 454 344.0, 468 344.0" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+  <circle cx="472" cy="344.0" r="3.5" fill="var(--peach-deep)"/>
+  <text x="484" y="348.0" font-family="Inter,sans-serif" font-size="12.5" fill="var(--ink)">DNS-Eintrag fehlt</text>
+  <path d="M 438 357.0 C 456 357.0, 454 370.0, 468 370.0" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+  <circle cx="472" cy="370.0" r="3.5" fill="var(--peach-deep)"/>
+  <text x="484" y="374.0" font-family="Inter,sans-serif" font-size="12.5" fill="var(--ink)">zeigt nicht auf den Controller</text>
+</svg>
+</div>
+  </div>
+
+  <details id="ing-a">
+    <summary>Zweig A · 404 Not Found</summary>
+    <div class="inner">
+      <p>Der Ingress verweist auf Service und Port. Beides muss existieren und muss Endpunkte haben – sonst antwortet der Controller mit dem Default-Backend.</p>
+      <pre><code>kubectl get svc &lt;service&gt; -n &lt;namespace&gt;
+kubectl get endpointslices -n &lt;namespace&gt; -l kubernetes.io/service-name=&lt;service&gt;</code></pre>
+      <p>Häufigster Konfigurationsfehler ist der <code>pathType</code>: <code>Exact</code> trifft nur exakt, <code>Prefix</code> trifft Unterpfade. Wer <code>/api</code> als <code>Exact</code> anlegt, bekommt bei <code>/api/v1</code> ein 404.</p>
+      <pre><code>kubectl get ingress &lt;ingress&gt; -n &lt;namespace&gt; -o yaml</code></pre>
+      <p>Lösung: Pfad, <code>pathType</code>, Servicename und Port angleichen.</p>
+    </div>
+  </details>
+
+  <details id="ing-b">
+    <summary>Zweig B · TLS-Zertifikat</summary>
+    <div class="inner">
+      <p>Das im Ingress referenzierte Secret muss im selben Namespace liegen, vom Typ <code>kubernetes.io/tls</code> sein und den angefragten Hostnamen abdecken.</p>
+      <pre><code>kubectl get secret &lt;tls-secret&gt; -n &lt;namespace&gt; \
+  -o jsonpath='{.type}'</code></pre>
+      <p>Ob das Zertifikat wirklich passt, zeigt nur der Blick auf den Inhalt – Gültigkeit und die Namen im SAN-Feld.</p>
+      <pre><code>kubectl get secret &lt;tls-secret&gt; -n &lt;namespace&gt; \
+  -o jsonpath='{.data.tls\.crt}' | base64 -d | openssl x509 -noout -dates -text | grep -A 1 "Subject Alternative Name"</code></pre>
+      <p>Lösung: Secret neu erzeugen oder erneuern. Bei cert-manager stattdessen Certificate und Order prüfen, statt das Secret von Hand zu überschreiben – es wird sonst wieder ersetzt.</p>
+    </div>
+  </details>
+
+  <details id="ing-c">
+    <summary>Zweig C · Host oder DNS löst nicht auf</summary>
+    <div class="inner">
+      <p>Getestet wird von dort, wo der Nutzer steht – nicht aus dem Cluster. Die Antwort muss auf die Adresse des Ingress-Controllers zeigen.</p>
+      <pre><code>nslookup &lt;hostname&gt;
+dig +short &lt;hostname&gt;</code></pre>
+      <p>Zum Abgleich die Adresse, die der Controller veröffentlicht:</p>
+      <pre><code>kubectl get ingress &lt;ingress&gt; -n &lt;namespace&gt; \
+  -o jsonpath='{.status.loadBalancer.ingress[*]}'</code></pre>
+      <p>Lösung: DNS-Eintrag korrigieren. Bei Wildcard-Domains prüfen, ob der Eintrag den konkreten Host wirklich abdeckt.</p>
+    </div>
+  </details>
+
+  <div class="warn"><b>Achtung:</b> Fehlt <code>ingressClassName</code> und ist keine Default-IngressClass gesetzt, fühlt sich kein Controller zuständig. Das Objekt existiert, <code>kubectl get ingress</code> zeigt es an, es gibt keine Fehlermeldung und keine Events – nur die Spalte ADDRESS bleibt leer und alle Anfragen laufen ins Nichts. Der erste Blick bei jedem Ingress-Problem gehört deshalb dieser Spalte.</div>
+</section>
+
+<!-- ================= 5 STORAGE ================= -->
+<section id="storage" class="butter">
+  <div class="sec-head"><div class="badge">5</div><h2>PVC und Storage: Pending, Mount, Terminating</h2></div>
+  <p class="sec-sub">Ein PVC ist ein Anspruch, kein Speicher. Zwischen Anspruch und tatsächlichem Volume liegen StorageClass, Provisioner und – im Fehlerfall – ein Finalizer.</p>
+
+  <div class="card">
+    <h3>Einstieg</h3>
+    <pre><code>kubectl get pvc -n &lt;namespace&gt;</code></pre>
+    <ul class="clean">
+      <li><b>Pending</b> – Zweig A: kein passendes Volume</li>
+      <li><b>Bound, aber Pod mountet nicht</b> – Zweig B: Attach oder Rechte</li>
+      <li><b>Terminating</b> – Zweig C: Finalizer</li>
+    </ul>
+    <div class="mnemo"><b>PVC ist der Schließfachschein, PV das Schließfach</b> – der Schein allein bringt nichts, wenn kein Fach der geforderten Größe frei ist.</div>
+  </div>
+
+    <div class="card">
+    <h3>Zweige auf einen Blick</h3>
+    <p>Links die Ressource, in der Mitte der Zweig nach Status, rechts die Ursachen, die dieser Zweig abdeckt. Ein Klick auf einen Zweig öffnet die Langfassung mit den Befehlen.</p>
+<div style="overflow-x:auto">
+<svg viewBox="0 0 900 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Entscheidungsbaum: Zweige und ihre Ursachen" style="width:100%;min-width:640px;height:auto;display:block">
+  <style>a{cursor:pointer}a rect{transition:stroke-width .15s ease}a:hover rect,a:focus-visible rect{stroke-width:3.5}</style>
+  <rect x="8" y="119.0" width="156" height="62" rx="16" fill="var(--card)" stroke="var(--butter-deep)" stroke-width="2"/>
+  <text x="86" y="144.0" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="14" fill="var(--butter-deep)">PVC</text>
+  <text x="86" y="163.0" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="9.5" fill="var(--ink-soft)">kubectl get pvc</text>
+  <path d="M 164 150.0 C 188 150.0, 178 60.0, 202 60.0" fill="none" stroke="var(--butter-deep)" stroke-width="1.6" opacity=".55"/>
+  <a href="#pvc-a">
+    <rect x="202" y="14.0" width="236" height="92.0" rx="14" fill="var(--butter)" stroke="var(--butter-deep)" stroke-width="1.8"/>
+    <text x="218" y="58.0" font-family="Sora,sans-serif" font-weight="700" font-size="13" fill="var(--butter-deep)">Pending</text>
+    <text x="218" y="75.0" font-family="Inter,sans-serif" font-size="10.5" fill="var(--butter-deep)" opacity=".85">Langfassung öffnen</text>
+  </a>
+  <path d="M 438 60.0 C 456 60.0, 454 34.0, 468 34.0" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+  <circle cx="472" cy="34.0" r="3.5" fill="var(--butter-deep)"/>
+  <text x="484" y="38.0" font-family="Inter,sans-serif" font-size="12.5" fill="var(--ink)">keine oder falsche StorageClass</text>
+  <path d="M 438 60.0 C 456 60.0, 454 60.0, 468 60.0" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+  <circle cx="472" cy="60.0" r="3.5" fill="var(--butter-deep)"/>
+  <text x="484" y="64.0" font-family="Inter,sans-serif" font-size="12.5" fill="var(--ink)">Provisioner läuft nicht</text>
+  <path d="M 438 60.0 C 456 60.0, 454 86.0, 468 86.0" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+  <circle cx="472" cy="86.0" r="3.5" fill="var(--butter-deep)"/>
+  <text x="484" y="90.0" font-family="Inter,sans-serif" font-size="12.5" fill="var(--ink)">WaitForFirstConsumer, normal bis ein Pod anfordert</text>
+  <path d="M 164 150.0 C 188 150.0, 178 172.0, 202 172.0" fill="none" stroke="var(--butter-deep)" stroke-width="1.6" opacity=".55"/>
+  <a href="#pvc-b">
+    <rect x="202" y="126.0" width="236" height="92.0" rx="14" fill="var(--butter)" stroke="var(--butter-deep)" stroke-width="1.8"/>
+    <text x="218" y="170.0" font-family="Sora,sans-serif" font-weight="700" font-size="13" fill="var(--butter-deep)">Bound, Mount scheitert</text>
+    <text x="218" y="187.0" font-family="Inter,sans-serif" font-size="10.5" fill="var(--butter-deep)" opacity=".85">Langfassung öffnen</text>
+  </a>
+  <path d="M 438 172.0 C 456 172.0, 454 146.0, 468 146.0" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+  <circle cx="472" cy="146.0" r="3.5" fill="var(--butter-deep)"/>
+  <text x="484" y="150.0" font-family="Inter,sans-serif" font-size="12.5" fill="var(--ink)">ReadWriteOnce noch am alten Node</text>
+  <path d="M 438 172.0 C 456 172.0, 454 172.0, 468 172.0" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+  <circle cx="472" cy="172.0" r="3.5" fill="var(--butter-deep)"/>
+  <text x="484" y="176.0" font-family="Inter,sans-serif" font-size="12.5" fill="var(--ink)">Rechte am Dateisystem, fsGroup</text>
+  <path d="M 438 172.0 C 456 172.0, 454 198.0, 468 198.0" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+  <circle cx="472" cy="198.0" r="3.5" fill="var(--butter-deep)"/>
+  <text x="484" y="202.0" font-family="Inter,sans-serif" font-size="12.5" fill="var(--ink)">VolumeAttachment hängt</text>
+  <path d="M 164 150.0 C 188 150.0, 178 262.0, 202 262.0" fill="none" stroke="var(--butter-deep)" stroke-width="1.6" opacity=".55"/>
+  <a href="#pvc-c">
+    <rect x="202" y="238.0" width="236" height="48.0" rx="14" fill="var(--butter)" stroke="var(--butter-deep)" stroke-width="1.8"/>
+    <text x="218" y="260.0" font-family="Sora,sans-serif" font-weight="700" font-size="13" fill="var(--butter-deep)">Terminating</text>
+    <text x="218" y="277.0" font-family="Inter,sans-serif" font-size="10.5" fill="var(--butter-deep)" opacity=".85">Langfassung öffnen</text>
+  </a>
+  <path d="M 438 262.0 C 456 262.0, 454 262.0, 468 262.0" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+  <circle cx="472" cy="262.0" r="3.5" fill="var(--butter-deep)"/>
+  <text x="484" y="266.0" font-family="Inter,sans-serif" font-size="12.5" fill="var(--ink)">Finalizer, Pod nutzt das Volume noch</text>
+</svg>
+</div>
+  </div>
+
+  <details id="pvc-a">
+    <summary>Zweig A · PVC bleibt Pending</summary>
+    <div class="inner">
+      <p>Der Grund steht als Event am PVC. Typisch sind: keine StorageClass angegeben und keine Default-Klasse gesetzt, ein Provisioner, der nicht läuft, oder eine angeforderte Größe, für die kein PV existiert.</p>
+      <pre><code>kubectl describe pvc &lt;pvc&gt; -n &lt;namespace&gt;
+kubectl get storageclass</code></pre>
+      <p>Lösung: passende StorageClass setzen, Default-Klasse definieren oder bei statischem Provisioning ein PV anlegen, das Größe und Access-Mode erfüllt.</p>
+    </div>
+  </details>
+
+  <div class="warn"><b>Achtung:</b> Nicht jedes Pending ist ein Fehler. Bei StorageClasses mit <code>volumeBindingMode: WaitForFirstConsumer</code> ist Pending der vorgesehene Zustand, bis ein Pod das PVC anfordert – so wird das Volume in der richtigen Zone erzeugt. Wer hier „repariert" und auf <code>Immediate</code> umstellt, produziert Volumes in Zonen, in denen später kein Pod mehr laufen kann.</div>
+
+  <details id="pvc-b">
+    <summary>Zweig B · Bound, aber der Pod mountet nicht</summary>
+    <div class="inner">
+      <p>Der Fehler steht nicht am PVC, sondern in den Events des Pods – dort meldet das kubelet, woran das Mounten scheitert.</p>
+      <pre><code>kubectl describe pod &lt;pod&gt; -n &lt;namespace&gt;</code></pre>
+      <p>Häufig: Der Access-Mode passt nicht zur Situation. Ein Volume mit <code>ReadWriteOnce</code> kann nur von Pods auf einem einzigen Node genutzt werden – bei einem Rolling Update wartet der neue Pod, bis der alte das Volume freigibt.</p>
+      <pre><code>kubectl get pvc &lt;pvc&gt; -n &lt;namespace&gt; -o jsonpath='{.spec.accessModes}'
+kubectl get volumeattachments | grep &lt;pv-name&gt;</code></pre>
+      <p>Lösung: Volume-Attachment lösen lassen (alten Pod beenden), Rechte am Dateisystem über <code>fsGroup</code> setzen oder für parallelen Zugriff auf <code>ReadWriteMany</code> mit passendem Backend wechseln.</p>
+    </div>
+  </details>
+
+  <details id="pvc-c">
+    <summary>Zweig C · PVC hängt in Terminating</summary>
+    <div class="inner">
+      <p>Ein Finalizer verhindert das Löschen, solange das Volume noch benutzt wird. Das ist eine Schutzfunktion, kein Defekt.</p>
+      <pre><code>kubectl get pvc &lt;pvc&gt; -n &lt;namespace&gt; -o jsonpath='{.metadata.finalizers}'
+kubectl get pods -n &lt;namespace&gt; \
+  -o custom-columns=POD:.metadata.name,PVC:.spec.volumes[*].persistentVolumeClaim.claimName</code></pre>
+      <p>Lösung: die nutzenden Pods beenden. Der Finalizer löst sich dann von selbst.</p>
+    </div>
+  </details>
+
+  <div class="warn"><b>Achtung:</b> Den Finalizer von Hand zu entfernen, löscht das PVC sofort – und wirkt deshalb wie die Lösung. Das dahinterliegende Volume im Storage-Backend bleibt aber häufig zurück und taucht in keiner Kubernetes-Ansicht mehr auf. Nach ein paar Runden fehlt Kapazität, die niemand mehr zuordnen kann. Erst die Nutzer beenden, den Handgriff nur als letztes Mittel und mit Notiz, welches Volume betroffen war.</div>
+</section>
+
+<!-- ================= 6 CONTROL PLANE ================= -->
+<section id="controlplane" class="rose">
+  <div class="sec-head"><div class="badge">6</div><h2>Control Plane: apiserver, etcd, CoreDNS</h2></div>
+  <p class="sec-sub">Wenn <code>kubectl</code> selbst hängt, langsam wird oder widersprüchliche Antworten liefert, liegt der Fehler nicht mehr im Workload.</p>
+
+  <div class="card">
+    <h3>Einstieg</h3>
+    <p>Die Health-Endpunkte des apiservers listen jede Teilprüfung einzeln auf, etcd inbegriffen. Sie sind der Ersatz für den früher üblichen Blick auf die Componentstatuses.</p>
+    <pre><code>kubectl get --raw '/livez?verbose'
+kubectl get --raw '/readyz?verbose'
+kubectl get pods -n kube-system</code></pre>
+    <p>Auf OpenShift kommt die Sicht über die Cluster-Operatoren dazu – sie sagt in einer Zeile, welcher Teil der Plattform degradiert ist.</p>
+    <pre><code>oc get clusteroperators</code></pre>
+  </div>
+
+  <div class="note"><b>Hinweis:</b> <code>kubectl get componentstatuses</code> stammt aus der Vorlage, ist seit Kubernetes 1.19 als veraltet markiert und liefert auf verwalteten Clustern häufig gar nichts oder irreführende Werte. Die <code>livez</code>- und <code>readyz</code>-Endpunkte ersetzen es vollständig.</div>
+
+    <div class="card">
+    <h3>Zweige auf einen Blick</h3>
+    <p>Links die Ressource, in der Mitte der Zweig nach Status, rechts die Ursachen, die dieser Zweig abdeckt. Ein Klick auf einen Zweig öffnet die Langfassung mit den Befehlen.</p>
+<div style="overflow-x:auto">
+<svg viewBox="0 0 900 292" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Entscheidungsbaum: Zweige und ihre Ursachen" style="width:100%;min-width:640px;height:auto;display:block">
+  <style>a{cursor:pointer}a rect{transition:stroke-width .15s ease}a:hover rect,a:focus-visible rect{stroke-width:3.5}</style>
+  <rect x="8" y="115.0" width="156" height="62" rx="16" fill="var(--card)" stroke="var(--rose-deep)" stroke-width="2"/>
+  <text x="86" y="140.0" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="14" fill="var(--rose-deep)">Control Plane</text>
+  <text x="86" y="159.0" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="9.5" fill="var(--ink-soft)">get --raw /readyz?verbose</text>
+  <path d="M 164 146.0 C 188 146.0, 178 60.0, 202 60.0" fill="none" stroke="var(--rose-deep)" stroke-width="1.6" opacity=".55"/>
+  <a href="#cp-a">
+    <rect x="202" y="14.0" width="236" height="92.0" rx="14" fill="var(--rose)" stroke="var(--rose-deep)" stroke-width="1.8"/>
+    <text x="218" y="58.0" font-family="Sora,sans-serif" font-weight="700" font-size="13" fill="var(--rose-deep)">apiserver</text>
+    <text x="218" y="75.0" font-family="Inter,sans-serif" font-size="10.5" fill="var(--rose-deep)" opacity=".85">Langfassung öffnen</text>
+  </a>
+  <path d="M 438 60.0 C 456 60.0, 454 34.0, 468 34.0" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+  <circle cx="472" cy="34.0" r="3.5" fill="var(--rose-deep)"/>
+  <text x="484" y="38.0" font-family="Inter,sans-serif" font-size="12.5" fill="var(--ink)">Zertifikat abgelaufen</text>
+  <path d="M 438 60.0 C 456 60.0, 454 60.0, 468 60.0" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+  <circle cx="472" cy="60.0" r="3.5" fill="var(--rose-deep)"/>
+  <text x="484" y="64.0" font-family="Inter,sans-serif" font-size="12.5" fill="var(--ink)">Speicherdruck oder volle Partition</text>
+  <path d="M 438 60.0 C 456 60.0, 454 86.0, 468 86.0" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+  <circle cx="472" cy="86.0" r="3.5" fill="var(--rose-deep)"/>
+  <text x="484" y="90.0" font-family="Inter,sans-serif" font-size="12.5" fill="var(--ink)">langsam statt tot</text>
+  <path d="M 164 146.0 C 188 146.0, 178 159.0, 202 159.0" fill="none" stroke="var(--rose-deep)" stroke-width="1.6" opacity=".55"/>
+  <a href="#cp-b">
+    <rect x="202" y="126.0" width="236" height="66.0" rx="14" fill="var(--rose)" stroke="var(--rose-deep)" stroke-width="1.8"/>
+    <text x="218" y="157.0" font-family="Sora,sans-serif" font-weight="700" font-size="13" fill="var(--rose-deep)">etcd</text>
+    <text x="218" y="174.0" font-family="Inter,sans-serif" font-size="10.5" fill="var(--rose-deep)" opacity=".85">Langfassung öffnen</text>
+  </a>
+  <path d="M 438 159.0 C 456 159.0, 454 146.0, 468 146.0" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+  <circle cx="472" cy="146.0" r="3.5" fill="var(--rose-deep)"/>
+  <text x="484" y="150.0" font-family="Inter,sans-serif" font-size="12.5" fill="var(--ink)">Mitglied ausgefallen</text>
+  <path d="M 438 159.0 C 456 159.0, 454 172.0, 468 172.0" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+  <circle cx="472" cy="172.0" r="3.5" fill="var(--rose-deep)"/>
+  <text x="484" y="176.0" font-family="Inter,sans-serif" font-size="12.5" fill="var(--ink)">Schreiblatenz der Datenträger</text>
+  <path d="M 164 146.0 C 188 146.0, 178 245.0, 202 245.0" fill="none" stroke="var(--rose-deep)" stroke-width="1.6" opacity=".55"/>
+  <a href="#cp-c">
+    <rect x="202" y="212.0" width="236" height="66.0" rx="14" fill="var(--rose)" stroke="var(--rose-deep)" stroke-width="1.8"/>
+    <text x="218" y="243.0" font-family="Sora,sans-serif" font-weight="700" font-size="13" fill="var(--rose-deep)">CoreDNS</text>
+    <text x="218" y="260.0" font-family="Inter,sans-serif" font-size="10.5" fill="var(--rose-deep)" opacity=".85">Langfassung öffnen</text>
+  </a>
+  <path d="M 438 245.0 C 456 245.0, 454 232.0, 468 232.0" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+  <circle cx="472" cy="232.0" r="3.5" fill="var(--rose-deep)"/>
+  <text x="484" y="236.0" font-family="Inter,sans-serif" font-size="12.5" fill="var(--ink)">Pods nicht Ready</text>
+  <path d="M 438 245.0 C 456 245.0, 454 258.0, 468 258.0" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+  <circle cx="472" cy="258.0" r="3.5" fill="var(--rose-deep)"/>
+  <text x="484" y="262.0" font-family="Inter,sans-serif" font-size="12.5" fill="var(--ink)">Auflösung aus einem Pod testen</text>
+</svg>
+</div>
+  </div>
+
+  <details id="cp-a">
+    <summary>Zweig A · apiserver</summary>
+    <div class="inner">
+      <p>Erreichbarkeit und Antwortzeit prüfen, bevor Komponenten neu gestartet werden. Ein langsamer apiserver sieht aus wie ein defektes Netzwerk.</p>
+      <pre><code>kubectl cluster-info
+time kubectl get --raw '/healthz'</code></pre>
+      <p>Bei selbstverwalteten Clustern läuft der apiserver als statischer Pod; sein Log liegt beim kubelet des Control-Plane-Nodes.</p>
+      <pre><code>kubectl logs -n kube-system -l component=kube-apiserver --tail=200</code></pre>
+      <p>Lösung: Ursache im Log suchen – Zertifikatsablauf, Speicherdruck und volle Audit-Log-Partitionen sind die üblichen Kandidaten. Ein Neustart hilft nur, wenn die Ursache behoben ist.</p>
+    </div>
+  </details>
+
+  <details id="cp-b">
+    <summary>Zweig B · etcd</summary>
+    <div class="inner">
+      <p>Erst der Zustand der Pods, dann die Sicht aus etcd selbst. Die Gesundheit aller Mitglieder ist wichtiger als die eines einzelnen.</p>
+      <pre><code>kubectl get pods -n kube-system -l component=etcd -o wide</code></pre>
+      <pre><code>kubectl exec -n kube-system &lt;etcd-pod&gt; -- \
+  etcdctl endpoint health --cluster --write-out=table</code></pre>
+      <p>Auf OpenShift liegen die etcd-Pods in einem eigenen Namespace und der Zugriff läuft über den Debug-Wrapper.</p>
+      <pre><code>oc get pods -n openshift-etcd -l app=etcd
+oc rsh -n openshift-etcd &lt;etcd-pod&gt; etcdctl endpoint status --write-out=table</code></pre>
+      <p>Lösung: Bei einem einzelnen ausgefallenen Mitglied das Mitglied ersetzen, nicht den ganzen Cluster neu starten. Bei Latenzproblemen sind die Datenträger die Ursache, nicht etcd selbst.</p>
+    </div>
+  </details>
+
+  <details id="cp-c">
+    <summary>Zweig C · CoreDNS</summary>
+    <div class="inner">
+      <p>DNS-Probleme äußern sich als Service-Probleme. Erst die Pods, dann eine Auflösung aus dem Cluster heraus testen.</p>
+      <pre><code>kubectl get pods -n kube-system -l k8s-app=kube-dns
+kubectl logs -n kube-system -l k8s-app=kube-dns --tail=100</code></pre>
+      <p>Die eigentliche Prüfung gehört in einen Pod – der Weg dorthin steht in Abschnitt 3, Zweig B.</p>
+    </div>
+  </details>
+
+  <div class="warn"><b>Achtung:</b> etcd fällt selten hart aus, es wird langsam. Steigt die Schreiblatenz der Datenträger, quittiert der apiserver weiterhin alles, nur zäh – das Symptom ist ein „kubectl hängt manchmal", während sämtliche Pods <code>Running</code> melden und keine Komponente rot wird. Wer nur auf Ready-Status schaut, findet die Ursache nie.</div>
+</section>
+
+<!-- ================= 7 ABLAUF ================= -->
+<section id="howto" class="mint">
+  <div class="sec-head"><div class="badge">7</div><h2>Der Ablauf einer Störung, chronologisch</h2></div>
+  <p class="sec-sub">Dieselben sechs Abschnitte, diesmal als Reihenfolge: von der Meldung bis zur Vorbeugung. Die Phasen verhindern, dass man mitten im Baum die Ebene wechselt.</p>
+
+  <div class="card">
+    <h3>Die vier Phasen auf einen Blick</h3>
+    <ol class="steps">
+      <li><div><b>Phase A · Einordnen</b><small>Schritte 1–2: Welche Ebene ist betroffen, welcher Status steht da.</small></div></li>
+      <li><div><b>Phase B · Eingrenzen</b><small>Schritte 3–4: Zweig wählen, Diagnosebefehl des Zweigs ausführen.</small></div></li>
+      <li><div><b>Phase C · Beheben</b><small>Schritt 5: an der Quelle korrigieren, nicht am laufenden Objekt.</small></div></li>
+      <li><div><b>Phase D · Verifizieren und vorbeugen</b><small>Schritte 6–7: Wirkung nachweisen, Wiederholung verhindern.</small></div></li>
+    </ol>
+  </div>
+
+  <h3 style="margin:26px 0 6px;font-size:1.15rem">Phase A · Einordnen</h3>
+
+  <details>
+    <summary>Schritt 1 · Ebene bestimmen</summary>
+    <div class="inner">
+      <p>Die Frage lautet nicht „was ist kaputt", sondern „auf welcher Ebene fängt es an". Ein nicht erreichbarer Service kann an Pods, Service, Ingress oder DNS liegen – der Test von innen nach außen entscheidet, welcher Abschnitt zuständig ist.</p>
+      <pre><code><span class="c"># von innen nach außen: Pod, dann Service, dann Ingress</span>
+kubectl get pods,svc,ingress -n &lt;namespace&gt;</code></pre>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 2 · Status wörtlich nehmen</summary>
+    <div class="inner">
+      <p>Pending, ImagePullBackOff, CrashLoopBackOff, NotReady, Terminating: Diese Wörter sind keine Beschreibung des Unwohlseins, sondern Zweigadressen. Wer den Status überliest und direkt zu den Logs springt, öffnet in der Hälfte der Fälle ein Log, das es noch gar nicht gibt.</p>
+    </div>
+  </details>
+
+  <h3 style="margin:26px 0 6px;font-size:1.15rem">Phase B · Eingrenzen</h3>
+
+  <details>
+    <summary>Schritt 3 · Events vor Logs</summary>
+    <div class="inner">
+      <p>Events zeigen, was Kubernetes selbst getan oder verweigert hat – Scheduling, Pull, Mount, Probe. Logs zeigen, was die Anwendung getan hat. Vor dem ersten Containerstart existieren nur Events.</p>
+      <pre><code>kubectl describe &lt;ressource&gt; &lt;name&gt; -n &lt;namespace&gt;
+kubectl get events -n &lt;namespace&gt; --sort-by=.metadata.creationTimestamp</code></pre>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 4 · Den Zweig zu Ende gehen</summary>
+    <div class="inner">
+      <p>Jeder Zweig endet mit einer konkreten Ursache: falsches Label, fehlendes Secret, zu kleines Limit, falscher Port. Solange nur ein Verdacht besteht, ist der Zweig nicht zu Ende – ein Fix auf Verdacht erzeugt zwei Fehler statt einem.</p>
+    </div>
+  </details>
+
+  <h3 style="margin:26px 0 6px;font-size:1.15rem">Phase C · Beheben</h3>
+
+  <details>
+    <summary>Schritt 5 · An der Quelle korrigieren</summary>
+    <div class="inner">
+      <p>Änderungen gehören in das Manifest, aus dem das Objekt entsteht – Deployment, ConfigMap, Helm-Werte, Git-Repository. Ein <code>kubectl edit</code> am Pod überlebt den nächsten Neustart nicht, in einer GitOps-Umgebung nicht einmal die nächste Synchronisation.</p>
+      <pre><code><span class="c"># nach dem Rollout: läuft die neue Generation wirklich?</span>
+kubectl rollout status deployment/&lt;name&gt; -n &lt;namespace&gt;</code></pre>
+    </div>
+  </details>
+
+  <h3 style="margin:26px 0 6px;font-size:1.15rem">Phase D · Verifizieren und vorbeugen</h3>
+
+  <details>
+    <summary>Schritt 6 · Wirkung nachweisen</summary>
+    <div class="inner">
+      <p>Nachweis heißt: derselbe Test, der den Fehler gezeigt hat, ist jetzt grün – nicht „der Pod ist Running". Bei Netzwerkfehlern also erneut der Verbindungstest, bei OOM ein Blick auf die Neustartzähler über eine gewisse Zeit.</p>
+      <pre><code>kubectl get pod &lt;pod&gt; -n &lt;namespace&gt; \
+  -o jsonpath='{.status.containerStatuses[*].restartCount}'</code></pre>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 7 · Wiederholung verhindern</summary>
+    <div class="inner">
+      <p>Die meisten Vorfälle in diesem Baum haben eine vorbeugende Maßnahme: Requests und Limits gegen Verdrängung und OOM, Readiness- und Liveness-Probes gegen stillen Ausfall, Monitoring auf Neustartzähler und Pending-Pods gegen späte Entdeckung. Ohne diesen Schritt wird derselbe Zweig in zwei Wochen erneut durchlaufen.</p>
+    </div>
+  </details>
+
+  <div class="mnemo"><b>Der Baum ist eine Ausschlussliste, kein Suchpfad</b> – jeder Schritt streicht Möglichkeiten weg. Wer Zweige überspringt, spart keine Zeit, sondern verliert die Gewissheit, was es nicht war.</div>
+</section>
+
+</main>
+
+<footer>Zusammengefasst aus einem englischsprachigen Kubernetes-Troubleshooting-Leitfaden (Kapitel 1–6: Pods, Nodes, Services, Ingress, PVC/Storage, Cluster/Control Plane, samt Conclusion und Key Takeaways). Befehle wurden gegenüber der Vorlage aktualisiert, wo sie veraltet waren – insbesondere Componentstatuses, Endpoints-API und Debug-Images. Kein Ersatz für die offizielle Doku – Details vor Produktionseinsatz gegen kubernetes.io bzw. docs.redhat.com prüfen.</footer>
+
+
+<script>
+(function () {
+  function openTarget() {
+    var id = location.hash.slice(1);
+    if (!id) return;
+    var el = document.getElementById(id);
+    if (el && el.tagName.toLowerCase() === 'details') {
+      el.open = true;
+      el.scrollIntoView({ block: 'start' });
+    }
+  }
+  window.addEventListener('hashchange', openTarget);
+  openTarget();
+})();
+</script>
+</body>
+</html>
