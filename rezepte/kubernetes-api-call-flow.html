@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kubernetes Architektur – API Call Flow und Hub-and-Spoke</title>
+<meta name="rezept-kategorie"    content="cluster-ops">
+<meta name="rezept-beschreibung" content="Was zwischen kubectl apply und dem laufenden Container passiert: der API Call Flow in zehn Schritten, die Speichenarchitektur um den kube-apiserver und was daraus für Betrieb und Fehlersuche folgt.">
+<meta name="rezept-stand"        content="Kubernetes · Architektur-Grundlagen · 08/2026">
+<meta name="rezept-suche"        content="api call flow kube-apiserver kube-controller-manager kube-scheduler kubelet kube-proxy etcd hub-and-spoke speichenarchitektur separation of concerns control plane reconcile events pending">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#33394a;
+  --ink-soft:#5c6376;
+  --paper:#fbfaf7;
+  --card:#ffffff;
+  --line:#e9e6df;
+  --code-bg:#31364a;
+  --code-ink:#e8eaf2;
+  --mint:#d9f2e4;      --mint-deep:#2f8f6b;
+  --sky:#dcebf9;       --sky-deep:#2d6fa8;
+  --lav:#e7e2f7;       --lav-deep:#6b5bb5;
+  --peach:#fbe6d7;     --peach-deep:#c2703d;
+  --butter:#faf0cf;    --butter-deep:#a5842a;
+  --rose:#f9e0e6;      --rose-deep:#b34f6d;
+  --aqua:#d7eff0;      --aqua-deep:#2b8288;
+  --r-lg:26px; --r-md:18px; --r-sm:12px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;scroll-padding-top:90px}
+body{font-family:'Inter',sans-serif;background:var(--paper);color:var(--ink);line-height:1.65;font-size:16px}
+h1,h2,h3,h4{font-family:'Sora',sans-serif;line-height:1.2}
+
+/* ---------- Kopf ---------- */
+header{max-width:1060px;margin:0 auto;padding:56px 24px 8px}
+.kicker{display:inline-block;background:var(--lav);color:var(--lav-deep);font-weight:600;font-size:.8rem;letter-spacing:.08em;text-transform:uppercase;padding:6px 14px;border-radius:999px;margin-bottom:18px}
+header h1{font-size:clamp(1.9rem,4.5vw,3rem);font-weight:800;letter-spacing:-.02em}
+header h1 span{color:var(--mint-deep)}
+.lede{color:var(--ink-soft);max-width:640px;margin-top:14px;font-size:1.05rem}
+
+/* ---------- Fahrplan ---------- */
+.route{max-width:1060px;margin:34px auto 10px;padding:0 24px;display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.route a{display:flex;flex-direction:column;gap:8px;text-decoration:none;color:var(--ink);background:var(--card);border:1.5px solid var(--line);border-radius:var(--r-md);padding:16px 14px;transition:transform .15s ease,box-shadow .15s ease}
+.route a:hover,.route a:focus-visible{transform:translateY(-3px);box-shadow:0 8px 22px rgba(60,60,90,.10);outline:none}
+.route .dot{width:34px;height:34px;border-radius:12px;display:grid;place-items:center;font-family:'Sora';font-weight:700;font-size:.9rem}
+.route .t{font-weight:600;font-size:.86rem;line-height:1.3}
+.route .s{font-size:.74rem;color:var(--ink-soft)}
+.route a:nth-child(1) .dot{background:var(--aqua);color:var(--aqua-deep)}
+.route a:nth-child(2) .dot{background:var(--mint);color:var(--mint-deep)}
+.route a:nth-child(3) .dot{background:var(--sky);color:var(--sky-deep)}
+.route a:nth-child(4) .dot{background:var(--lav);color:var(--lav-deep)}
+.route a:nth-child(5) .dot{background:var(--peach);color:var(--peach-deep)}
+.route a:nth-child(6) .dot{background:var(--butter);color:var(--butter-deep)}
+.route a:nth-child(7) .dot{background:var(--rose);color:var(--rose-deep)}
+.route a:nth-child(8) .dot{background:var(--mint);color:var(--mint-deep)}
+
+/* ---------- Sticky-Nav ---------- */
+nav{position:sticky;top:0;z-index:50;background:rgba(251,250,247,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);margin-top:26px}
+nav .wrap{max-width:1060px;margin:0 auto;padding:10px 24px;display:flex;gap:8px;overflow-x:auto}
+nav a{white-space:nowrap;text-decoration:none;font-size:.82rem;font-weight:600;color:var(--ink-soft);padding:7px 14px;border-radius:999px;border:1px solid transparent}
+nav a:hover{background:var(--card);border-color:var(--line);color:var(--ink)}
+
+/* ---------- Sektionen ---------- */
+main{max-width:1060px;margin:0 auto;padding:20px 24px 90px}
+section{margin-top:64px}
+.sec-head{display:flex;align-items:center;gap:16px;margin-bottom:8px}
+.badge{width:52px;height:52px;border-radius:16px;display:grid;place-items:center;font-family:'Sora';font-weight:800;font-size:1.25rem;flex-shrink:0}
+section h2{font-size:clamp(1.4rem,3vw,1.9rem);font-weight:700}
+.sec-sub{color:var(--ink-soft);margin-bottom:22px;max-width:720px}
+.aqua .badge{background:var(--aqua);color:var(--aqua-deep)}
+.mint .badge{background:var(--mint);color:var(--mint-deep)}
+.sky .badge{background:var(--sky);color:var(--sky-deep)}
+.lav .badge{background:var(--lav);color:var(--lav-deep)}
+.peach .badge{background:var(--peach);color:var(--peach-deep)}
+.butter .badge{background:var(--butter);color:var(--butter-deep)}
+.rose .badge{background:var(--rose);color:var(--rose-deep)}
+
+/* ---------- Karten & Schritte ---------- */
+.card{background:var(--card);border:1.5px solid var(--line);border-radius:var(--r-lg);padding:26px 28px;margin-bottom:20px}
+.card h3{font-size:1.08rem;margin-bottom:14px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+ol.steps{list-style:none;counter-reset:s;display:flex;flex-direction:column;gap:14px}
+ol.steps li{counter-increment:s;display:grid;grid-template-columns:34px 1fr;gap:14px;align-items:start}
+ol.steps li::before{content:counter(s);width:30px;height:30px;border-radius:10px;display:grid;place-items:center;font-family:'Sora';font-weight:700;font-size:.85rem;margin-top:2px}
+.aqua ol.steps li::before{background:var(--aqua);color:var(--aqua-deep)}
+.mint ol.steps li::before{background:var(--mint);color:var(--mint-deep)}
+.sky ol.steps li::before{background:var(--sky);color:var(--sky-deep)}
+.lav ol.steps li::before{background:var(--lav);color:var(--lav-deep)}
+.peach ol.steps li::before{background:var(--peach);color:var(--peach-deep)}
+.butter ol.steps li::before{background:var(--butter);color:var(--butter-deep)}
+.rose ol.steps li::before{background:var(--rose);color:var(--rose-deep)}
+.steps b{font-weight:600}
+.steps small{display:block;color:var(--ink-soft);font-size:.86rem;margin-top:2px}
+
+ul.clean{list-style:none;display:flex;flex-direction:column;gap:10px}
+ul.clean li{padding-left:24px;position:relative}
+ul.clean li::before{content:"";position:absolute;left:4px;top:.62em;width:9px;height:9px;border-radius:3px;background:var(--line)}
+.aqua ul.clean li::before{background:var(--aqua-deep)}
+.mint ul.clean li::before{background:var(--mint-deep)}
+.sky ul.clean li::before{background:var(--sky-deep)}
+.lav ul.clean li::before{background:var(--lav-deep)}
+.peach ul.clean li::before{background:var(--peach-deep)}
+.butter ul.clean li::before{background:var(--butter-deep)}
+.rose ul.clean li::before{background:var(--rose-deep)}
+
+/* ---------- Code ---------- */
+pre{background:var(--code-bg);color:var(--code-ink);border-radius:var(--r-sm);padding:16px 18px;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:.82rem;line-height:1.6;margin:10px 0}
+code{font-family:'JetBrains Mono',monospace;font-size:.85em;background:#efede7;border-radius:6px;padding:2px 6px}
+pre code{background:none;padding:0;font-size:1em}
+pre .c{color:#9aa3c0}
+
+/* ---------- Hinweisboxen ---------- */
+.note,.warn,.mnemo{border-radius:var(--r-md);padding:14px 18px;margin:14px 0;font-size:.92rem}
+.note{background:var(--sky)}
+.warn{background:var(--rose)}
+.mnemo{background:var(--butter)}
+.note b,.warn b,.mnemo b{font-weight:700}
+.mnemo::before{content:"🧠 Eselsbrücke · ";font-weight:700}
+.warn::before{content:"⚠️ ";font-weight:700}
+
+/* ---------- Tabellen ---------- */
+table{width:100%;border-collapse:separate;border-spacing:0;font-size:.88rem;margin:10px 0}
+th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-family:'Sora';font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft)}
+tr:last-child td{border-bottom:none}
+thead th:first-child{border-top-left-radius:var(--r-sm)}
+thead th:last-child{border-top-right-radius:var(--r-sm)}
+thead{background:var(--paper)}
+
+/* ---------- Details ---------- */
+details{border:1.5px solid var(--line);border-radius:var(--r-md);margin:12px 0;background:var(--card)}
+details summary{cursor:pointer;padding:14px 18px;font-weight:600;font-size:.94rem;list-style:none;display:flex;align-items:center;gap:10px}
+details summary::before{content:"+";font-family:'Sora';font-weight:700;width:24px;height:24px;border-radius:8px;background:var(--paper);display:grid;place-items:center;flex-shrink:0}
+details[open] summary::before{content:"–"}
+details .inner{padding:0 18px 18px}
+summary::-webkit-details-marker{display:none}
+
+/* ---------- DNS-Chips ---------- */
+.chips{display:flex;flex-wrap:wrap;gap:10px;margin:10px 0}
+.chip{background:var(--paper);border:1.5px solid var(--line);border-radius:999px;padding:6px 14px;font-family:'JetBrains Mono';font-size:.8rem}
+
+footer{max-width:1060px;margin:0 auto;padding:30px 24px 60px;color:var(--ink-soft);font-size:.82rem;border-top:1px solid var(--line)}
+
+@media(max-width:820px){
+  .route{grid-template-columns:repeat(2,1fr)}
+  .grid2{grid-template-columns:1fr}
+}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.route a{transition:none}}
+</style>
+</head>
+<body>
+
+<header>
+  <span class="kicker">Kubernetes-Grundlagen · Abschnitt 2.3.3 · Architektur</span>
+  <h1>Von kubectl zum Container:<br>der <span>API Call Flow</span></h1>
+  <p class="lede">Acht Abschnitte über den Weg, den ein Manifest durch den Cluster nimmt: zehn Schritte zwischen Request und laufendem Container, die Speichenarchitektur um den kube-apiserver und was daraus für die Fehlersuche folgt. <b>Kernaussage: Jede Nachricht läuft über den apiserver – und genau deshalb weiß man, wo man nachschaut.</b></p>
+</header>
+
+<div class="route">
+  <a href="#basics"><span class="dot">0</span><span class="t">Überblick</span><span class="s">Komponenten, Rollen</span></a>
+  <a href="#flow"><span class="dot">1</span><span class="t">Der Flow</span><span class="s">Zehn Schritte, Reihenfolge</span></a>
+  <a href="#hub"><span class="dot">2</span><span class="t">Speichenarchitektur</span><span class="s">Hub, Spokes, Vermittlung</span></a>
+  <a href="#mesh"><span class="dot">3</span><span class="t">Direkte Kommunikation</span><span class="s">Mesh, Komplexität, Grenzen</span></a>
+  <a href="#soc"><span class="dot">4</span><span class="t">Separation of Concerns</span><span class="s">Zuständigkeiten, Logs</span></a>
+  <a href="#etcd"><span class="dot">5</span><span class="t">etcd</span><span class="s">Konsistenz, Schreibrecht</span></a>
+  <a href="#praxis"><span class="dot">6</span><span class="t">Flow beobachten</span><span class="s">Events, Verbose, Endpoints</span></a>
+  <a href="#howto"><span class="dot">7</span><span class="t">Durchlauf</span><span class="s">Vier Phasen, chronologisch</span></a>
+</div>
+
+<nav><div class="wrap">
+  <a href="#basics">0 · Überblick</a>
+  <a href="#flow">1 · Der Flow</a>
+  <a href="#hub">2 · Speichenarchitektur</a>
+  <a href="#mesh">3 · Direkte Kommunikation</a>
+  <a href="#soc">4 · Zuständigkeiten</a>
+  <a href="#etcd">5 · etcd</a>
+  <a href="#praxis">6 · Flow beobachten</a>
+  <a href="#howto">7 · Durchlauf</a>
+</div></nav>
+
+<main>
+
+<!-- ================= 0 ÜBERBLICK ================= -->
+<section id="basics" class="aqua">
+  <div class="sec-head"><div class="badge">0</div><h2>Überblick: wer am Deployment beteiligt ist</h2></div>
+  <p class="sec-sub">Kubernetes besteht aus vielen Komponenten, die miteinander reden müssen, damit am Ende ein Container läuft. Wer diesen Weg kennt, sucht Fehler nicht im falschen Log.</p>
+
+  <div class="card">
+    <h3>Die Beteiligten und ihre eine Aufgabe</h3>
+    <table>
+      <thead><tr><th>Komponente</th><th>Läuft auf</th><th>Aufgabe im Flow</th></tr></thead>
+      <tbody>
+        <tr><td><b>kube-apiserver</b></td><td>Control Plane</td><td>einzige Tür zum Cluster, vermittelt jede Nachricht</td></tr>
+        <tr><td><b>etcd</b></td><td>Control Plane</td><td>speichert Soll- und Ist-Zustand</td></tr>
+        <tr><td><b>kube-controller-manager</b></td><td>Control Plane</td><td>vergleicht Soll und Ist, fordert Änderungen an</td></tr>
+        <tr><td><b>kube-scheduler</b></td><td>Control Plane</td><td>entscheidet, auf welchem Worker ein Pod landet</td></tr>
+        <tr><td><b>kubelet</b></td><td>jeder Worker</td><td>baut den Container und besorgt Secrets und Volumes</td></tr>
+        <tr><td><b>kube-proxy</b></td><td>jeder Worker</td><td>macht den Container über das Netz erreichbar</td></tr>
+        <tr><td><b>Container Engine</b></td><td>jeder Worker</td><td>erzeugt den Container tatsächlich</td></tr>
+      </tbody>
+    </table>
+    <p>Der Einstieg ist immer derselbe: Über <code>kubectl</code> geht ein Request mit einem YAML-Manifest an den kube-apiserver. Das Manifest enthält alles, was der Cluster wissen muss, um den Container aufzubauen.</p>
+    <div class="mnemo"><b>Der apiserver ist der Empfang im Bürogebäude</b> – jeder meldet sich dort an, niemand läuft allein in den Aktenkeller.</div>
+  </div>
+
+  <div class="note"><b>Hinweis:</b> Kubernetes-Objekte wie Deployment, ReplicaSet oder Service bleiben hier bewusst ausgeklammert. Sie machen den Flow schwerer verständlich, ohne ihn zu ändern – für jedes Objekt läuft dieselbe Abfolge.</div>
+</section>
+
+<!-- ================= 1 DER FLOW ================= -->
+<section id="flow" class="mint">
+  <div class="sec-head"><div class="badge">1</div><h2>Der API Call Flow in zehn Schritten</h2></div>
+  <p class="sec-sub">Ein einzelner Container soll deployt werden. Vom abgeschickten Request bis zur Bestätigung in etcd sind zehn Nachrichten unterwegs – die meisten davon Hin- und Rückfragen über den apiserver.</p>
+
+  <div class="card">
+    <h3>Der Flow als Kreis</h3>
+    <p>Oben beginnt der Request, von dort geht es im Uhrzeigersinn einmal herum, bis die Erfolgsmeldung wieder in etcd landet. Die gestrichelten Speichen zeigen, was die Schrittliste nur zwischen den Zeilen sagt: Jede einzelne Nachricht läuft über den apiserver in der Mitte, keine Komponente spricht direkt mit einer anderen.</p>
+<svg viewBox="0 0 900 690" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Der API Call Flow als Kreis: zehn Schritte im Uhrzeigersinn um den kube-apiserver, unterteilt in Control Plane und Worker" style="width:100%;height:auto;display:block">
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--ink-soft)"/>
+    </marker>
+  </defs>
+  <path d="M 384.5 531.6 A 212 212 0 0 1 278.5 205.4" fill="none" stroke="var(--peach-deep)" stroke-width="11" stroke-linecap="round" opacity=".55"/>
+  <path d="M 287.6 193.7 A 212 212 0 1 1 398.7 535.7" fill="none" stroke="var(--sky-deep)" stroke-width="11" stroke-linecap="round" opacity=".55"/>
+  <line x1="450.0" y1="260.0" x2="450.0" y2="179.0" stroke="var(--line)" stroke-width="1.5" stroke-dasharray="4 5"/>
+  <line x1="491.1" y1="273.4" x2="538.8" y2="207.8" stroke="var(--line)" stroke-width="1.5" stroke-dasharray="4 5"/>
+  <line x1="516.6" y1="308.4" x2="593.6" y2="283.3" stroke="var(--line)" stroke-width="1.5" stroke-dasharray="4 5"/>
+  <line x1="516.6" y1="351.6" x2="593.6" y2="376.7" stroke="var(--line)" stroke-width="1.5" stroke-dasharray="4 5"/>
+  <line x1="491.1" y1="386.6" x2="538.8" y2="452.2" stroke="var(--line)" stroke-width="1.5" stroke-dasharray="4 5"/>
+  <line x1="450.0" y1="400.0" x2="450.0" y2="481.0" stroke="var(--line)" stroke-width="1.5" stroke-dasharray="4 5"/>
+  <line x1="408.9" y1="386.6" x2="361.2" y2="452.2" stroke="var(--line)" stroke-width="1.5" stroke-dasharray="4 5"/>
+  <line x1="383.4" y1="351.6" x2="306.4" y2="376.7" stroke="var(--line)" stroke-width="1.5" stroke-dasharray="4 5"/>
+  <line x1="383.4" y1="308.4" x2="306.4" y2="283.3" stroke="var(--line)" stroke-width="1.5" stroke-dasharray="4 5"/>
+  <line x1="408.9" y1="273.4" x2="361.2" y2="207.8" stroke="var(--line)" stroke-width="1.5" stroke-dasharray="4 5"/>
+  <path d="M 477.4 157.2 A 175 175 0 0 1 529.4 174.1" fill="none" stroke="var(--ink-soft)" stroke-width="2" marker-end="url(#ar)" opacity=".75"/>
+  <path d="M 573.7 206.3 A 175 175 0 0 1 605.9 250.6" fill="none" stroke="var(--ink-soft)" stroke-width="2" marker-end="url(#ar)" opacity=".75"/>
+  <path d="M 622.8 302.6 A 175 175 0 0 1 622.8 357.4" fill="none" stroke="var(--ink-soft)" stroke-width="2" marker-end="url(#ar)" opacity=".75"/>
+  <path d="M 605.9 409.4 A 175 175 0 0 1 573.7 453.7" fill="none" stroke="var(--ink-soft)" stroke-width="2" marker-end="url(#ar)" opacity=".75"/>
+  <path d="M 529.4 485.9 A 175 175 0 0 1 477.4 502.8" fill="none" stroke="var(--ink-soft)" stroke-width="2" marker-end="url(#ar)" opacity=".75"/>
+  <path d="M 422.6 502.8 A 175 175 0 0 1 370.6 485.9" fill="none" stroke="var(--ink-soft)" stroke-width="2" marker-end="url(#ar)" opacity=".75"/>
+  <path d="M 326.3 453.7 A 175 175 0 0 1 294.1 409.4" fill="none" stroke="var(--ink-soft)" stroke-width="2" marker-end="url(#ar)" opacity=".75"/>
+  <path d="M 277.2 357.4 A 175 175 0 0 1 277.2 302.6" fill="none" stroke="var(--ink-soft)" stroke-width="2" marker-end="url(#ar)" opacity=".75"/>
+  <path d="M 294.1 250.6 A 175 175 0 0 1 326.3 206.3" fill="none" stroke="var(--ink-soft)" stroke-width="2" marker-end="url(#ar)" opacity=".75"/>
+  <path d="M 370.6 174.1 A 175 175 0 0 1 422.6 157.2" fill="none" stroke="var(--ink-soft)" stroke-width="2" marker-end="url(#ar)" opacity=".75"/>
+  <circle cx="450.0" cy="155.0" r="22" fill="var(--sky)" stroke="var(--sky-deep)" stroke-width="2"/>
+  <text x="450.0" y="160.0" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="14" fill="var(--sky-deep)">1</text>
+  <text x="450.0" y="82.0" text-anchor="middle" font-family="Inter,sans-serif" font-size="13.5" font-weight="600" fill="var(--ink)">Manifest speichern<tspan x="450.0" dy="16" font-size="12" font-weight="400" fill="var(--ink-soft)">apiserver → etcd</tspan></text>
+  <circle cx="552.9" cy="188.4" r="22" fill="var(--sky)" stroke="var(--sky-deep)" stroke-width="2"/>
+  <text x="552.9" y="193.4" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="14" fill="var(--sky-deep)">2</text>
+  <text x="592.2" y="134.2" text-anchor="start" font-family="Inter,sans-serif" font-size="13.5" font-weight="600" fill="var(--ink)">Neues Manifest melden<tspan x="592.2" dy="16" font-size="12" font-weight="400" fill="var(--ink-soft)">→ controller-manager</tspan></text>
+  <circle cx="616.4" cy="275.9" r="22" fill="var(--sky)" stroke="var(--sky-deep)" stroke-width="2"/>
+  <text x="616.4" y="280.9" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="14" fill="var(--sky-deep)">3</text>
+  <text x="680.2" y="255.2" text-anchor="start" font-family="Inter,sans-serif" font-size="13.5" font-weight="600" fill="var(--ink)">Ist-Zustand erfragen<tspan x="680.2" dy="16" font-size="12" font-weight="400" fill="var(--ink-soft)">controller-manager</tspan></text>
+  <circle cx="616.4" cy="384.1" r="22" fill="var(--sky)" stroke="var(--sky-deep)" stroke-width="2"/>
+  <text x="616.4" y="389.1" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="14" fill="var(--sky-deep)">4</text>
+  <text x="680.2" y="404.8" text-anchor="start" font-family="Inter,sans-serif" font-size="13.5" font-weight="600" fill="var(--ink)">Gibt es noch nicht<tspan x="680.2" dy="16" font-size="12" font-weight="400" fill="var(--ink-soft)">apiserver</tspan></text>
+  <circle cx="552.9" cy="471.6" r="22" fill="var(--sky)" stroke="var(--sky-deep)" stroke-width="2"/>
+  <text x="552.9" y="476.6" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="14" fill="var(--sky-deep)">5</text>
+  <text x="592.2" y="525.8" text-anchor="start" font-family="Inter,sans-serif" font-size="13.5" font-weight="600" fill="var(--ink)">Erstellen beauftragen<tspan x="592.2" dy="16" font-size="12" font-weight="400" fill="var(--ink-soft)">controller-manager</tspan></text>
+  <circle cx="450.0" cy="505.0" r="22" fill="var(--sky)" stroke="var(--sky-deep)" stroke-width="2"/>
+  <text x="450.0" y="510.0" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="14" fill="var(--sky-deep)">6</text>
+  <text x="450.0" y="564.0" text-anchor="middle" font-family="Inter,sans-serif" font-size="13.5" font-weight="600" fill="var(--ink)">Worker auswählen<tspan x="450.0" dy="16" font-size="12" font-weight="400" fill="var(--ink-soft)">scheduler</tspan></text>
+  <circle cx="347.1" cy="471.6" r="22" fill="var(--peach)" stroke="var(--peach-deep)" stroke-width="2"/>
+  <text x="347.1" y="476.6" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="14" fill="var(--peach-deep)">7</text>
+  <text x="307.8" y="525.8" text-anchor="end" font-family="Inter,sans-serif" font-size="13.5" font-weight="600" fill="var(--ink)">Manifest zustellen<tspan x="307.8" dy="16" font-size="12" font-weight="400" fill="var(--ink-soft)">→ kubelet</tspan></text>
+  <circle cx="283.6" cy="384.1" r="22" fill="var(--peach)" stroke="var(--peach-deep)" stroke-width="2"/>
+  <text x="283.6" y="389.1" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="14" fill="var(--peach-deep)">8</text>
+  <text x="219.8" y="404.8" text-anchor="end" font-family="Inter,sans-serif" font-size="13.5" font-weight="600" fill="var(--ink)">Netz vorbereiten<tspan x="219.8" dy="16" font-size="12" font-weight="400" fill="var(--ink-soft)">→ kube-proxy</tspan></text>
+  <circle cx="283.6" cy="275.9" r="22" fill="var(--peach)" stroke="var(--peach-deep)" stroke-width="2"/>
+  <text x="283.6" y="280.9" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="14" fill="var(--peach-deep)">9</text>
+  <text x="219.8" y="255.2" text-anchor="end" font-family="Inter,sans-serif" font-size="13.5" font-weight="600" fill="var(--ink)">Container bauen<tspan x="219.8" dy="16" font-size="12" font-weight="400" fill="var(--ink-soft)">kubelet + Engine</tspan></text>
+  <circle cx="347.1" cy="188.4" r="22" fill="var(--sky)" stroke="var(--sky-deep)" stroke-width="2"/>
+  <text x="347.1" y="193.4" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="14" fill="var(--sky-deep)">10</text>
+  <text x="307.8" y="134.2" text-anchor="end" font-family="Inter,sans-serif" font-size="13.5" font-weight="600" fill="var(--ink)">Erfolg melden<tspan x="307.8" dy="16" font-size="12" font-weight="400" fill="var(--ink-soft)">kubelet → apiserver</tspan></text>
+  <circle cx="450" cy="330" r="66" fill="var(--mint)" stroke="var(--mint-deep)" stroke-width="2.5"/>
+  <text x="450" y="326" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="15" fill="var(--mint-deep)">kube-</text>
+  <text x="450" y="346" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="15" fill="var(--mint-deep)">apiserver</text>
+  <text x="450" y="366" text-anchor="middle" font-family="Inter,sans-serif" font-size="11.5" fill="var(--mint-deep)">Hub</text>
+
+  <g font-family="Inter,sans-serif" font-size="13">
+    <rect x="196" y="648" width="14" height="14" rx="4" fill="var(--sky)" stroke="var(--sky-deep)" stroke-width="1.5"/>
+    <text x="218" y="660" fill="var(--ink-soft)">Control Plane</text>
+    <rect x="330" y="648" width="14" height="14" rx="4" fill="var(--peach)" stroke="var(--peach-deep)" stroke-width="1.5"/>
+    <text x="352" y="660" fill="var(--ink-soft)">Worker</text>
+    <rect x="432" y="648" width="14" height="14" rx="4" fill="var(--mint)" stroke="var(--mint-deep)" stroke-width="1.5"/>
+    <text x="454" y="660" fill="var(--ink-soft)">Hub – in jedem Schritt beteiligt</text>
+  </g>
+</svg>
+    <p>Die Schritte 7 bis 9 sind der einzige Abschnitt, der den Worker betrifft – alles davor und danach passiert in der Control Plane. Das ist die grobe Trennlinie für die Fehlersuche: Bleibt ein Pod im oberen Bogen stecken, hilft kein Blick auf den Node.</p>
+  </div>
+
+  <div class="card">
+    <h3>Ablauf nach dem Absenden des Manifests</h3>
+    <ol class="steps">
+      <li><div><b>Request annehmen</b><small>Der apiserver nimmt den Request entgegen und legt das Manifest in etcd ab.</small></div></li>
+      <li><div><b>Controller informieren</b><small>Der controller-manager bekommt vom apiserver die Information, dass ein neues Manifest existiert.</small></div></li>
+      <li><div><b>Ist-Zustand erfragen</b><small>Der controller-manager fragt zurück, ob der Container schon deployt ist und ob der Status dem Wunsch entspricht.</small></div></li>
+      <li><div><b>Antwort: existiert nicht</b><small>Der apiserver meldet, dass es den Container noch nicht gibt.</small></div></li>
+      <li><div><b>Erstellung beauftragen</b><small>Der controller-manager gibt dem apiserver den Befehl, den Container zu erstellen.</small></div></li>
+      <li><div><b>Worker auswählen</b><small>Der apiserver fragt den scheduler, auf welchem Worker der Container laufen kann; der scheduler antwortet mit dem Ziel.</small></div></li>
+      <li><div><b>Kubelet beauftragen</b><small>Der apiserver schickt die nötigen Teile des Manifests an das kubelet des ausgewählten Workers.</small></div></li>
+      <li><div><b>Netz vorbereiten</b><small>Zusätzlich informiert der apiserver jeden kube-proxy, dass der Container auf diesem Worker verfügbar gemacht wird.</small></div></li>
+      <li><div><b>Container bauen</b><small>Das kubelet lässt die Container Engine den Container erzeugen und besorgt alle angeforderten Ressourcen wie Secrets oder Volumes.</small></div></li>
+      <li><div><b>Erfolg zurückmelden</b><small>Das kubelet meldet das erfolgreiche Deployment an den apiserver, der die Information in etcd schreibt.</small></div></li>
+    </ol>
+  </div>
+
+  <div class="note"><b>Hinweis:</b> Diese Abfolge wird immer wieder durchlaufen, selbst bei einer Kleinigkeit wie einer erhöhten Memory-Angabe. Es gibt keinen kurzen Dienstweg für kleine Änderungen.</div>
+
+  <div class="warn"><b>Achtung:</b> <code>kubectl apply</code> quittiert mit <code>created</code>, sobald Schritt 1 durch ist – das Manifest liegt in etcd, mehr nicht. Die Schritte 2 bis 10 laufen asynchron und ohne Rückkanal zur Shell. Ein Pod kann stundenlang <code>Pending</code> bleiben, ohne dass der Befehl je einen Fehler ausgegeben hätte. Grüne Ausgabe heißt nur „angenommen", nie „läuft".</div>
+
+  <div class="mnemo"><b>Der Flow ist ein Bauantrag, kein Handschlag</b> – die Eingangsbestätigung vom Amt ist nicht das fertige Haus.</div>
+</section>
+
+<!-- ================= 2 SPEICHENARCHITEKTUR ================= -->
+<section id="hub" class="sky">
+  <div class="sec-head"><div class="badge">2</div><h2>Speichenarchitektur: alles über den Hub</h2></div>
+  <p class="sec-sub">In jedem der zehn Schritte taucht der apiserver auf. Das ist kein Zufall, sondern das Bauprinzip: Kubernetes nutzt eine Speichenarchitektur, das Hub-and-Spoke-Pattern.</p>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>Hub</h3>
+      <p>Ein zentraler Punkt, durch den alle Anfragen und Nachrichten fließen. Er vermittelt und steuert den Datenverkehr zwischen den Endpunkten. In Kubernetes ist das der kube-apiserver.</p>
+    </div>
+    <div class="card">
+      <h3>Spokes</h3>
+      <p>Die Speichen sind die Endpunkte am Hub. Jede ist für eine bestimmte Funktion zuständig und interagiert mit den anderen ausschließlich über den Hub – scheduler, controller-manager, kubelet, kube-proxy.</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Was das Modell bringt</h3>
+    <ul class="clean">
+      <li><b>Ein Kontakt pro Komponente</b> – ein neuer Spoke muss nur den Hub kennen, nicht alle anderen Dienste</li>
+      <li><b>Verteilen ist Hub-Sache</b> – kommt ein Dienst hinzu, nimmt der Hub dessen Nachrichten entgegen und bringt sie zu den anderen</li>
+      <li><b>Überwachung an einer Stelle</b> – alle Transaktionen laufen über den Hub, das erleichtert die Fehleranalyse</li>
+      <li><b>Zugriffskontrolle an einer Stelle</b> – Authentifizierung, Autorisierung und Auditing sitzen dort, wo ohnehin alles vorbeikommt</li>
+    </ul>
+    <div class="mnemo"><b>Der Hub ist die Telefonzentrale</b> – neue Mitarbeiter melden sich einmal bei der Zentrale an, statt sich vierzig Kollegen einzeln vorzustellen.</div>
+  </div>
+
+  <div class="warn"><b>Achtung:</b> Fällt der apiserver aus, laufen bestehende Container einfach weiter – das kubelet arbeitet mit dem, was es lokal kennt. Der Cluster wirkt gesund, weil die Anwendungen antworten, aber keine einzige Änderung kommt mehr durch: keine Rollouts, keine Skalierung, kein Neuplatzieren nach Node-Ausfall. Monitoring, das nur auf Anwendungs-Endpunkte schaut, sieht davon nichts.</div>
+</section>
+
+<!-- ================= 3 DIREKTE KOMMUNIKATION ================= -->
+<section id="mesh" class="lav">
+  <div class="sec-head"><div class="badge">3</div><h2>Direkte Kommunikation und ihre Grenze</h2></div>
+  <p class="sec-sub">Direkt von Dienst zu Dienst wäre erst einmal schneller – ein Vermittler weniger. Bei vielen kleinen Diensten kippt der Vorteil trotzdem, und zwar rein rechnerisch.</p>
+
+  <div class="card">
+    <h3>Verbindungswege bei direkter Kommunikation</h3>
+    <p>Jeder Dienst muss jedem vorhandenen Dienst bekannt gemacht werden. Die Zahl der Wege wächst quadratisch, während sie im Hub-Modell mit jedem Dienst nur um eine Anbindung steigt.</p>
+    <table>
+      <thead><tr><th>Dienste</th><th>Wege direkt</th><th>Wege über den Hub</th></tr></thead>
+      <tbody>
+        <tr><td><b>3</b></td><td>3</td><td>3</td></tr>
+        <tr><td><b>5</b></td><td>10</td><td>5</td></tr>
+        <tr><td><b>10</b></td><td>45</td><td>10</td></tr>
+        <tr><td><b>20</b></td><td>190</td><td>20</td></tr>
+      </tbody>
+    </table>
+    <p>Schon bei fünf Diensten sind es zehn Verbindungswege – jeder zusätzliche Dienst erhöht die Komplexität weiter. In der Speichenarchitektur spricht jeder Spoke nur mit dem Hub, und der kümmert sich um das Verteilen.</p>
+    <div class="mnemo"><b>Direkte Kommunikation ist die Telefonliste im Verein</b> – bei fünf Mitgliedern noch machbar, bei zwanzig ruft jede Terminänderung den halben Abend zusammen.</div>
+  </div>
+
+  <div class="note"><b>Hinweis:</b> Die Rechnung gilt für die Steuerebene, nicht für den Datenverkehr der Anwendungen. Pod-zu-Pod-Traffic läuft direkt über das Cluster-Netz und nicht durch den apiserver.</div>
+</section>
+
+<!-- ================= 4 SEPARATION OF CONCERNS ================= -->
+<section id="soc" class="peach">
+  <div class="sec-head"><div class="badge">4</div><h2>Separation of Concerns: eine Aufgabe pro Komponente</h2></div>
+  <p class="sec-sub">Die Menge an Nachrichten wirkt zunächst erschreckend kompliziert. Sie ist die direkte Folge davon, dass jede Komponente nur eine Sache tut – und genau das macht die Fehlersuche berechenbar.</p>
+
+  <div class="card">
+    <h3>Symptom, Zuständigkeit, Fundort</h3>
+    <table>
+      <thead><tr><th>Frage</th><th>Zuständig</th><th>Wo nachsehen</th></tr></thead>
+      <tbody>
+        <tr><td><b>Ist mein Wunsch überhaupt angekommen?</b></td><td>apiserver, etcd</td><td>Objekt zurücklesen</td></tr>
+        <tr><td><b>Warum passiert nichts weiter?</b></td><td>controller-manager</td><td>Events, Controller-Logs</td></tr>
+        <tr><td><b>Warum bleibt der Pod Pending?</b></td><td>scheduler</td><td>Event <code>FailedScheduling</code></td></tr>
+        <tr><td><b>Warum startet der Container nicht?</b></td><td>kubelet</td><td><code>describe pod</code>, Kubelet-Log am Node</td></tr>
+        <tr><td><b>Warum ist nichts erreichbar?</b></td><td>kube-proxy</td><td>EndpointSlices des Service</td></tr>
+      </tbody>
+    </table>
+    <div class="mnemo"><b>Scheduler, Kubelet, Kube-Proxy sind Platzanweiser, Bauleiter und Wegweiser</b> – der Platzanweiser sucht den Sitzplatz, der Bauleiter stellt auf, der Wegweiser sorgt dafür, dass Besucher ankommen. Wer sich über den Weg beschwert, redet nicht mit dem Platzanweiser.</div>
+  </div>
+
+  <details>
+    <summary>Zuständigkeit prüfen statt raten</summary>
+    <div class="inner">
+      <p>Der schnellste Test, ob Schritt 6 schon durch ist: Ein Pod ohne Node-Zuweisung hat den scheduler noch nicht passiert – dann ist jede Suche im Kubelet-Log verschwendete Zeit.</p>
+      <pre><code><span class="c"># leer = noch keine Scheduling-Entscheidung getroffen</span>
+kubectl get pod &lt;pod&gt; -n &lt;namespace&gt; -o jsonpath='{.spec.nodeName}'</code></pre>
+      <p>Steht dort ein Node, liegt die Zuständigkeit ab hier beim kubelet dieses Workers – und der Rest der Analyse findet dort statt.</p>
+      <pre><code>kubectl describe pod &lt;pod&gt; -n &lt;namespace&gt;</code></pre>
+    </div>
+  </details>
+</section>
+
+<!-- ================= 5 ETCD ================= -->
+<section id="etcd" class="butter">
+  <div class="sec-head"><div class="badge">5</div><h2>etcd: nur einer darf schreiben</h2></div>
+  <p class="sec-sub">Die zentrale Kommunikation stellt sicher, dass nicht jeder Dienst selbst in etcd schreibt. Das trägt zur Konsistenz bei und reduziert Fehler – gerade weil etcd die kritischste Komponente im Cluster ist.</p>
+
+  <div class="card">
+    <h3>Was das Schreibmonopol bewirkt</h3>
+    <ul class="clean">
+      <li><b>Konsistenz</b> – ein Schreiber, eine Reihenfolge, keine widersprüchlichen Zustände</li>
+      <li><b>Validierung an einer Stelle</b> – was der apiserver ablehnt, landet nie im Speicher</li>
+      <li><b>Nachvollziehbarkeit</b> – jede Zustandsänderung hat denselben Weg und dieselbe Protokollstelle</li>
+      <li><b>Kleinere Angriffsfläche</b> – Komponenten brauchen kein etcd-Zugriffsrecht, nur ein apiserver-Recht</li>
+    </ul>
+    <div class="mnemo"><b>etcd ist das Grundbuch, der apiserver der Notar</b> – Eigentum ändert sich nicht dadurch, dass zwei Leute etwas vereinbaren, sondern erst durch die Eintragung.</div>
+  </div>
+
+  <div class="warn"><b>Achtung:</b> etcd fällt selten hart aus, es wird langsam. Steigt die Schreiblatenz der Datenträger, quittiert der apiserver Requests weiterhin, nur eben zäh – Symptom ist ein „kubectl hängt manchmal", während alle Pods <code>Running</code> melden und keine Komponente rot wird. Wer nur auf Ready-Status schaut, sieht die Ursache nie.</div>
+
+  <details>
+    <summary>Gesundheit der Control Plane abfragen</summary>
+    <div class="inner">
+      <p>Vor der Suche in einzelnen Logs lohnt der Blick auf die Health-Endpunkte des apiservers: Sie listen die Teilprüfungen einzeln auf, inklusive etcd.</p>
+      <pre><code>kubectl get --raw '/livez?verbose'
+kubectl get --raw '/readyz?verbose'</code></pre>
+      <p>Auf OpenShift laufen die etcd-Instanzen als statische Pods im eigenen Namespace – dort stehen auch die Logs mit den Latenzwarnungen.</p>
+      <pre><code>oc get pods -n openshift-etcd -o wide</code></pre>
+    </div>
+  </details>
+</section>
+
+<!-- ================= 6 PRAXIS ================= -->
+<section id="praxis" class="rose">
+  <div class="sec-head"><div class="badge">6</div><h2>Den Flow selbst mitlesen</h2></div>
+  <p class="sec-sub">Der Ablauf ist nicht nur Theorie: Fast jeder Schritt hinterlässt eine Spur, die sich mit Bordmitteln sichtbar machen lässt.</p>
+
+  <div class="card">
+    <h3>Spur je Schritt</h3>
+    <table>
+      <thead><tr><th>Schritt</th><th>Sichtbar als</th></tr></thead>
+      <tbody>
+        <tr><td><b>1 · in etcd abgelegt</b></td><td>Objekt lässt sich zurücklesen, <code>resourceVersion</code> gesetzt</td></tr>
+        <tr><td><b>2–5 · Controller aktiv</b></td><td>Events wie <code>SuccessfulCreate</code></td></tr>
+        <tr><td><b>6 · Worker gewählt</b></td><td>Event <code>Scheduled</code>, <code>.spec.nodeName</code> gefüllt</td></tr>
+        <tr><td><b>7–9 · Kubelet baut</b></td><td>Events <code>Pulling</code>, <code>Created</code>, <code>Started</code></td></tr>
+        <tr><td><b>8 · Netz bereit</b></td><td>EndpointSlice enthält die Pod-IP</td></tr>
+        <tr><td><b>10 · Rückmeldung</b></td><td><code>.status.phase</code> wechselt auf <code>Running</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>Der Ablauf als Zeitleiste</h3>
+    <p>Events sind die kompakteste Sicht auf die Schritte 2 bis 10, weil sie mit Zeitstempel zeigen, welche Komponente wann etwas gemeldet hat.</p>
+    <pre><code>kubectl get events -n &lt;namespace&gt; --sort-by=.metadata.creationTimestamp</code></pre>
+    <p>Wer sehen will, dass wirklich jeder Aufruf beim apiserver landet, lässt sich die HTTP-Requests von kubectl ausgeben – Schritt 1 des Flows, live.</p>
+    <pre><code>kubectl get pods -n &lt;namespace&gt; -v=6</code></pre>
+    <p>Für Schritt 8 zählt nicht der Service, sondern ob die Pod-IP tatsächlich in der Endpunktliste steht. Ein Service ohne passende EndpointSlice ist ein Wegweiser ins Leere.</p>
+    <pre><code>kubectl get endpointslices -n &lt;namespace&gt; -l kubernetes.io/service-name=&lt;service&gt;</code></pre>
+  </div>
+
+  <div class="warn"><b>Achtung:</b> Events sind kein Log. Sie verfallen nach etwa einer Stunde, und beim Neuanlegen eines Pods beginnt die Zeitleiste von vorn. Wer am nächsten Morgen nachschaut, findet ein leeres Event-Feld – und hält einen Pod für unauffällig, der nachts zehnmal neu gestartet ist. Für die Nachbetrachtung zählen <code>.status.containerStatuses[].restartCount</code> und ein zentrales Log-Backend, nicht die Events.</div>
+</section>
+
+<!-- ================= 7 DURCHLAUF ================= -->
+<section id="howto" class="mint">
+  <div class="sec-head"><div class="badge">7</div><h2>Kompletter Durchlauf in vier Phasen</h2></div>
+  <p class="sec-sub">Dieselben zehn Schritte, gruppiert nach Zuständigkeit – so lässt sich im Fehlerfall die Phase eingrenzen, bevor man Logs öffnet.</p>
+
+  <div class="card">
+    <h3>Die vier Phasen auf einen Blick</h3>
+    <ol class="steps">
+      <li><div><b>Phase A · Annehmen</b><small>Schritte 1–2: apiserver validiert, schreibt nach etcd, informiert den controller-manager.</small></div></li>
+      <li><div><b>Phase B · Abgleichen</b><small>Schritte 3–5: controller-manager vergleicht Soll und Ist und beauftragt die Erstellung.</small></div></li>
+      <li><div><b>Phase C · Platzieren</b><small>Schritt 6: scheduler wählt den Worker aus.</small></div></li>
+      <li><div><b>Phase D · Bauen und melden</b><small>Schritte 7–10: kubelet baut, kube-proxy bereitet das Netz vor, der Erfolg geht zurück in etcd.</small></div></li>
+    </ol>
+  </div>
+
+  <h3 style="margin:26px 0 6px;font-size:1.15rem">Phase A · Annehmen</h3>
+
+  <details>
+    <summary>Schritt 1 · Manifest kommt an und wird gespeichert</summary>
+    <div class="inner">
+      <p>Der apiserver nimmt den Request an, prüft Authentifizierung, Autorisierung und Schema und legt das Manifest in etcd ab. Ohne diesen Schritt existiert der Wunsch nirgends – wer ihn überspringt gedanklich, sucht später Container, die nie beauftragt wurden.</p>
+      <pre><code><span class="c"># zurücklesen: was tatsächlich gespeichert wurde, nicht was gemeint war</span>
+kubectl get pod &lt;pod&gt; -n &lt;namespace&gt; -o yaml</code></pre>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 2 · Controller erfährt vom neuen Manifest</summary>
+    <div class="inner">
+      <p>Der controller-manager wird nicht selbst aktiv, weil er etcd liest – er bekommt die Information vom apiserver. Das ist der Grund, warum ein überlasteter apiserver den gesamten Cluster träge macht, obwohl die Daten längst gespeichert sind.</p>
+    </div>
+  </details>
+
+  <h3 style="margin:26px 0 6px;font-size:1.15rem">Phase B · Abgleichen</h3>
+
+  <details>
+    <summary>Schritte 3 bis 5 · Soll gegen Ist</summary>
+    <div class="inner">
+      <p>Der controller-manager fragt beim apiserver nach, ob der Container schon existiert und ob der aktuelle Status dem gewünschten entspricht. Die Antwort lautet hier: gibt es noch nicht. Daraufhin erteilt er den Auftrag zur Erstellung. Dieser Abgleich ist kein einmaliger Vorgang, sondern das Grundmuster: Kubernetes fragt permanent „Soll gleich Ist?" und handelt nur bei Abweichung.</p>
+      <pre><code><span class="c"># Spuren der Controller-Arbeit</span>
+kubectl get events -n &lt;namespace&gt; --field-selector reason=SuccessfulCreate</code></pre>
+    </div>
+  </details>
+
+  <h3 style="margin:26px 0 6px;font-size:1.15rem">Phase C · Platzieren</h3>
+
+  <details>
+    <summary>Schritt 6 · Scheduler wählt den Worker</summary>
+    <div class="inner">
+      <p>Der apiserver fragt den scheduler, auf welchem Worker der Container laufen kann, und bekommt eine Antwort. Findet der scheduler keinen passenden Node, bleibt der Pod ohne Zuweisung stehen – der Zustand ist nicht fehlerhaft, sondern unentschieden.</p>
+      <pre><code><span class="c"># Grund der Nichtplatzierung, z. B. Ressourcen oder Taints</span>
+kubectl get events -n &lt;namespace&gt; --field-selector reason=FailedScheduling</code></pre>
+    </div>
+  </details>
+
+  <h3 style="margin:26px 0 6px;font-size:1.15rem">Phase D · Bauen und melden</h3>
+
+  <details>
+    <summary>Schritte 7 und 8 · Kubelet und kube-proxy bekommen ihren Teil</summary>
+    <div class="inner">
+      <p>Der apiserver schickt die notwendigen Informationen des Manifests an das kubelet des ausgewählten Workers. Zusätzlich geht eine Netzwerkinformation an jeden kube-proxy, damit der Container auf diesem Worker verfügbar gemacht wird. Beide Wege sind unabhängig: Der Container kann laufen, während die Erreichbarkeit noch fehlt.</p>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 9 · Container wird erzeugt</summary>
+    <div class="inner">
+      <p>Das kubelet sorgt dafür, dass der Container in der Container Engine entsteht und alle im Manifest angeforderten Ressourcen wie Secrets oder Volumes bereitstehen. Fehlt ein Secret, scheitert nicht das Manifest, sondern der Start – sichtbar erst hier, nicht beim Anlegen.</p>
+      <pre><code>kubectl describe pod &lt;pod&gt; -n &lt;namespace&gt;</code></pre>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 10 · Rückmeldung und Abschluss</summary>
+    <div class="inner">
+      <p>Das kubelet meldet das erfolgreiche Deployment an den apiserver, der die Information in etcd speichert. Erst damit ist Ist gleich Soll – und der Kreis schließt sich genau dort, wo er begonnen hat.</p>
+      <pre><code>kubectl get pod &lt;pod&gt; -n &lt;namespace&gt; -o jsonpath='{.status.phase}'</code></pre>
+    </div>
+  </details>
+
+  <div class="mnemo"><b>Der Flow ist eine Ringleitung, keine Einbahnstraße</b> – jede Meldung endet wieder im Grundbuch, sonst hätte niemand einen verlässlichen Ist-Zustand.</div>
+</section>
+
+</main>
+
+<footer>Zusammengefasst aus einem deutschsprachigen Kubernetes-Grundlagenbuch, Abschnitt 2.3.3 „API Call Flow" samt Abbildungen 2.7 und 2.8 zur Speichenarchitektur. Befehlsbeispiele und Betriebshinweise ergänzt. Kein Ersatz für die offizielle Doku – Versionsdetails vor Produktionseinsatz gegen kubernetes.io bzw. docs.redhat.com prüfen.</footer>
+
+</body>
+</html>
