@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Go-Crashkurs – vom Sprachkern zum Kubernetes-Operator</title>
+<meta name="rezept-kategorie"    content="allgemein">
+<meta name="rezept-beschreibung" content="Go in elf Etappen für Platform Engineers – von den Sprachgrundlagen bis zum eigenen Operator mit kubebuilder und controller-runtime.">
+<meta name="rezept-stand"        content="Go 1.22+ · kubebuilder v4 · 08/2026">
+<meta name="rezept-suche"        content="go golang operator kubebuilder controller-runtime client-go reconcile crd struct-tags interfaces context finalizer envtest">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#33394a;
+  --ink-soft:#5c6376;
+  --paper:#fbfaf7;
+  --card:#ffffff;
+  --line:#e9e6df;
+  --code-bg:#31364a;
+  --code-ink:#e8eaf2;
+  --mint:#d9f2e4;      --mint-deep:#2f8f6b;
+  --sky:#dcebf9;       --sky-deep:#2d6fa8;
+  --lav:#e7e2f7;       --lav-deep:#6b5bb5;
+  --peach:#fbe6d7;     --peach-deep:#c2703d;
+  --butter:#faf0cf;    --butter-deep:#a5842a;
+  --rose:#f9e0e6;      --rose-deep:#b34f6d;
+  --aqua:#d7eff0;      --aqua-deep:#2b8288;
+  --r-lg:26px; --r-md:18px; --r-sm:12px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;scroll-padding-top:104px}
+body{font-family:'Inter',sans-serif;background:var(--paper);color:var(--ink);line-height:1.65;font-size:16px}
+h1,h2,h3,h4{font-family:'Sora',sans-serif;line-height:1.2}
+
+/* ---------- Kopf ---------- */
+header{max-width:1060px;margin:0 auto;padding:56px 24px 8px}
+.kicker{display:inline-block;background:var(--lav);color:var(--lav-deep);font-weight:600;font-size:.8rem;letter-spacing:.08em;text-transform:uppercase;padding:6px 14px;border-radius:999px;margin-bottom:18px}
+header h1{font-size:clamp(1.9rem,4.5vw,3rem);font-weight:800;letter-spacing:-.02em}
+header h1 span{color:var(--mint-deep)}
+.lede{color:var(--ink-soft);max-width:640px;margin-top:14px;font-size:1.05rem}
+.status{background:var(--code-bg);color:var(--code-ink);border-radius:var(--r-sm);padding:16px 18px;margin-top:22px;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:.82rem;line-height:1.6;white-space:pre}
+.status .c{color:#9aa3c0}
+
+/* ---------- Fahrplan ---------- */
+.route{max-width:1060px;margin:34px auto 10px;padding:0 24px;display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.route a{display:flex;flex-direction:column;gap:8px;text-decoration:none;color:var(--ink);background:var(--card);border:1.5px solid var(--line);border-radius:var(--r-md);padding:16px 14px;transition:transform .15s ease,box-shadow .15s ease}
+.route a:hover,.route a:focus-visible{transform:translateY(-3px);box-shadow:0 8px 22px rgba(60,60,90,.10);outline:none}
+.route .dot{width:34px;height:34px;border-radius:12px;display:grid;place-items:center;font-family:'Sora';font-weight:700;font-size:.9rem}
+.route .t{font-weight:600;font-size:.86rem;line-height:1.3}
+.route .s{font-size:.74rem;color:var(--ink-soft)}
+.route a:nth-child(1) .dot{background:var(--aqua);color:var(--aqua-deep)}
+.route a:nth-child(2) .dot{background:var(--mint);color:var(--mint-deep)}
+.route a:nth-child(3) .dot{background:var(--sky);color:var(--sky-deep)}
+.route a:nth-child(4) .dot{background:var(--lav);color:var(--lav-deep)}
+.route a:nth-child(5) .dot{background:var(--peach);color:var(--peach-deep)}
+.route a:nth-child(6) .dot{background:var(--butter);color:var(--butter-deep)}
+.route a:nth-child(7) .dot{background:var(--rose);color:var(--rose-deep)}
+.route a:nth-child(8) .dot{background:var(--aqua);color:var(--aqua-deep)}
+.route a:nth-child(9) .dot{background:var(--mint);color:var(--mint-deep)}
+.route a:nth-child(10) .dot{background:var(--sky);color:var(--sky-deep)}
+.route a:nth-child(11) .dot{background:var(--lav);color:var(--lav-deep)}
+
+/* ---------- Sticky-Nav ---------- */
+nav{position:sticky;top:0;z-index:50;background:rgba(251,250,247,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);margin-top:26px}
+nav .wrap{max-width:1060px;margin:0 auto;padding:10px 24px;display:flex;gap:8px;overflow-x:auto}
+nav a{white-space:nowrap;text-decoration:none;font-size:.82rem;font-weight:600;color:var(--ink-soft);padding:7px 14px;border-radius:999px;border:1px solid transparent}
+nav a:hover{background:var(--card);border-color:var(--line);color:var(--ink)}
+.progline{max-width:1060px;margin:0 auto;padding:0 24px 10px;display:flex;align-items:center;gap:12px}
+.progline b{font-family:'JetBrains Mono';font-size:.74rem;font-weight:500;color:var(--ink-soft);white-space:nowrap}
+.track{flex:1;height:6px;background:var(--line);border-radius:999px;overflow:hidden}
+.fill{display:block;height:100%;width:0;background:var(--mint-deep);border-radius:999px;transition:width .3s ease}
+
+/* ---------- Sektionen ---------- */
+main{max-width:1060px;margin:0 auto;padding:20px 24px 90px}
+section{margin-top:64px}
+.sec-head{display:flex;align-items:center;gap:16px;margin-bottom:8px;flex-wrap:wrap}
+.badge{width:52px;height:52px;border-radius:16px;display:grid;place-items:center;font-family:'Sora';font-weight:800;font-size:1.25rem;flex-shrink:0}
+section h2{font-size:clamp(1.4rem,3vw,1.9rem);font-weight:700}
+.sec-sub{color:var(--ink-soft);margin-bottom:22px;max-width:720px}
+.aqua .badge{background:var(--aqua);color:var(--aqua-deep)}
+.mint .badge{background:var(--mint);color:var(--mint-deep)}
+.sky .badge{background:var(--sky);color:var(--sky-deep)}
+.lav .badge{background:var(--lav);color:var(--lav-deep)}
+.peach .badge{background:var(--peach);color:var(--peach-deep)}
+.butter .badge{background:var(--butter);color:var(--butter-deep)}
+.rose .badge{background:var(--rose);color:var(--rose-deep)}
+
+/* ---------- Etappen-Haken ---------- */
+.cond{margin-left:auto;display:inline-flex;align-items:center;gap:8px;cursor:pointer;user-select:none;background:var(--card);border:1.5px solid var(--line);border-radius:999px;padding:7px 15px;font-family:'JetBrains Mono';font-size:.76rem;color:var(--ink-soft)}
+.cond input{accent-color:var(--mint-deep);margin:0}
+.cond.done{background:var(--mint);border-color:var(--mint);color:var(--mint-deep)}
+.cond:focus-within{outline:2px solid var(--mint-deep);outline-offset:2px}
+
+/* ---------- Karten & Schritte ---------- */
+.card{background:var(--card);border:1.5px solid var(--line);border-radius:var(--r-lg);padding:26px 28px;margin-bottom:20px}
+.card h3{font-size:1.08rem;margin-bottom:14px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+ol.steps{list-style:none;counter-reset:s;display:flex;flex-direction:column;gap:14px}
+ol.steps li{counter-increment:s;display:grid;grid-template-columns:34px 1fr;gap:14px;align-items:start}
+ol.steps li::before{content:counter(s);width:30px;height:30px;border-radius:10px;display:grid;place-items:center;font-family:'Sora';font-weight:700;font-size:.85rem;margin-top:2px}
+.aqua ol.steps li::before{background:var(--aqua);color:var(--aqua-deep)}
+.mint ol.steps li::before{background:var(--mint);color:var(--mint-deep)}
+.sky ol.steps li::before{background:var(--sky);color:var(--sky-deep)}
+.lav ol.steps li::before{background:var(--lav);color:var(--lav-deep)}
+.peach ol.steps li::before{background:var(--peach);color:var(--peach-deep)}
+.butter ol.steps li::before{background:var(--butter);color:var(--butter-deep)}
+.rose ol.steps li::before{background:var(--rose);color:var(--rose-deep)}
+.steps b{font-weight:600}
+.steps small{display:block;color:var(--ink-soft);font-size:.86rem;margin-top:2px}
+
+ul.clean{list-style:none;display:flex;flex-direction:column;gap:10px}
+ul.clean li{padding-left:24px;position:relative}
+ul.clean li::before{content:"";position:absolute;left:4px;top:.62em;width:9px;height:9px;border-radius:3px;background:var(--line)}
+.aqua ul.clean li::before{background:var(--aqua-deep)}
+.mint ul.clean li::before{background:var(--mint-deep)}
+.sky ul.clean li::before{background:var(--sky-deep)}
+.lav ul.clean li::before{background:var(--lav-deep)}
+.peach ul.clean li::before{background:var(--peach-deep)}
+.butter ul.clean li::before{background:var(--butter-deep)}
+.rose ul.clean li::before{background:var(--rose-deep)}
+
+/* ---------- Code ---------- */
+pre{background:var(--code-bg);color:var(--code-ink);border-radius:var(--r-sm);padding:16px 18px;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:.82rem;line-height:1.6;margin:10px 0}
+code{font-family:'JetBrains Mono',monospace;font-size:.85em;background:#efede7;border-radius:6px;padding:2px 6px}
+pre code{background:none;padding:0;font-size:1em}
+pre .c{color:#9aa3c0}
+
+/* ---------- Hinweisboxen ---------- */
+.note,.warn,.mnemo,.why,.drill{border-radius:var(--r-md);padding:14px 18px;margin:14px 0;font-size:.92rem}
+.note{background:var(--sky)}
+.warn{background:var(--rose)}
+.mnemo{background:var(--butter)}
+.why{background:var(--aqua)}
+.drill{background:var(--mint)}
+.note b,.warn b,.mnemo b,.why b,.drill b{font-weight:700}
+.mnemo::before{content:"🧠 Eselsbrücke · ";font-weight:700}
+.warn::before{content:"⚠️ ";font-weight:700}
+.why::before{content:"🎯 Wofür im Operator · ";font-weight:700}
+.drill::before{content:"⌨️ Übung · ";font-weight:700}
+
+/* ---------- Tabellen ---------- */
+table{width:100%;border-collapse:separate;border-spacing:0;font-size:.88rem;margin:10px 0}
+th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-family:'Sora';font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft)}
+tr:last-child td{border-bottom:none}
+thead th:first-child{border-top-left-radius:var(--r-sm)}
+thead th:last-child{border-top-right-radius:var(--r-sm)}
+thead{background:var(--paper)}
+
+/* ---------- Details ---------- */
+details{border:1.5px solid var(--line);border-radius:var(--r-md);margin:12px 0;background:var(--card)}
+details summary{cursor:pointer;padding:14px 18px;font-weight:600;font-size:.94rem;list-style:none;display:flex;align-items:center;gap:10px}
+details summary::before{content:"+";font-family:'Sora';font-weight:700;width:24px;height:24px;border-radius:8px;background:var(--paper);display:grid;place-items:center;flex-shrink:0}
+details[open] summary::before{content:"–"}
+details .inner{padding:0 18px 18px}
+summary::-webkit-details-marker{display:none}
+
+/* ---------- Chips ---------- */
+.chips{display:flex;flex-wrap:wrap;gap:10px;margin:10px 0}
+.chip{background:var(--paper);border:1.5px solid var(--line);border-radius:999px;padding:6px 14px;font-family:'JetBrains Mono';font-size:.8rem}
+
+footer{max-width:1060px;margin:0 auto;padding:30px 24px 60px;color:var(--ink-soft);font-size:.82rem;border-top:1px solid var(--line)}
+
+@media(max-width:820px){
+  .route{grid-template-columns:repeat(2,1fr)}
+  .grid2{grid-template-columns:1fr}
+  .cond{margin-left:0}
+}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.route a,.fill{transition:none}}
+</style>
+</head>
+<body>
+
+<header>
+  <span class="kicker">Go · controller-runtime · Operator-Entwicklung</span>
+  <h1>Von <span>:=</span> bis Reconcile:<br>Go für Platform Engineers</h1>
+  <p class="lede">Elf Etappen, rund 20 Stunden. Kein Sprachkurs für Anfänger, sondern der kürzeste Weg von „ich lese Go" zu „ich schreibe einen Operator, der in Produktion laufen darf". <b>Jede Etappe erklärt, wofür der Sprachbaustein im Controller später steht.</b></p>
+  <div class="status"><span class="c">NAME              READY   PHASE         AGE</span>
+go-skills/aleks   0/11    Progressing   0s
+<span class="c">Ziel: NamespaceLease-Operator, gebaut mit kubebuilder und controller-runtime</span></div>
+</header>
+
+<div class="route">
+  <a href="#e0"><span class="dot">0</span><span class="t">Werkzeug &amp; Reflexe</span><span class="s">20 min · Toolchain</span></a>
+  <a href="#e1"><span class="dot">1</span><span class="t">Sprachkern</span><span class="s">2 h · Zero Values, Sichtbarkeit</span></a>
+  <a href="#e2"><span class="dot">2</span><span class="t">Datentypen</span><span class="s">2 h · Slice, Map, Struct, Pointer</span></a>
+  <a href="#e3"><span class="dot">3</span><span class="t">Fehler</span><span class="s">1,5 h · error als Wert</span></a>
+  <a href="#e4"><span class="dot">4</span><span class="t">Interfaces</span><span class="s">2 h · Methoden, Embedding</span></a>
+  <a href="#e5"><span class="dot">5</span><span class="t">API-Typen</span><span class="s">1,5 h · Struct Tags, Marker</span></a>
+  <a href="#e6"><span class="dot">6</span><span class="t">Module</span><span class="s">1 h · go.mod, Layout</span></a>
+  <a href="#e7"><span class="dot">7</span><span class="t">Context</span><span class="s">2 h · Goroutines, Channels</span></a>
+  <a href="#e8"><span class="dot">8</span><span class="t">Tests</span><span class="s">1,5 h · table-driven, envtest</span></a>
+  <a href="#e9"><span class="dot">9</span><span class="t">controller-runtime</span><span class="s">2 h · Scheme, Client, Cache</span></a>
+  <a href="#e10"><span class="dot">10</span><span class="t">Der Operator</span><span class="s">5 h · kubebuilder, Reconcile</span></a>
+</div>
+
+<nav>
+  <div class="wrap">
+    <a href="#e0">0 · Werkzeug</a>
+    <a href="#e1">1 · Sprachkern</a>
+    <a href="#e2">2 · Datentypen</a>
+    <a href="#e3">3 · Fehler</a>
+    <a href="#e4">4 · Interfaces</a>
+    <a href="#e5">5 · API-Typen</a>
+    <a href="#e6">6 · Module</a>
+    <a href="#e7">7 · Context</a>
+    <a href="#e8">8 · Tests</a>
+    <a href="#e9">9 · controller-runtime</a>
+    <a href="#e10">10 · Operator</a>
+    <a href="#fallen">Fallen</a>
+    <a href="#quellen">Quellen</a>
+  </div>
+  <div class="progline">
+    <b id="pl">0 / 11 Ready</b>
+    <span class="track"><span class="fill" id="fill"></span></span>
+  </div>
+</nav>
+
+<main>
+
+<!-- ============ 00 ============ -->
+<section id="e0" class="aqua">
+  <div class="sec-head"><div class="badge">0</div><h2>Werkzeug und Reflexe</h2>
+    <label class="cond"><input type="checkbox"> Ready</label></div>
+  <p class="sec-sub">20 Minuten, einmalig. Go bringt Build, Test, Formatter, Linter und Doku-Server in einem Binary mit – kein virtualenv, kein requirements.txt, keine Runtime auf dem Zielsystem.</p>
+
+<pre><code><span class="c"># Fedora</span>
+sudo dnf install golang
+go install golang.org/x/tools/gopls@latest          <span class="c"># Language Server</span>
+go install honnef.co/go/tools/cmd/staticcheck@latest
+
+<span class="c"># neues Projekt</span>
+mkdir lernen &amp;&amp; cd lernen
+go mod init example.com/lernen
+go run .          <span class="c"># kompiliert und startet</span>
+go build -o app . <span class="c"># ein statisches Binary, keine Abhängigkeiten</span>
+gofmt -l -w .     <span class="c"># Formatierung ist nicht verhandelbar</span>
+go vet ./...      <span class="c"># findet Unsinn, den der Compiler durchlässt</span></code></pre>
+
+  <div class="why">Genau diese Kette steckt später im <code>Makefile</code>, das kubebuilder erzeugt. <code>make build</code> ruft nichts anderes auf.</div>
+
+  <div class="mnemo"><b>Go ist Bash mit Typen</b> – dieselbe Nähe zum System, aber ein Compiler, der meckert, bevor der Kunde es tut.</div>
+
+  <div class="drill">Ein <code>main.go</code>, das <code>os.Args</code> ausgibt, bauen und das Binary in einen leeren Container kopieren (<code>FROM scratch</code>). Es läuft. Das ist der Grund, warum das CNCF-Ökosystem in Go geschrieben ist.</div>
+</section>
+
+<!-- ============ 01 ============ -->
+<section id="e1" class="mint">
+  <div class="sec-head"><div class="badge">1</div><h2>Sprachkern</h2>
+    <label class="cond"><input type="checkbox"> Ready</label></div>
+  <p class="sec-sub">2 Stunden, parallel dazu <a href="https://go.dev/tour">A Tour of Go</a> bis zum Kapitel „Methods". Der Kern passt auf eine Seite – wichtig sind drei Eigenschaften, die es so anderswo nicht gibt.</p>
+
+<pre><code>package main
+
+import (
+	"fmt"
+	"strings"
+)
+
+func main() {
+	name := "openshift"        <span class="c">// := deklariert und weist zu, Typ wird abgeleitet</span>
+	var replicas int32 = 3     <span class="c">// var, wenn der exakte Typ wichtig ist</span>
+	var ready bool             <span class="c">// Zero Value: false. Nie undefined, nie None</span>
+
+	if n := strings.ToUpper(name); len(n) &gt; 3 {
+		fmt.Println(n, replicas, ready)   <span class="c">// n lebt nur im if-Block</span>
+	}
+
+	for i := 0; i &lt; 3; i++ { }        <span class="c">// die einzige Schleifenform</span>
+	for i, c := range name { _ = i; _ = c }
+}
+
+<span class="c">// Mehrfachrückgabe ist das Herzstück der Sprache</span>
+func parse(s string) (int, error) { <span class="c">/* ... */</span> }</code></pre>
+
+  <div class="card">
+    <h3>Was hängenbleiben muss</h3>
+    <ul class="clean">
+      <li><b>Zero Values</b> – jede Variable ist sofort gültig: <code>0</code>, <code>""</code>, <code>false</code>, <code>nil</code></li>
+      <li><b>Großschreibung ist Sichtbarkeit</b> – <code>Spec</code> ist exportiert, <code>spec</code> paketprivat. Es gibt kein <code>public</code></li>
+      <li><b>Ungenutzte Variablen und Imports</b> sind Compile-Fehler – der Grund, warum Go-Repos wenig Leichen enthalten</li>
+      <li><b><code>_</code></b> ist der Mülleimer für Werte, die nicht gebraucht werden</li>
+    </ul>
+  </div>
+
+  <div class="mnemo"><b>Der Doppelpunkt ist die Geburtsurkunde</b> – <code>:=</code> bringt die Variable auf die Welt, <code>=</code> weist einer schon existierenden zu.</div>
+
+  <div class="warn"><b>Achtung:</b> <code>:=</code> in einem inneren Block erzeugt eine neue Variable, auch wenn außen eine gleichnamige existiert. Der Klassiker ist <code>err</code>: innen wird der Fehler gesetzt, außen bleibt er <code>nil</code>, der Code läuft scheinbar sauber durch. <code>go vet</code> und <code>staticcheck</code> finden das meistens.</div>
+
+  <div class="drill">Eine Funktion <code>splitImage(ref string) (registry, image, tag string, err error)</code>, die <code>quay.io/openshift/cli:4.18</code> zerlegt und einen Fehler liefert, wenn kein Tag angegeben ist.</div>
+</section>
+
+<!-- ============ 02 ============ -->
+<section id="e2" class="sky">
+  <div class="sec-head"><div class="badge">2</div><h2>Slices, Maps, Structs, Pointer</h2>
+    <label class="cond"><input type="checkbox"> Ready</label></div>
+  <p class="sec-sub">2 Stunden. Diese vier machen 90 Prozent aller Zeilen in einem Controller aus. Entscheidend ist nicht die Syntax, sondern wann Go kopiert und wann es dieselbe Speicherstelle weiterreicht.</p>
+
+<pre><code>pods := []string{"a", "b"}       <span class="c">// Slice: dynamische Liste</span>
+pods = append(pods, "c")         <span class="c">// append gibt ein NEUES Slice zurück</span>
+
+labels := map[string]string{"app": "api"}
+v, ok := labels["app"]           <span class="c">// comma-ok: existiert der Key?</span>
+delete(labels, "app")
+
+type Lease struct {
+	Name string
+	TTL  time.Duration
+}
+l := Lease{Name: "team-a"}       <span class="c">// Struct ist ein Wert und wird beim Zuweisen KOPIERT</span>
+p := &amp;l                          <span class="c">// Pointer auf dieselbe Speicherstelle</span>
+p.TTL = time.Hour                <span class="c">// kein -&gt; nötig, Go dereferenziert selbst</span></code></pre>
+
+  <div class="card">
+    <h3>Wert oder Pointer?</h3>
+    <table>
+      <thead><tr><th>Situation</th><th>Regel</th></tr></thead>
+      <tbody>
+        <tr><td><b>Funktion soll das Objekt ändern</b></td><td>Pointer</td></tr>
+        <tr><td><b>Struct ist groß</b></td><td>Pointer – K8s-Objekte sind groß</td></tr>
+        <tr><td><b>Feld ist optional</b></td><td>Pointer, wenn „nicht gesetzt" etwas anderes ist als „0"</td></tr>
+        <tr><td><b>kleiner unveränderlicher Wert</b></td><td>Wert</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="mnemo"><b>Slice ist ein Fenster auf eine Wiese</b> – Zeiger, Länge, Kapazität. Zwei Slices können durch dasselbe Fenster schauen. Wer das Gras schneidet, verändert es für beide.</div>
+
+  <div class="warn"><b>Achtung:</b> Das Schreiben in eine <code>nil</code>-Map bricht zur Laufzeit ab, lesen dagegen funktioniert klaglos und liefert den Zero Value. Der Fehler taucht deshalb erst auf, wenn ein Objekt zum ersten Mal ohne Labels ankommt. Darum steht in jedem Controller: <code>if obj.Annotations == nil { obj.Annotations = map[string]string{} }</code></div>
+
+  <div class="why"><code>replicas *int32</code> in der Deployment-Spec ist kein Zufall: nur ein Pointer unterscheidet „auf 0 gesetzt" von „gar nicht angegeben". Genau das wird in der eigenen CRD gebraucht.</div>
+
+  <div class="drill">Ein Typ <code>NamespaceReport</code> mit Name, angeforderter und genutzter CPU, dazu eine Funktion, die aus einem <code>[]NamespaceReport</code> alle mit Auslastung unter 20 Prozent filtert.</div>
+</section>
+
+<!-- ============ 03 ============ -->
+<section id="e3" class="lav">
+  <div class="sec-head"><div class="badge">3</div><h2>Fehler sind Rückgabewerte</h2>
+    <label class="cond"><input type="checkbox"> Ready</label></div>
+  <p class="sec-sub">1,5 Stunden – der größte Umgewöhnungsbrocken. Go hat keine Exceptions. Ein Fehler ist ein normaler Rückgabewert, den man behandelt oder mit Kontext weiterreicht. <code>panic</code> ist für „der Prozess ist kaputt", nicht für „die API antwortet mit 404".</p>
+
+<pre><code>ns, err := getNamespace(ctx, "team-a")
+if err != nil {
+	return fmt.Errorf("namespace team-a lesen: %w", err)  <span class="c">// %w verpackt, kein Kontextverlust</span>
+}
+
+<span class="c">// auspacken statt Stringvergleich</span>
+if apierrors.IsNotFound(err) { <span class="c">/* Objekt existiert nicht mehr */</span> }
+if errors.Is(err, context.DeadlineExceeded) { <span class="c">/* Timeout */</span> }
+
+defer f.Close()   <span class="c">// läuft beim Verlassen der Funktion, auf jedem Pfad</span></code></pre>
+
+  <div class="mnemo"><b>Fehler sind Rückgabefracht, kein Feueralarm</b> – Paket entgegennehmen, eigenes Absenderlabel draufkleben, weiter nach oben schicken, bis jemand zuständig ist.</div>
+
+  <div class="why">In <code>Reconcile</code> entscheidet der zurückgegebene Fehler, ob controller-runtime das Objekt mit Backoff erneut in die Warteschlange legt. <code>return nil</code> heißt „fertig", <code>return err</code> heißt „nochmal, später". Einen Fehler zu schlucken ist im Operator ein echter Bug.</div>
+
+  <div class="warn"><b>Achtung:</b> <code>if err != nil { return err }</code> ohne <code>%w</code>-Kontext ist die häufigste stille Fehlerquelle. Der Operator läuft, im Log steht <code>connection refused</code>, und niemand weiß, welcher der zwölf Client-Aufrufe es war. Der Fehler ist da, aber unbrauchbar.</div>
+
+  <div class="drill">Ein <code>var ErrNoQuota = errors.New("kein ResourceQuota im Namespace")</code> aus einer Funktion zurückgeben, zweimal mit <code>%w</code> verpacken und oben mit <code>errors.Is</code> wieder einfangen.</div>
+</section>
+
+<!-- ============ 04 ============ -->
+<section id="e4" class="peach">
+  <div class="sec-head"><div class="badge">4</div><h2>Methoden und Interfaces</h2>
+    <label class="cond"><input type="checkbox"> Ready</label></div>
+  <p class="sec-sub">2 Stunden. Hier klickt es oder nicht. Go kennt keine Klassen und keine Vererbung – stattdessen Methoden auf beliebigen Typen, implizit erfüllte Interfaces und eingebettete Structs.</p>
+
+<pre><code>type Reconciler struct { Client client.Client }
+
+<span class="c">// Pointer-Receiver darf r verändern. Value-Receiver arbeitet auf einer Kopie.</span>
+func (r *Reconciler) Reconcile(ctx context.Context) error { <span class="c">/* ... */</span> }
+
+<span class="c">// Ein Interface ist nur eine Liste geforderter Methoden. Mehr nicht.</span>
+type Notifier interface {
+	Notify(msg string) error
+}
+
+<span class="c">// Kein "implements": Wer die Methode hat, erfüllt das Interface automatisch.</span>
+type SlackNotifier struct{}
+func (s SlackNotifier) Notify(msg string) error { return nil }</code></pre>
+
+  <div class="mnemo"><b>Ein Interface ist eine Stellenanzeige, kein Arbeitsvertrag</b> – wer die geforderten Fähigkeiten mitbringt, hat den Job. Eine Bewerbung war nie nötig.</div>
+
+  <h3 style="margin:26px 0 6px;font-size:1.15rem">Embedding statt Vererbung</h3>
+
+<pre><code>type NamespaceLease struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Spec   NamespaceLeaseSpec   `json:"spec,omitempty"`
+	Status NamespaceLeaseStatus `json:"status,omitempty"`
+}
+<span class="c">// lease.Name funktioniert, weil ObjectMeta eingebettet ist – nicht, weil es geerbt wurde.</span>
+<span class="c">// Genau so ist jedes einzelne Kubernetes-Objekt aufgebaut.</span></code></pre>
+
+  <div class="why"><code>client.Client</code> ist ein Interface, keine konkrete Struktur. Deshalb lässt sich im Test ein Fake-Client einsetzen, der ohne API-Server auskommt. Interfaces sind der Grund, warum Operator-Tests in Millisekunden statt Minuten laufen.</div>
+
+  <div class="warn"><b>Achtung:</b> Value- und Pointer-Receiver nicht im selben Typ mischen. <code>*T</code> erfüllt Interfaces mit Value-Receivern, <code>T</code> aber nicht die mit Pointer-Receivern. Der Compilerfehler nennt dann einen Typ, der auf den ersten Blick alle Methoden hat. Einmal entscheiden, im Zweifel Pointer.</div>
+
+  <div class="drill">Ein Interface <code>Scanner</code> mit <code>Scan(ctx context.Context) ([]Finding, error)</code>, zwei Implementierungen – eine liefert Ergebnisse, eine einen Fehler – und eine Funktion, die ein <code>[]Scanner</code> nacheinander abarbeitet.</div>
+</section>
+
+<!-- ============ 05 ============ -->
+<section id="e5" class="butter">
+  <div class="sec-head"><div class="badge">5</div><h2>Structs als API-Typen</h2>
+    <label class="cond"><input type="checkbox"> Ready</label></div>
+  <p class="sec-sub">1,5 Stunden. Ab hier ist der Go-Code keine Übung mehr, sondern bereits die CRD: Struct Tags bestimmen das YAML, Kommentare werden zur Doku, Marker zur Validierung im API-Server.</p>
+
+<pre><code>type NamespaceLeaseSpec struct {
+	<span class="c">// Auf welchen Namespace sich der Lease bezieht.</span>
+	<span class="c">// +kubebuilder:validation:MinLength=1</span>
+	NamespaceRef string `json:"namespaceRef"`
+
+	<span class="c">// Lebensdauer ab Erstellung, z. B. "72h".</span>
+	<span class="c">// +kubebuilder:default="24h"</span>
+	TTL metav1.Duration `json:"ttl,omitempty"`
+
+	<span class="c">// Nur markieren statt löschen. Nicht gesetzt ist etwas anderes als false.</span>
+	<span class="c">// +optional</span>
+	DryRun *bool `json:"dryRun,omitempty"`
+}</code></pre>
+
+  <table>
+    <thead><tr><th>Element</th><th>Wirkung</th></tr></thead>
+    <tbody>
+      <tr><td><b>Struct Tag</b></td><td>Feldname im YAML, <code>omitempty</code> lässt leere Felder weg</td></tr>
+      <tr><td><b>Kommentar über dem Feld</b></td><td>wird zur Beschreibung in <code>oc explain</code></td></tr>
+      <tr><td><b>+kubebuilder-Marker</b></td><td>OpenAPI-Validierung und Defaults im CRD</td></tr>
+      <tr><td><b>Pointer-Typ</b></td><td>unterscheidet „nicht gesetzt" von „auf false gesetzt"</td></tr>
+    </tbody>
+  </table>
+
+  <div class="mnemo"><b>Der Struct Tag ist das Adressetikett am Paket</b> – der Inhalt bleibt gleich, das Etikett entscheidet, wo im YAML er ankommt.</div>
+
+  <div class="warn"><b>Achtung:</b> Ein optionales Bool ohne Pointer ist ein stiller Fehler. <code>DryRun bool</code> liefert für „Feld weggelassen" und für „<code>dryRun: false</code>" denselben Wert – der Operator löscht dann Namespaces, bei denen der Anwender das Feld nur vergessen hat. Validierung und Tests bemerken das nicht.</div>
+
+  <div class="drill">Die Spec eines <code>RightSizingPolicy</code>-Typs: Namespace-Selector, Perzentil als <code>*int32</code> mit Default 95, Beobachtungsfenster als <code>metav1.Duration</code>. Anschließend mit <code>sigs.k8s.io/yaml</code> serialisieren und das erzeugte YAML prüfen.</div>
+</section>
+
+<!-- ============ 06 ============ -->
+<section id="e6" class="rose">
+  <div class="sec-head"><div class="badge">6</div><h2>Module und Projektlayout</h2>
+    <label class="cond"><input type="checkbox"> Ready</label></div>
+  <p class="sec-sub">1 Stunde. Ein Verzeichnis ist ein Package, der Importpfad ist die Repository-URL, eine zentrale Registry gibt es nicht – <code>go get</code> zieht direkt aus Git.</p>
+
+<pre><code>go mod init github.com/shushyu/lease-operator
+go get sigs.k8s.io/controller-runtime@latest
+go mod tidy      <span class="c"># räumt go.mod und go.sum auf – vor jedem Commit</span>
+go doc sigs.k8s.io/controller-runtime/pkg/client Client</code></pre>
+
+  <table>
+    <thead><tr><th>Pfad</th><th>Inhalt</th></tr></thead>
+    <tbody>
+      <tr><td><b>cmd/main.go</b></td><td>Manager starten, Reconciler registrieren</td></tr>
+      <tr><td><b>api/v1alpha1/</b></td><td>CRD-Typen und generierter DeepCopy-Code</td></tr>
+      <tr><td><b>internal/controller/</b></td><td>Reconcile-Logik. <code>internal/</code> ist von außen nicht importierbar</td></tr>
+      <tr><td><b>config/</b></td><td>generierte CRDs, RBAC, Kustomize-Overlays</td></tr>
+    </tbody>
+  </table>
+
+  <div class="why">Genau dieses Layout legt <code>kubebuilder init</code> an. Wer es jetzt versteht, für den ist der generierte Code in Etappe 10 keine Blackbox.</div>
+</section>
+
+<!-- ============ 07 ============ -->
+<section id="e7" class="aqua">
+  <div class="sec-head"><div class="badge">7</div><h2>Goroutines und Context</h2>
+    <label class="cond"><input type="checkbox"> Ready</label></div>
+  <p class="sec-sub">2 Stunden. Context wird täglich gebraucht, Channels seltener als gedacht – Warteschlange und Worker-Pool liefert controller-runtime.</p>
+
+<pre><code>go doWork()                  <span class="c">// Goroutine: kostet Kilobytes, nicht Megabytes</span>
+
+ch := make(chan string)
+go func() { ch &lt;- "fertig" }()
+msg := &lt;-ch                  <span class="c">// blockiert, bis etwas ankommt</span>
+
+ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+defer cancel()               <span class="c">// immer – sonst bleibt der Timer liegen</span>
+
+select {
+case r := &lt;-ch:
+	use(r)
+case &lt;-ctx.Done():
+	return ctx.Err()
+}</code></pre>
+
+  <div class="mnemo"><b>Context ist die Leine am Hund</b> – jede API-Funktion bekommt sie als erstes Argument gereicht. Zieht man oben an der Leine, bleiben alle unten sofort stehen.</div>
+
+  <div class="why">Im eigenen Operator entstehen kaum eigene Goroutines. Gebraucht wird zweierlei: <code>ctx</code> in jeden Client-Aufruf durchreichen und verstehen, warum ein Reconcile abbricht, wenn der Manager herunterfährt.</div>
+
+  <div class="warn"><b>Achtung:</b> Wer <code>ctx</code> in einem Struct speichert oder mitten im Reconcile ein <code>context.Background()</code> erzeugt, hebelt das Shutdown-Handling aus. Im Betrieb fällt das nicht auf – erst beim Rollout hängen Pods im Terminating, weil laufende API-Aufrufe niemand mehr abbricht.</div>
+
+  <div class="drill">Drei URLs parallel abfragen, Ergebnisse über einen Channel einsammeln, mit <code>sync.WaitGroup</code> auf das Ende warten und nach 2 Sekunden per Context abbrechen.</div>
+</section>
+
+<!-- ============ 08 ============ -->
+<section id="e8" class="mint">
+  <div class="sec-head"><div class="badge">8</div><h2>Tests, die sich lohnen</h2>
+    <label class="cond"><input type="checkbox"> Ready</label></div>
+  <p class="sec-sub">1,5 Stunden. Tests folgen in Go fast immer demselben Muster: eine Tabelle mit Fällen, eine Schleife, <code>t.Run</code> pro Fall.</p>
+
+<pre><code>func TestExpired(t *testing.T) {
+	tests := []struct {
+		name string
+		age  time.Duration
+		ttl  time.Duration
+		want bool
+	}{
+		{"frisch", time.Hour, 24 * time.Hour, false},
+		{"abgelaufen", 48 * time.Hour, 24 * time.Hour, true},
+		{"exakt auf der Grenze", 24 * time.Hour, 24 * time.Hour, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := expired(tt.age, tt.ttl); got != tt.want {
+				t.Errorf("expired() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}</code></pre>
+
+  <div class="chips">
+    <span class="chip">go test ./... -race</span>
+    <span class="chip">*_test.go</span>
+    <span class="chip">envtest</span>
+  </div>
+
+  <div class="why">Für den Operator gibt es zwei Ebenen: reine Logik wie oben – schnell und in Millisekunden – und das Zusammenspiel mit der API über <code>envtest</code>, das einen echten kube-apiserver samt etcd als lokale Prozesse startet. Kein Cluster nötig; kubebuilder legt das Gerüst dafür an.</div>
+
+  <div class="drill">Table-driven Test für die <code>splitImage</code>-Funktion aus Etappe 1, inklusive der Fehlerfälle.</div>
+</section>
+
+<!-- ============ 09 ============ -->
+<section id="e9" class="sky">
+  <div class="sec-head"><div class="badge">9</div><h2>client-go und controller-runtime</h2>
+    <label class="cond"><input type="checkbox"> Ready</label></div>
+  <p class="sec-sub">2 Stunden. Erst das Modell verstehen, dann Code schreiben. Vier Begriffe erklären das gesamte Framework.</p>
+
+  <table>
+    <thead><tr><th>Begriff</th><th>Aufgabe</th></tr></thead>
+    <tbody>
+      <tr><td><b>Scheme</b></td><td>Übersetzungstabelle Go-Typ ↔ GroupVersionKind. Nicht registriert bedeutet Fehler beim Start</td></tr>
+      <tr><td><b>Client</b></td><td><code>Get</code>, <code>List</code>, <code>Create</code>, <code>Update</code>, <code>Patch</code>, <code>Delete</code>. Lesen aus dem Cache, Schreiben direkt an den API-Server</td></tr>
+      <tr><td><b>Cache / Informer</b></td><td>Watch auf den API-Server, lokale Kopie im Speicher, indiziert</td></tr>
+      <tr><td><b>Manager</b></td><td>Startet Cache, Client, Leader Election, Metrics, Health-Probes und alle Controller</td></tr>
+    </tbody>
+  </table>
+
+  <div class="mnemo"><b>Der Informer ist der Praktikant am Ticker</b> – er sortiert jede Änderung ins Regal ein. Gelesen wird immer aus dem Regal, nie beim Amt nachgefragt. Geschrieben wird aber nie ins Regal, sondern als Antrag ans Amt.</div>
+
+  <div class="card">
+    <h3>Der Reconcile-Vertrag</h3>
+    <ol class="steps">
+      <li><div><b>Nur Name und Namespace kommen an</b><small>Das Objekt holt sich der Controller selbst. Es kann inzwischen gelöscht sein.</small></div></li>
+      <li><div><b>Keine Auskunft darüber, was sich geändert hat</b><small>Es gibt kein Event-Objekt. Ist- und Sollzustand werden bei jedem Lauf komplett verglichen.</small></div></li>
+      <li><div><b>Idempotenz ist Pflicht</b><small>Hundert Aufrufe müssen dasselbe Ergebnis liefern wie einer – der Controller wird ohne erkennbaren Grund erneut aufgerufen.</small></div></li>
+      <li><div><b>Die Rückgabe steuert die Warteschlange</b><small><code>{}, nil</code> = fertig · <code>{}, err</code> = Retry mit Backoff · <code>{RequeueAfter: d}, nil</code> = erneut nach Ablauf von d.</small></div></li>
+    </ol>
+  </div>
+
+  <div class="warn"><b>Achtung:</b> Das aus dem Cache gelesene Objekt gehört dem Prozess, nicht dem Controller. Wird es direkt verändert, ändert sich der Cache für alle Controller im selben Manager – ohne Fehlermeldung, mit Auswirkungen an ganz anderer Stelle. Vor jeder Änderung <code>obj.DeepCopy()</code>.</div>
+
+  <div class="warn"><b>Achtung:</b> <code>spec</code> und <code>status</code> sind getrennte Subresources. <code>r.Update()</code> schreibt die Spec, <code>r.Status().Update()</code> den Status. Wer den falschen Aufruf nimmt, bekommt keinen Fehler – die Änderung verschwindet einfach und die Conditions bleiben für immer leer.</div>
+</section>
+
+<!-- ============ 10 ============ -->
+<section id="e10" class="lav">
+  <div class="sec-head"><div class="badge">10</div><h2>Der Operator: NamespaceLease</h2>
+    <label class="cond"><input type="checkbox"> Ready</label></div>
+  <p class="sec-sub">5 Stunden. Eine CR beschreibt, wie lange ein Namespace leben darf. Läuft die TTL ab, markiert der Operator den Namespace per Annotation – klein genug für ein Wochenende, groß genug für alle echten Konzepte.</p>
+
+<pre><code>kubebuilder init --domain kubekoch.de --repo github.com/shushyu/lease-operator
+kubebuilder create api --group ops --version v1alpha1 --kind NamespaceLease
+<span class="c"># erzeugt api/v1alpha1/namespacelease_types.go und internal/controller/...</span>
+
+make manifests generate   <span class="c"># CRD, RBAC und DeepCopy-Code aus den Markern erzeugen</span>
+make install              <span class="c"># CRD in den Cluster einspielen</span>
+make run                  <span class="c"># Operator lokal gegen den Cluster, mit dem eigenen kubeconfig</span></code></pre>
+
+  <h3 style="margin:26px 0 6px;font-size:1.15rem">Die Reconcile-Funktion</h3>
+
+<pre><code><span class="c">// +kubebuilder:rbac:groups=ops.kubekoch.de,resources=namespaceleases,verbs=get;list;watch;update</span>
+<span class="c">// +kubebuilder:rbac:groups=ops.kubekoch.de,resources=namespaceleases/status,verbs=get;update;patch</span>
+<span class="c">// +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch;update</span>
+
+func (r *NamespaceLeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	var lease opsv1alpha1.NamespaceLease
+	if err := r.Get(ctx, req.NamespacedName, &amp;lease); err != nil {
+		<span class="c">// Objekt gelöscht? Dann ist nichts mehr zu tun.</span>
+		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
+
+	deadline := lease.CreationTimestamp.Add(lease.Spec.TTL.Duration)
+	if remaining := time.Until(deadline); remaining &gt; 0 {
+		<span class="c">// Noch Zeit: exakt dann wieder aufwachen, wenn sie abläuft.</span>
+		return ctrl.Result{RequeueAfter: remaining}, nil
+	}
+
+	var ns corev1.Namespace
+	if err := r.Get(ctx, client.ObjectKey{Name: lease.Spec.NamespaceRef}, &amp;ns); err != nil {
+		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
+
+	patched := ns.DeepCopy()                      <span class="c">// Cache-Objekt nie direkt anfassen</span>
+	if patched.Annotations == nil {
+		patched.Annotations = map[string]string{}
+	}
+	patched.Annotations["lease.kubekoch.de/expired"] = "true"
+	if err := r.Update(ctx, patched); err != nil {
+		return ctrl.Result{}, fmt.Errorf("namespace %s markieren: %w", ns.Name, err)
+	}
+
+	meta.SetStatusCondition(&amp;lease.Status.Conditions, metav1.Condition{
+		Type:    "Ready",
+		Status:  metav1.ConditionFalse,
+		Reason:  "TTLExpired",
+		Message: "Lease abgelaufen, Namespace markiert",
+	})
+	return ctrl.Result{}, r.Status().Update(ctx, &amp;lease)
+}
+
+func (r *NamespaceLeaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&amp;opsv1alpha1.NamespaceLease{}).
+		Owns(&amp;corev1.Namespace{}).    <span class="c">// Änderung am Namespace triggert den Lease</span>
+		Complete(r)
+}</code></pre>
+
+  <div class="why"><code>IgnoreNotFound</code> verhindert Endlos-Retries bei gelöschten Objekten. <code>RequeueAfter</code> ist der Timer, den man sonst selbst bauen müsste – und der einen Neustart nicht überleben würde. <code>Conditions</code> sind der Kubernetes-Standard für den Zustand und werden von <code>oc describe</code> direkt angezeigt. Bemerkenswert ist, was nicht im Code steht: keine Schleife, kein Sleep, kein Watch, keine Warteschlange, kein Retry.</div>
+
+  <div class="warn"><b>Achtung:</b> Fehlt ein RBAC-Marker, läuft alles lokal fehlerfrei – <code>make run</code> nutzt die Rechte des angemeldeten Benutzers. Erst im Cluster, mit dem ServiceAccount des Operators, kommt der 403. Nach jeder neuen Ressource im Code deshalb <code>make manifests</code> und die erzeugte ClusterRole prüfen.</div>
+
+  <div class="card">
+    <h3>Ausbaustufen in dieser Reihenfolge</h3>
+    <ul class="clean">
+      <li><b>Finalizer</b> – aufräumen, bevor die CR verschwindet. Der klassische zweite Schritt</li>
+      <li><b>Events</b> – <code>r.Recorder.Event(...)</code>, damit <code>oc describe</code> etwas erzählt</li>
+      <li><b>printcolumn</b> – <code>// +kubebuilder:printcolumn:name="Expires",type=date,JSONPath=".status.expiresAt"</code></li>
+      <li><b>Konflikte</b> – bei <code>apierrors.IsConflict(err)</code> den Fehler einfach zurückgeben, die Warteschlange erledigt den Retry</li>
+      <li><b>Bundle</b> – <code>operator-sdk</code> für OLM-Bundles, wenn der Operator über den OperatorHub laufen soll</li>
+    </ul>
+  </div>
+
+  <div class="drill"><b>Abschlussaufgabe:</b> Den Lease um <code>spec.warnBefore</code> erweitern – 24 Stunden vor Ablauf ein Event feuern und eine Condition <code>ExpiringSoon=True</code> setzen, ohne einen einzigen zusätzlichen Timer im Code. Lösungsweg: zwei mögliche <code>RequeueAfter</code>-Zeitpunkte berechnen und den nächstgelegenen zurückgeben.</div>
+</section>
+
+<!-- ============ Fallen ============ -->
+<section id="fallen" class="peach">
+  <div class="sec-head"><div class="badge">++</div><h2>Fallenliste</h2></div>
+  <p class="sec-sub">Die Fehler, die jeder genau einmal macht. Fast alle melden nichts – der Code läuft, nur das Ergebnis stimmt nicht.</p>
+
+  <table>
+    <thead><tr><th>Symptom</th><th>Ursache</th></tr></thead>
+    <tbody>
+      <tr><td><b>assignment to entry in nil map</b></td><td>Map vor dem Schreiben nicht initialisiert</td></tr>
+      <tr><td><b>Status bleibt leer</b></td><td><code>Update()</code> statt <code>Status().Update()</code>, oder Subresource-Marker fehlt</td></tr>
+      <tr><td><b>Andere Controller sehen falsche Daten</b></td><td>Cache-Objekt mutiert statt <code>DeepCopy()</code></td></tr>
+      <tr><td><b>CPU dauerhaft hoch</b></td><td>Reconcile schreibt bei jedem Lauf, also nicht idempotent</td></tr>
+      <tr><td><b>403 im Cluster, lokal grün</b></td><td>RBAC-Marker fehlt oder <code>make manifests</code> nicht gelaufen</td></tr>
+      <tr><td><b>err ist nil, obwohl es scheiterte</b></td><td>Shadowing durch <code>:=</code> im inneren Block</td></tr>
+      <tr><td><b>object has been modified</b></td><td>Normaler Konflikt. Fehler zurückgeben, nicht in einer Schleife wiederholen</td></tr>
+      <tr><td><b>no kind registered for version</b></td><td>Typ nicht im <code>Scheme</code> registriert</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ============ Quellen ============ -->
+<section id="quellen" class="butter">
+  <div class="sec-head"><div class="badge">++</div><h2>Quellen in Lesereihenfolge</h2></div>
+  <p class="sec-sub">Fünf Anlaufstellen reichen. Alles andere ist Ablenkung, solange der erste Operator nicht läuft.</p>
+
+  <ul class="clean">
+    <li><b><a href="https://go.dev/tour">A Tour of Go</a></b> – Etappen 1 bis 4, interaktiv, ein Nachmittag</li>
+    <li><b><a href="https://gobyexample.com">Go by Example</a></b> – Nachschlagewerk, wenn eine Syntax fehlt</li>
+    <li><b><a href="https://go.dev/doc/effective_go">Effective Go</a></b> – warum Go so aussieht, wie es aussieht</li>
+    <li><b><a href="https://book.kubebuilder.io">The Kubebuilder Book</a></b> – Etappen 9 und 10, die eigentliche Referenz</li>
+    <li><b><a href="https://github.com/kubernetes/sample-controller">kubernetes/sample-controller</a></b> – derselbe Mechanismus ohne Framework. Erst lesen, wenn der eigene Operator läuft</li>
+  </ul>
+</section>
+
+</main>
+
+<footer>Zusammengestellt aus der offiziellen Go-Dokumentation (Tour of Go, Effective Go), dem
+Kubebuilder Book und der controller-runtime-Referenz. Kein Ersatz für die offizielle Doku –
+API-Details und Marker-Syntax vor Produktionseinsatz gegen book.kubebuilder.io und pkg.go.dev
+prüfen. Der Fortschritt der Etappen gilt nur für die aktuelle Sitzung.</footer>
+
+<script>
+(function(){
+  var boxes=[].slice.call(document.querySelectorAll('.cond input'));
+  var fill=document.getElementById('fill'), lbl=document.getElementById('pl');
+  function upd(){
+    var n=boxes.filter(function(b){return b.checked}).length;
+    fill.style.width=(n/boxes.length*100)+'%';
+    lbl.textContent=n+' / '+boxes.length+' Ready';
+  }
+  boxes.forEach(function(b){
+    b.addEventListener('change',function(){
+      b.closest('.cond').classList.toggle('done',b.checked);
+      upd();
+    });
+  });
+  upd();
+})();
+</script>
+</body>
+</html>
