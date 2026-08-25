@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Prozesse und Threads unter Linux – Adressraum, clone, Scheduling, Races</title>
+<meta name="rezept-kategorie"    content="allgemein">
+<meta name="rezept-beschreibung" content="Was ein Prozess vom Thread unterscheidet: virtueller Adressraum, geteilter und privater Speicher, clone-Flags, Context Switch, Race Conditions – und was davon in Containern und unter CPU-Limits sichtbar wird.">
+<meta name="rezept-stand"        content="Linux · Prozesse und Threads · 08/2026">
+<meta name="rezept-suche"        content="prozess thread task_struct tgid pid tid adressraum virtueller speicher mmu paging copy-on-write fork clone clone3 pthread_create namespaces context switch tlb scheduler cfs eevdf race condition mutex futex atomic deadlock rss vss pss smaps gomaxprocs cpu throttling oom killer">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#33394a;
+  --ink-soft:#5c6376;
+  --paper:#fbfaf7;
+  --card:#ffffff;
+  --line:#e9e6df;
+  --code-bg:#31364a;
+  --code-ink:#e8eaf2;
+  --mint:#d9f2e4;      --mint-deep:#2f8f6b;
+  --sky:#dcebf9;       --sky-deep:#2d6fa8;
+  --lav:#e7e2f7;       --lav-deep:#6b5bb5;
+  --peach:#fbe6d7;     --peach-deep:#c2703d;
+  --butter:#faf0cf;    --butter-deep:#a5842a;
+  --rose:#f9e0e6;      --rose-deep:#b34f6d;
+  --aqua:#d7eff0;      --aqua-deep:#2b8288;
+  --r-lg:26px; --r-md:18px; --r-sm:12px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;scroll-padding-top:90px}
+body{font-family:'Inter',sans-serif;background:var(--paper);color:var(--ink);line-height:1.65;font-size:16px}
+h1,h2,h3,h4{font-family:'Sora',sans-serif;line-height:1.2}
+
+/* ---------- Kopf ---------- */
+header{max-width:1060px;margin:0 auto;padding:56px 24px 8px}
+.kicker{display:inline-block;background:var(--lav);color:var(--lav-deep);font-weight:600;font-size:.8rem;letter-spacing:.08em;text-transform:uppercase;padding:6px 14px;border-radius:999px;margin-bottom:18px}
+header h1{font-size:clamp(1.9rem,4.5vw,3rem);font-weight:800;letter-spacing:-.02em}
+header h1 span{color:var(--mint-deep)}
+.lede{color:var(--ink-soft);max-width:640px;margin-top:14px;font-size:1.05rem}
+
+/* ---------- Fahrplan ---------- */
+.route{max-width:1060px;margin:34px auto 10px;padding:0 24px;display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.route a{display:flex;flex-direction:column;gap:8px;text-decoration:none;color:var(--ink);background:var(--card);border:1.5px solid var(--line);border-radius:var(--r-md);padding:16px 14px;transition:transform .15s ease,box-shadow .15s ease}
+.route a:hover,.route a:focus-visible{transform:translateY(-3px);box-shadow:0 8px 22px rgba(60,60,90,.10);outline:none}
+.route .dot{width:34px;height:34px;border-radius:12px;display:grid;place-items:center;font-family:'Sora';font-weight:700;font-size:.9rem}
+.route .t{font-weight:600;font-size:.86rem;line-height:1.3}
+.route .s{font-size:.74rem;color:var(--ink-soft)}
+.route a:nth-child(1) .dot{background:var(--aqua);color:var(--aqua-deep)}
+.route a:nth-child(2) .dot{background:var(--mint);color:var(--mint-deep)}
+.route a:nth-child(3) .dot{background:var(--sky);color:var(--sky-deep)}
+.route a:nth-child(4) .dot{background:var(--lav);color:var(--lav-deep)}
+.route a:nth-child(5) .dot{background:var(--peach);color:var(--peach-deep)}
+.route a:nth-child(6) .dot{background:var(--butter);color:var(--butter-deep)}
+.route a:nth-child(7) .dot{background:var(--rose);color:var(--rose-deep)}
+.route a:nth-child(8) .dot{background:var(--mint);color:var(--mint-deep)}
+
+/* ---------- Sticky-Nav ---------- */
+nav{position:sticky;top:0;z-index:50;background:rgba(251,250,247,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);margin-top:26px}
+nav .wrap{max-width:1060px;margin:0 auto;padding:10px 24px;display:flex;gap:8px;overflow-x:auto}
+nav a{white-space:nowrap;text-decoration:none;font-size:.82rem;font-weight:600;color:var(--ink-soft);padding:7px 14px;border-radius:999px;border:1px solid transparent}
+nav a:hover{background:var(--card);border-color:var(--line);color:var(--ink)}
+
+/* ---------- Sektionen ---------- */
+main{max-width:1060px;margin:0 auto;padding:20px 24px 90px}
+section{margin-top:64px}
+.sec-head{display:flex;align-items:center;gap:16px;margin-bottom:8px}
+.badge{width:52px;height:52px;border-radius:16px;display:grid;place-items:center;font-family:'Sora';font-weight:800;font-size:1.25rem;flex-shrink:0}
+section h2{font-size:clamp(1.4rem,3vw,1.9rem);font-weight:700}
+.sec-sub{color:var(--ink-soft);margin-bottom:22px;max-width:720px}
+.aqua .badge{background:var(--aqua);color:var(--aqua-deep)}
+.mint .badge{background:var(--mint);color:var(--mint-deep)}
+.sky .badge{background:var(--sky);color:var(--sky-deep)}
+.lav .badge{background:var(--lav);color:var(--lav-deep)}
+.peach .badge{background:var(--peach);color:var(--peach-deep)}
+.butter .badge{background:var(--butter);color:var(--butter-deep)}
+.rose .badge{background:var(--rose);color:var(--rose-deep)}
+
+/* ---------- Karten & Schritte ---------- */
+.card{background:var(--card);border:1.5px solid var(--line);border-radius:var(--r-lg);padding:26px 28px;margin-bottom:20px}
+.card h3{font-size:1.08rem;margin-bottom:14px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+ol.steps{list-style:none;counter-reset:s;display:flex;flex-direction:column;gap:14px}
+ol.steps li{counter-increment:s;display:grid;grid-template-columns:34px 1fr;gap:14px;align-items:start}
+ol.steps li::before{content:counter(s);width:30px;height:30px;border-radius:10px;display:grid;place-items:center;font-family:'Sora';font-weight:700;font-size:.85rem;margin-top:2px}
+.aqua ol.steps li::before{background:var(--aqua);color:var(--aqua-deep)}
+.mint ol.steps li::before{background:var(--mint);color:var(--mint-deep)}
+.sky ol.steps li::before{background:var(--sky);color:var(--sky-deep)}
+.lav ol.steps li::before{background:var(--lav);color:var(--lav-deep)}
+.peach ol.steps li::before{background:var(--peach);color:var(--peach-deep)}
+.butter ol.steps li::before{background:var(--butter);color:var(--butter-deep)}
+.rose ol.steps li::before{background:var(--rose);color:var(--rose-deep)}
+.steps b{font-weight:600}
+.steps small{display:block;color:var(--ink-soft);font-size:.86rem;margin-top:2px}
+
+ul.clean{list-style:none;display:flex;flex-direction:column;gap:10px}
+ul.clean li{padding-left:24px;position:relative}
+ul.clean li::before{content:"";position:absolute;left:4px;top:.62em;width:9px;height:9px;border-radius:3px;background:var(--line)}
+.aqua ul.clean li::before{background:var(--aqua-deep)}
+.mint ul.clean li::before{background:var(--mint-deep)}
+.sky ul.clean li::before{background:var(--sky-deep)}
+.lav ul.clean li::before{background:var(--lav-deep)}
+.peach ul.clean li::before{background:var(--peach-deep)}
+.butter ul.clean li::before{background:var(--butter-deep)}
+.rose ul.clean li::before{background:var(--rose-deep)}
+
+/* ---------- Code ---------- */
+pre{background:var(--code-bg);color:var(--code-ink);border-radius:var(--r-sm);padding:16px 18px;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:.82rem;line-height:1.6;margin:10px 0}
+code{font-family:'JetBrains Mono',monospace;font-size:.85em;background:#efede7;border-radius:6px;padding:2px 6px}
+pre code{background:none;padding:0;font-size:1em}
+pre .c{color:#9aa3c0}
+
+/* ---------- Hinweisboxen ---------- */
+.note,.warn,.mnemo{border-radius:var(--r-md);padding:14px 18px;margin:14px 0;font-size:.92rem}
+.note{background:var(--sky)}
+.warn{background:var(--rose)}
+.mnemo{background:var(--butter)}
+.note b,.warn b,.mnemo b{font-weight:700}
+.mnemo::before{content:"🧠 Eselsbrücke · ";font-weight:700}
+.warn::before{content:"⚠️ ";font-weight:700}
+
+/* ---------- Tabellen ---------- */
+table{width:100%;border-collapse:separate;border-spacing:0;font-size:.88rem;margin:10px 0}
+th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-family:'Sora';font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft)}
+tr:last-child td{border-bottom:none}
+thead th:first-child{border-top-left-radius:var(--r-sm)}
+thead th:last-child{border-top-right-radius:var(--r-sm)}
+thead{background:var(--paper)}
+
+/* ---------- Details ---------- */
+details{border:1.5px solid var(--line);border-radius:var(--r-md);margin:12px 0;background:var(--card)}
+details summary{cursor:pointer;padding:14px 18px;font-weight:600;font-size:.94rem;list-style:none;display:flex;align-items:center;gap:10px}
+details summary::before{content:"+";font-family:'Sora';font-weight:700;width:24px;height:24px;border-radius:8px;background:var(--paper);display:grid;place-items:center;flex-shrink:0}
+details[open] summary::before{content:"–"}
+details .inner{padding:0 18px 18px}
+summary::-webkit-details-marker{display:none}
+
+/* ---------- DNS-Chips ---------- */
+.chips{display:flex;flex-wrap:wrap;gap:10px;margin:10px 0}
+.chip{background:var(--paper);border:1.5px solid var(--line);border-radius:999px;padding:6px 14px;font-family:'JetBrains Mono';font-size:.8rem}
+
+footer{max-width:1060px;margin:0 auto;padding:30px 24px 60px;color:var(--ink-soft);font-size:.82rem;border-top:1px solid var(--line)}
+
+@media(max-width:820px){
+  .route{grid-template-columns:repeat(2,1fr)}
+  .grid2{grid-template-columns:1fr}
+}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.route a{transition:none}}
+</style>
+</head>
+<body>
+
+<header>
+  <span class="kicker">OS Internals · Linux · Prozesse, Threads, Speicher</span>
+  <h1>Prozess und Thread:<br>ein Unterschied im <span>Adressraum</span></h1>
+  <p class="lede">Acht Abschnitte über eine Unterscheidung, die im Kernel gar keine ist: Für Linux sind beide dasselbe Objekt, unterschiedlich ist nur, was sie sich teilen. <b>Aus dieser einen Entscheidung folgen Crash-Isolation, Race Conditions, Umschaltkosten und das Verhalten unter CPU-Limits.</b></p>
+</header>
+
+<div class="route">
+  <a href="#basics"><span class="dot">0</span><span class="t">Grundlagen</span><span class="s">Task, PID, Adressraum</span></a>
+  <a href="#layout"><span class="dot">1</span><span class="t">Speicherlayout</span><span class="s">Text, Heap, Stack, Seiten</span></a>
+  <a href="#threads"><span class="dot">2</span><span class="t">Threads</span><span class="s">Geteilt, privat, Absturz</span></a>
+  <a href="#clone"><span class="dot">3</span><span class="t">clone</span><span class="s">fork, Flags, Container</span></a>
+  <a href="#scheduling"><span class="dot">4</span><span class="t">Scheduling</span><span class="s">Umschalten, Kosten, Limits</span></a>
+  <a href="#races"><span class="dot">5</span><span class="t">Race Conditions</span><span class="s">Sperren, Atomics, Deadlock</span></a>
+  <a href="#praxis"><span class="dot">6</span><span class="t">Beobachten</span><span class="s">proc, RSS, Werkzeuge</span></a>
+  <a href="#wahl"><span class="dot">7</span><span class="t">Modellwahl</span><span class="s">Prozesse, Threads, Async</span></a>
+</div>
+
+<nav><div class="wrap">
+  <a href="#basics">0 · Grundlagen</a>
+  <a href="#layout">1 · Speicherlayout</a>
+  <a href="#threads">2 · Threads</a>
+  <a href="#clone">3 · clone</a>
+  <a href="#scheduling">4 · Scheduling</a>
+  <a href="#races">5 · Races</a>
+  <a href="#praxis">6 · Beobachten</a>
+  <a href="#wahl">7 · Modellwahl</a>
+</div></nav>
+
+<main>
+
+<!-- ================= 0 GRUNDLAGEN ================= -->
+<section id="basics" class="aqua">
+  <div class="sec-head"><div class="badge">0</div><h2>Grundlagen: für den Kernel gibt es nur Tasks</h2></div>
+  <p class="sec-sub">Die Lehrbuchunterscheidung „Prozess enthält Threads" beschreibt die Sicht der Programmiersprache. Der Linux-Kernel kennt beides als dieselbe Struktur und unterscheidet nur, welche Teile geteilt werden.</p>
+
+  <div class="card">
+    <h3>Ein Objekt, zwei Namen</h3>
+    <p>Jede lauffähige Einheit ist im Kernel eine <code>task_struct</code>. Sie enthält Verweise auf den Adressraum, die offenen Dateien, die Signal-Handler und den Zustand der Register. Ein „Thread" entsteht dadurch, dass eine neue Task denselben Adressraum verwendet statt einer eigenen Kopie.</p>
+    <table>
+      <thead><tr><th>Begriff</th><th>Kernel-Sicht</th><th>Sichtbar als</th></tr></thead>
+      <tbody>
+        <tr><td><b>Prozess</b></td><td>Task mit eigenem Adressraum</td><td>PID, Eintrag in <code>/proc</code></td></tr>
+        <tr><td><b>Thread</b></td><td>Task, die einen Adressraum mitbenutzt</td><td>TID unter <code>/proc/&lt;pid&gt;/task/</code></td></tr>
+        <tr><td><b>Thread-Gruppe</b></td><td>alle Tasks mit derselben <code>tgid</code></td><td>das, was <code>ps</code> als einen Prozess zeigt</td></tr>
+      </tbody>
+    </table>
+    <p>Deshalb liefert <code>getpid()</code> in jedem Thread denselben Wert – nämlich die tgid – während <code>gettid()</code> die tatsächliche Task-Nummer zurückgibt. Wer Threads in <code>top</code> vermisst, sieht die Gruppe, nicht die Tasks.</p>
+    <div class="mnemo"><b>Prozess ist die Wohnung, Threads sind die Bewohner</b> – jeder hat sein eigenes Bett (Stack), aber Küche, Kühlschrank und Wohnungstür (Heap, Dateien, Rechte) gehören allen gemeinsam.</div>
+  </div>
+
+  <details>
+    <summary>Selbst nachsehen: Tasks eines Prozesses</summary>
+    <div class="inner">
+      <p>Der Beweis, dass Threads eigene Einträge im Kernel haben, steht im Dateisystem – ein Verzeichnis je Task.</p>
+      <pre><code>ls /proc/self/task
+grep -E 'Tgid|^Pid|Threads' /proc/&lt;pid&gt;/status</code></pre>
+      <p>Dieselbe Information in Prozesslisten, wenn man sie ausdrücklich anfordert:</p>
+      <pre><code>ps -o pid,tid,comm -L -p &lt;pid&gt;
+top -H -p &lt;pid&gt;</code></pre>
+    </div>
+  </details>
+</section>
+
+<!-- ================= 1 SPEICHERLAYOUT ================= -->
+<section id="layout" class="mint">
+  <div class="sec-head"><div class="badge">1</div><h2>Speicherlayout: der eigene Stadtplan</h2></div>
+  <p class="sec-sub">Jeder Prozess sieht einen zusammenhängenden Adressraum, der ihm allein gehört. Was davon im physischen RAM liegt, entscheidet der Kernel – der Prozess erfährt es nicht.</p>
+
+  <div class="card">
+    <h3>Die Bereiche und was Threads davon bekommen</h3>
+    <p>Von unten nach oben: der Maschinencode, die globalen Daten, der wachsende Heap, die eingeblendeten Bibliotheken und ganz oben der Stack. Ein zusätzlicher Thread bekommt aus diesem Bild genau ein Element neu – seinen eigenen Stack.</p>
+<div style="overflow-x:auto">
+<svg viewBox="0 0 960 606" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Virtueller Adressraum eines Prozesses, links mit einem Thread, rechts mit drei Threads, die sich alles außer dem Stack teilen" style="width:100%;min-width:760px;height:auto;display:block">
+  <defs><marker id="ar" viewBox="0 0 10 10" refX="9.5" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="var(--ink-soft)"/></marker></defs>
+  <text x="252" y="34" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="14" fill="var(--sky-deep)">ein Prozess, ein Thread</text>
+  <text x="678" y="34" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="14" fill="var(--mint-deep)">derselbe Prozess, drei Threads</text>
+  <rect x="96" y="56" width="312" height="54" rx="13" fill="var(--lav)" stroke="var(--lav-deep)" stroke-width="2"/>
+  <text x="252" y="81" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="13" fill="var(--lav-deep)">Kernel-Bereich</text>
+  <text x="252" y="98" text-anchor="middle" font-family="Inter,sans-serif" font-size="10.5" fill="var(--lav-deep)" opacity=".9">für den Prozess nicht lesbar</text>
+  <rect x="96" y="126" width="312" height="62" rx="13" fill="var(--peach)" stroke="var(--peach-deep)" stroke-width="2"/>
+  <text x="252" y="155" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="13" fill="var(--peach-deep)">Stack</text>
+  <text x="252" y="172" text-anchor="middle" font-family="Inter,sans-serif" font-size="10.5" fill="var(--peach-deep)" opacity=".9">lokale Variablen, Rücksprungadressen</text>
+  <rect x="96" y="232" width="312" height="58" rx="13" fill="var(--sky)" stroke="var(--sky-deep)" stroke-width="2"/>
+  <text x="252" y="259" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="13" fill="var(--sky-deep)">mmap-Bereich</text>
+  <text x="252" y="276" text-anchor="middle" font-family="Inter,sans-serif" font-size="10.5" fill="var(--sky-deep)" opacity=".9">Bibliotheken, große Allokationen</text>
+  <rect x="96" y="330" width="312" height="62" rx="13" fill="var(--mint)" stroke="var(--mint-deep)" stroke-width="2"/>
+  <text x="252" y="359" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="13" fill="var(--mint-deep)">Heap</text>
+  <text x="252" y="376" text-anchor="middle" font-family="Inter,sans-serif" font-size="10.5" fill="var(--mint-deep)" opacity=".9">malloc, new – wächst nach oben</text>
+  <rect x="96" y="400" width="312" height="40" rx="13" fill="var(--butter)" stroke="var(--butter-deep)" stroke-width="2"/>
+  <text x="252" y="418" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="13" fill="var(--butter-deep)">BSS</text>
+  <text x="252" y="435" text-anchor="middle" font-family="Inter,sans-serif" font-size="10.5" fill="var(--butter-deep)" opacity=".9">globale Variablen ohne Startwert</text>
+  <rect x="96" y="448" width="312" height="40" rx="13" fill="var(--butter)" stroke="var(--butter-deep)" stroke-width="2"/>
+  <text x="252" y="466" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="13" fill="var(--butter-deep)">Data</text>
+  <text x="252" y="483" text-anchor="middle" font-family="Inter,sans-serif" font-size="10.5" fill="var(--butter-deep)" opacity=".9">globale Variablen mit Startwert</text>
+  <rect x="96" y="496" width="312" height="44" rx="13" fill="var(--aqua)" stroke="var(--aqua-deep)" stroke-width="2"/>
+  <text x="252" y="516" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="13" fill="var(--aqua-deep)">Text</text>
+  <text x="252" y="533" text-anchor="middle" font-family="Inter,sans-serif" font-size="10.5" fill="var(--aqua-deep)" opacity=".9">der Maschinencode, nur lesbar</text>
+  <rect x="522" y="56" width="312" height="54" rx="13" fill="var(--lav)" stroke="var(--lav-deep)" stroke-width="2"/>
+  <text x="678" y="81" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="13" fill="var(--lav-deep)">Kernel-Bereich</text>
+  <text x="678" y="98" text-anchor="middle" font-family="Inter,sans-serif" font-size="10.5" fill="var(--lav-deep)" opacity=".9">für den Prozess nicht lesbar</text>
+  <rect x="522" y="232" width="312" height="58" rx="13" fill="var(--sky)" stroke="var(--sky-deep)" stroke-width="2"/>
+  <text x="678" y="259" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="13" fill="var(--sky-deep)">mmap-Bereich</text>
+  <text x="678" y="276" text-anchor="middle" font-family="Inter,sans-serif" font-size="10.5" fill="var(--sky-deep)" opacity=".9">Bibliotheken, große Allokationen</text>
+  <rect x="522" y="330" width="312" height="62" rx="13" fill="var(--mint)" stroke="var(--mint-deep)" stroke-width="2"/>
+  <text x="678" y="359" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="13" fill="var(--mint-deep)">Heap</text>
+  <text x="678" y="376" text-anchor="middle" font-family="Inter,sans-serif" font-size="10.5" fill="var(--mint-deep)" opacity=".9">malloc, new – wächst nach oben</text>
+  <rect x="522" y="400" width="312" height="40" rx="13" fill="var(--butter)" stroke="var(--butter-deep)" stroke-width="2"/>
+  <text x="678" y="418" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="13" fill="var(--butter-deep)">BSS</text>
+  <text x="678" y="435" text-anchor="middle" font-family="Inter,sans-serif" font-size="10.5" fill="var(--butter-deep)" opacity=".9">globale Variablen ohne Startwert</text>
+  <rect x="522" y="448" width="312" height="40" rx="13" fill="var(--butter)" stroke="var(--butter-deep)" stroke-width="2"/>
+  <text x="678" y="466" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="13" fill="var(--butter-deep)">Data</text>
+  <text x="678" y="483" text-anchor="middle" font-family="Inter,sans-serif" font-size="10.5" fill="var(--butter-deep)" opacity=".9">globale Variablen mit Startwert</text>
+  <rect x="522" y="496" width="312" height="44" rx="13" fill="var(--aqua)" stroke="var(--aqua-deep)" stroke-width="2"/>
+  <text x="678" y="516" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="13" fill="var(--aqua-deep)">Text</text>
+  <text x="678" y="533" text-anchor="middle" font-family="Inter,sans-serif" font-size="10.5" fill="var(--aqua-deep)" opacity=".9">der Maschinencode, nur lesbar</text>
+  <rect x="522" y="126" width="98" height="62" rx="13" fill="var(--peach)" stroke="var(--peach-deep)" stroke-width="2"/>
+  <text x="571" y="155" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="13" fill="var(--peach-deep)">Stack 1</text>
+  <text x="571" y="172" text-anchor="middle" font-family="Inter,sans-serif" font-size="10.5" fill="var(--peach-deep)" opacity=".9">Thread 1</text>
+  <rect x="628" y="126" width="98" height="62" rx="13" fill="var(--peach)" stroke="var(--peach-deep)" stroke-width="2"/>
+  <text x="677" y="155" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="13" fill="var(--peach-deep)">Stack 2</text>
+  <text x="677" y="172" text-anchor="middle" font-family="Inter,sans-serif" font-size="10.5" fill="var(--peach-deep)" opacity=".9">Thread 2</text>
+  <rect x="734" y="126" width="98" height="62" rx="13" fill="var(--peach)" stroke="var(--peach-deep)" stroke-width="2"/>
+  <text x="783" y="155" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="13" fill="var(--peach-deep)">Stack 3</text>
+  <text x="783" y="172" text-anchor="middle" font-family="Inter,sans-serif" font-size="10.5" fill="var(--peach-deep)" opacity=".9">Thread 3</text>
+  <line x1="426" y1="196" x2="426" y2="222" stroke="var(--ink-soft)" stroke-width="2" marker-end="url(#ar)" opacity=".85"/>
+  <text x="434" y="206" text-anchor="start" font-family="Inter,sans-serif" font-weight="400" font-size="10.5" fill="var(--ink-soft)">Stack wächst nach unten</text>
+  <line x1="426" y1="336" x2="426" y2="310" stroke="var(--ink-soft)" stroke-width="2" marker-end="url(#ar)" opacity=".85"/>
+  <text x="434" y="330" text-anchor="start" font-family="Inter,sans-serif" font-weight="400" font-size="10.5" fill="var(--ink-soft)">Heap wächst nach oben</text>
+  <text x="82" y="84" text-anchor="end" font-family="Inter,sans-serif" font-weight="400" font-size="10.5" fill="var(--ink-soft)">hohe Adresse</text>
+  <text x="82" y="524" text-anchor="end" font-family="Inter,sans-serif" font-weight="400" font-size="10.5" fill="var(--ink-soft)">0x0</text>
+  <path d="M 850 232 L 860 232 L 860 536 L 850 536" fill="none" stroke="var(--mint-deep)" stroke-width="2"/>
+  <text x="868" y="376" text-anchor="start" font-family="Inter,sans-serif" font-weight="400" font-size="10.5" fill="var(--mint-deep)">ab hier</text>
+  <text x="868" y="392" text-anchor="start" font-family="Inter,sans-serif" font-weight="400" font-size="10.5" fill="var(--mint-deep)">gemeinsam</text>
+  <text x="480" y="566" text-anchor="middle" font-family="Inter,sans-serif" font-weight="400" font-size="11.5" fill="var(--ink-soft)">Jeder Prozess sieht diesen Adressraum als seinen eigenen – die MMU bildet die Seiten auf echten Speicher ab.</text>
+  <text x="480" y="588" text-anchor="middle" font-family="Inter,sans-serif" font-weight="400" font-size="11.5" fill="var(--ink-soft)">Ein Thread bekommt nur einen eigenen Stack; Code, Heap und globale Daten sind gemeinsam.</text>
+</svg>
+</div>
+    <p>Wichtig ist der Unterschied zwischen reserviert und belegt: Adressraum ist billig, physischer Speicher nicht. Eine Seite wird erst dann echt zugewiesen, wenn sie zum ersten Mal berührt wird.</p>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>Virtuell</h3>
+      <ul class="clean">
+        <li><b>Gleiche Adresse, andere Bytes</b> – zwei Prozesse können beide auf <code>0x400000</code> zugreifen und meinen verschiedene Daten</li>
+        <li><b>Seitenweise</b> – die Abbildung erfolgt in Seiten, üblicherweise 4 KB</li>
+        <li><b>Schutz inklusive</b> – ein Zugriff auf eine nicht zugeordnete Adresse endet als Segmentation Fault</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Physisch</h3>
+      <ul class="clean">
+        <li><b>Gemeinsame Seiten</b> – Bibliotheken liegen einmal im RAM und werden in viele Prozesse eingeblendet</li>
+        <li><b>Erst bei Bedarf</b> – reservierter Speicher kostet zunächst nichts</li>
+        <li><b>Auslagerbar</b> – der Kernel darf Seiten jederzeit verschieben oder auslagern</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="warn"><b>Achtung:</b> Ein Thread reserviert seinen Stack in voller Größe – üblicherweise dem Wert aus <code>ulimit -s</code>, oft 8 MB. Bei tausend Threads stehen damit acht Gigabyte im virtuellen Speicher, während physisch vielleicht ein paar Megabyte benutzt sind. Wer in der Überwachung auf VSZ schaut, meldet einen Speicherfresser, der keiner ist; wer daraufhin das Limit senkt, erzeugt Stack-Überläufe. Für die Frage „wie viel RAM braucht das wirklich" zählt der belegte Anteil, nicht der reservierte.</div>
+
+  <div class="mnemo"><b>Virtueller Speicher ist ein persönlicher Stadtplan</b> – jeder Prozess hat seine eigene Hausnummer 12, und die MMU weiß, welches echte Haus gemeint ist.</div>
+</section>
+
+<!-- ================= 2 THREADS ================= -->
+<section id="threads" class="sky">
+  <div class="sec-head"><div class="badge">2</div><h2>Threads: was geteilt wird und was nicht</h2></div>
+  <p class="sec-sub">Die vollständige Liste ist kurz und lohnt sich auswendig – aus ihr folgt fast jede Eigenschaft, die Threads im Guten wie im Schlechten haben.</p>
+
+  <div class="card">
+    <h3>Privat je Thread, gemeinsam im Prozess</h3>
+<div style="overflow-x:auto">
+<svg viewBox="0 0 960 398" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Aufteilung innerhalb eines Prozesses: privat je Thread sind Stack, Register, TID, errno, thread-lokale Daten und Signalmaske; alles andere ist gemeinsam" style="width:100%;min-width:760px;height:auto;display:block">
+  <defs><marker id="ar" viewBox="0 0 10 10" refX="9.5" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="var(--ink-soft)"/></marker></defs>
+  <rect x="20" y="20" width="920" height="330" rx="22" fill="var(--card)" stroke="var(--sky-deep)" stroke-width="2.5"/>
+  <text x="480" y="48" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="14.5" fill="var(--sky-deep)">Prozess  ·  Thread-Gruppe, tgid 4711</text>
+  <rect x="54" y="70" width="276" height="148" rx="16" fill="var(--peach)" stroke="var(--peach-deep)" stroke-width="2"/>
+  <text x="192" y="94" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="13" fill="var(--peach-deep)">Thread 1</text>
+  <text x="124" y="128" text-anchor="middle" font-family="Inter,sans-serif" font-weight="400" font-size="10.5" fill="var(--peach-deep)">· Stack</text>
+  <text x="124" y="152" text-anchor="middle" font-family="Inter,sans-serif" font-weight="400" font-size="10.5" fill="var(--peach-deep)">· Register und PC</text>
+  <text x="124" y="176" text-anchor="middle" font-family="Inter,sans-serif" font-weight="400" font-size="10.5" fill="var(--peach-deep)">· TID</text>
+  <text x="260" y="128" text-anchor="middle" font-family="Inter,sans-serif" font-weight="400" font-size="10.5" fill="var(--peach-deep)">· errno</text>
+  <text x="260" y="152" text-anchor="middle" font-family="Inter,sans-serif" font-weight="400" font-size="10.5" fill="var(--peach-deep)">· Thread-lokale Daten</text>
+  <text x="260" y="176" text-anchor="middle" font-family="Inter,sans-serif" font-weight="400" font-size="10.5" fill="var(--peach-deep)">· Signalmaske</text>
+  <rect x="346" y="70" width="276" height="148" rx="16" fill="var(--peach)" stroke="var(--peach-deep)" stroke-width="2"/>
+  <text x="484" y="94" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="13" fill="var(--peach-deep)">Thread 2</text>
+  <text x="416" y="128" text-anchor="middle" font-family="Inter,sans-serif" font-weight="400" font-size="10.5" fill="var(--peach-deep)">· Stack</text>
+  <text x="416" y="152" text-anchor="middle" font-family="Inter,sans-serif" font-weight="400" font-size="10.5" fill="var(--peach-deep)">· Register und PC</text>
+  <text x="416" y="176" text-anchor="middle" font-family="Inter,sans-serif" font-weight="400" font-size="10.5" fill="var(--peach-deep)">· TID</text>
+  <text x="552" y="128" text-anchor="middle" font-family="Inter,sans-serif" font-weight="400" font-size="10.5" fill="var(--peach-deep)">· errno</text>
+  <text x="552" y="152" text-anchor="middle" font-family="Inter,sans-serif" font-weight="400" font-size="10.5" fill="var(--peach-deep)">· Thread-lokale Daten</text>
+  <text x="552" y="176" text-anchor="middle" font-family="Inter,sans-serif" font-weight="400" font-size="10.5" fill="var(--peach-deep)">· Signalmaske</text>
+  <rect x="638" y="70" width="276" height="148" rx="16" fill="var(--peach)" stroke="var(--peach-deep)" stroke-width="2"/>
+  <text x="776" y="94" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="13" fill="var(--peach-deep)">Thread 3</text>
+  <text x="708" y="128" text-anchor="middle" font-family="Inter,sans-serif" font-weight="400" font-size="10.5" fill="var(--peach-deep)">· Stack</text>
+  <text x="708" y="152" text-anchor="middle" font-family="Inter,sans-serif" font-weight="400" font-size="10.5" fill="var(--peach-deep)">· Register und PC</text>
+  <text x="708" y="176" text-anchor="middle" font-family="Inter,sans-serif" font-weight="400" font-size="10.5" fill="var(--peach-deep)">· TID</text>
+  <text x="844" y="128" text-anchor="middle" font-family="Inter,sans-serif" font-weight="400" font-size="10.5" fill="var(--peach-deep)">· errno</text>
+  <text x="844" y="152" text-anchor="middle" font-family="Inter,sans-serif" font-weight="400" font-size="10.5" fill="var(--peach-deep)">· Thread-lokale Daten</text>
+  <text x="844" y="176" text-anchor="middle" font-family="Inter,sans-serif" font-weight="400" font-size="10.5" fill="var(--peach-deep)">· Signalmaske</text>
+  <text x="480" y="240" text-anchor="middle" font-family="Inter,sans-serif" font-weight="400" font-size="11.5" fill="var(--peach-deep)">privat je Thread</text>
+  <rect x="54" y="252" width="852" height="80" rx="16" fill="var(--mint)" stroke="var(--mint-deep)" stroke-width="2"/>
+  <text x="480" y="276" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="13" fill="var(--mint-deep)">gemeinsam für alle Threads</text>
+  <text x="110" y="298" text-anchor="middle" font-family="Inter,sans-serif" font-weight="400" font-size="11" fill="var(--mint-deep)">· Code</text>
+  <text x="322" y="298" text-anchor="middle" font-family="Inter,sans-serif" font-weight="400" font-size="11" fill="var(--mint-deep)">· Heap</text>
+  <text x="534" y="298" text-anchor="middle" font-family="Inter,sans-serif" font-weight="400" font-size="11" fill="var(--mint-deep)">· globale Variablen</text>
+  <text x="746" y="298" text-anchor="middle" font-family="Inter,sans-serif" font-weight="400" font-size="11" fill="var(--mint-deep)">· offene Dateien</text>
+  <text x="110" y="318" text-anchor="middle" font-family="Inter,sans-serif" font-weight="400" font-size="11" fill="var(--mint-deep)">· Signal-Handler</text>
+  <text x="322" y="318" text-anchor="middle" font-family="Inter,sans-serif" font-weight="400" font-size="11" fill="var(--mint-deep)">· Arbeitsverzeichnis</text>
+  <text x="534" y="318" text-anchor="middle" font-family="Inter,sans-serif" font-weight="400" font-size="11" fill="var(--mint-deep)">· cgroup</text>
+  <text x="746" y="318" text-anchor="middle" font-family="Inter,sans-serif" font-weight="400" font-size="11" fill="var(--mint-deep)">· Namespaces</text>
+  <text x="480" y="378" text-anchor="middle" font-family="Inter,sans-serif" font-weight="400" font-size="11.5" fill="var(--ink-soft)">Ein Absturz zerstört den Rahmen, nicht eine Säule: SIGSEGV in einem Thread beendet den ganzen Prozess.</text>
+</svg>
+</div>
+    <p>Aus „gemeinsam" folgt die Stärke: Zwei Threads tauschen Daten, indem einer schreibt und der andere liest – kein Kopieren, kein Serialisieren, keine Zustellung. Aus derselben Zeile folgt die Schwäche: Genau deshalb können sie sich gegenseitig überschreiben.</p>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>Was Threads billig macht</h3>
+      <ul class="clean">
+        <li><b>Erzeugung</b> – kein neuer Adressraum, keine neuen Seitentabellen</li>
+        <li><b>Datenaustausch</b> – ein Zeiger genügt</li>
+        <li><b>Umschalten</b> – der Adressraum bleibt, die Übersetzungspuffer bleiben gültig</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Was Threads teuer macht</h3>
+      <ul class="clean">
+        <li><b>Kein Schutz</b> – ein fehlerhafter Zeiger beschädigt fremde Daten im selben Prozess</li>
+        <li><b>Synchronisation</b> – jeder gemeinsame Zustand braucht eine Regel</li>
+        <li><b>Kein Teilausfall</b> – der Absturz eines Threads beendet alle</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="warn"><b>Achtung:</b> „Der Thread ist abgestürzt, der Rest läuft weiter" gibt es nicht. Ein Speicherzugriffsfehler in einem Thread liefert ein Signal an die gesamte Thread-Gruppe und beendet den Prozess mitsamt allen anderen Threads – auch denen, die gerade sauber arbeiten. Ebenso beendet der OOM-Killer nie einen Thread, sondern immer den ganzen Prozess. Wer Ausfallisolation zwischen Arbeitseinheiten braucht, braucht getrennte Prozesse, nicht getrennte Threads.</div>
+
+  <details>
+    <summary>Signale in Thread-Programmen</summary>
+    <div class="inner">
+      <p>Signale gehen an die Gruppe, nicht an einen bestimmten Thread. Der Kernel stellt sie irgendeinem Thread zu, der sie nicht blockiert hat – welchem, ist nicht vorhersagbar.</p>
+      <pre><code><span class="c"># Signalmasken aller Tasks eines Prozesses</span>
+grep SigBlk /proc/&lt;pid&gt;/task/*/status</code></pre>
+      <p>Das übliche Muster in Serverprogrammen: alle Arbeitsthreads blockieren die interessanten Signale, ein einzelner Thread nimmt sie gezielt entgegen. Ohne dieses Muster landet ein <code>SIGTERM</code> beim beliebigen Thread und die Aufräumreihenfolge wird zufällig.</p>
+    </div>
+  </details>
+</section>
+
+<!-- ================= 3 CLONE ================= -->
+<section id="clone" class="lav">
+  <div class="sec-head"><div class="badge">3</div><h2>clone: ein Systemaufruf für alles</h2></div>
+  <p class="sec-sub">Prozess, Thread und Container entstehen unter Linux durch denselben Aufruf. Was dabei herauskommt, entscheiden die Flags.</p>
+
+  <div class="card">
+    <h3>Dieselbe Tür, andere Schalterstellung</h3>
+    <table>
+      <thead><tr><th>Was entsteht</th><th>Entscheidende Flags</th><th>Ergebnis</th></tr></thead>
+      <tbody>
+        <tr><td><b>Prozess</b> (<code>fork</code>)</td><td>keine Sharing-Flags</td><td>eigener Adressraum als Kopie</td></tr>
+        <tr><td><b>Thread</b> (<code>pthread_create</code>)</td><td><code>CLONE_VM</code>, <code>CLONE_FILES</code>, <code>CLONE_SIGHAND</code>, <code>CLONE_THREAD</code></td><td>gemeinsamer Adressraum, gleiche tgid</td></tr>
+        <tr><td><b>Container</b></td><td>zusätzlich <code>CLONE_NEWPID</code>, <code>CLONE_NEWNET</code>, <code>CLONE_NEWNS</code>, <code>CLONE_NEWUSER</code> …</td><td>eigene Sicht auf Prozesse, Netz, Dateibaum, Benutzer</td></tr>
+      </tbody>
+    </table>
+    <p>Das ist die Verbindung zwischen diesem Thema und Containern: Ein Container ist kein besonderes Objekt im Kernel, sondern ein gewöhnlicher Prozess, der mit zusätzlichen Namespace-Flags gestartet wurde. Deshalb kann man ihn mit denselben Werkzeugen betrachten wie jeden anderen Prozess.</p>
+    <pre><code><span class="c"># Namespaces eines beliebigen Prozesses</span>
+ls -l /proc/&lt;pid&gt;/ns/
+
+<span class="c"># mitlesen, welche Flags beim Start gesetzt werden</span>
+strace -f -e trace=clone,clone3 -- ./programm</code></pre>
+    <div class="mnemo"><b>Ein Schalterbrett statt drei Türen</b> – fork, pthread_create und der Containerstart betätigen dasselbe Brett, nur mit unterschiedlich vielen umgelegten Schaltern.</div>
+  </div>
+
+  <div class="card">
+    <h3>Copy-on-Write: warum fork trotzdem schnell ist</h3>
+    <p>Ein <code>fork</code> kopiert nicht den Speicher, sondern nur die Seitentabellen. Alle Seiten werden für beide Seiten schreibgeschützt markiert; erst beim ersten Schreibzugriff erzeugt der Kernel eine private Kopie der betroffenen Seite.</p>
+    <p>Praktische Folge: Ein Elternprozess mit 8 GB Datenbank-Cache kann sich in Millisekunden verzweigen. Beginnt das Kind jedoch, überall zu schreiben, wächst der Speicherbedarf nachträglich – der Aufruf war billig, der Betrieb wird es nicht zwingend.</p>
+  </div>
+
+  <div class="warn"><b>Achtung:</b> <code>fork</code> in einem Programm mit mehreren Threads erzeugt ein Kind, in dem nur der aufrufende Thread existiert. Alle anderen sind weg – aber ihre Sperren nicht: Ein Mutex, den ein anderer Thread im Moment des fork gehalten hat, bleibt im Kind für immer gesperrt. Das Kind blockiert dann beim nächsten <code>malloc</code> oder Log-Aufruf, ohne Fehlermeldung und ohne erkennbaren Zusammenhang. Zwischen <code>fork</code> und <code>exec</code> gehören deshalb nur wenige, ausdrücklich dafür freigegebene Aufrufe – oder gleich <code>posix_spawn</code>.</div>
+</section>
+
+<!-- ================= 4 SCHEDULING ================= -->
+<section id="scheduling" class="peach">
+  <div class="sec-head"><div class="badge">4</div><h2>Scheduling: was ein Wechsel kostet</h2></div>
+  <p class="sec-sub">Der Scheduler verteilt Rechenzeit an Tasks, nicht an Prozesse. Ob zwei Tasks denselben Adressraum haben, merkt er erst beim Umschalten – dort wird der Unterschied messbar.</p>
+
+  <div class="card">
+    <h3>Drei Arten von Wechsel</h3>
+    <table>
+      <thead><tr><th>Wechsel</th><th>Was getauscht wird</th><th>Kosten</th></tr></thead>
+      <tbody>
+        <tr><td><b>Thread → Thread, gleicher Prozess</b></td><td>Register, Stackzeiger</td><td>am günstigsten, Adressraum bleibt</td></tr>
+        <tr><td><b>Prozess → Prozess</b></td><td>zusätzlich Adressraum und Seitentabellen</td><td>teurer, Übersetzungspuffer verlieren an Wirkung</td></tr>
+        <tr><td><b>Task → Kernel und zurück</b></td><td>Privilegienwechsel bei jedem Systemaufruf</td><td>am häufigsten, deshalb im Profil oft dominant</td></tr>
+      </tbody>
+    </table>
+    <p>Die Größenordnung liegt im Bereich von Mikrosekunden und hängt stark von CPU, Kernel und Sicherheitsmaßnahmen ab. Wichtiger als absolute Zahlen ist das Verhältnis: Ein Wechsel innerhalb eines Prozesses ist billiger als zwischen Prozessen, und beides ist teuer, wenn es hunderttausendfach pro Sekunde passiert.</p>
+    <div class="mnemo"><b>Adressraumwechsel ist ein Schreibtischwechsel</b> – zum Nachbarplatz genügt der Stuhl, ins andere Büro muss man alle Unterlagen mitnehmen und die Ablage neu suchen.</div>
+  </div>
+
+  <div class="card">
+    <h3>Threads und CPU-Grenzen in Containern</h3>
+    <p>Eine cgroup begrenzt Rechenzeit, nicht die Anzahl der Threads. Ein Programm, das seine Thread-Anzahl aus der Zahl der sichtbaren CPU-Kerne ableitet, startet in einem Container mit 32 sichtbaren Kernen 32 Arbeitsthreads – und darf zusammen vielleicht eine halbe CPU verbrauchen.</p>
+    <p>Die Folge ist kein Fehler, sondern Drosselung: Die Threads werden am Ende jeder Periode angehalten, die Latenz steigt sprunghaft, die Auslastung sieht dabei niedrig aus.</p>
+    <pre><code><span class="c"># Sicht des Containers auf die Grenze</span>
+cat /sys/fs/cgroup/cpu.max
+nproc
+
+<span class="c"># Drosselung nachweisen</span>
+grep -E 'nr_throttled|throttled_usec' /sys/fs/cgroup/cpu.stat</code></pre>
+  </div>
+
+  <div class="warn"><b>Achtung:</b> Genau diese Stelle erklärt viele „langsam trotz niedriger Auslastung"-Fälle in Kubernetes. Die Laufzeitumgebung liest die Kernanzahl des Nodes, nicht das Limit des Containers – bei Go über <code>GOMAXPROCS</code>, bei Java über die Größe der Standard-Threadpools, bei vielen Bibliotheken über eigene Worker-Zahlen. Steigt <code>nr_throttled</code>, hilft weder mehr Speicher noch ein größerer Node: Entweder das CPU-Limit anheben oder der Anwendung die richtige Zahl mitteilen.</div>
+
+  <details>
+    <summary>Threads und Kerne zueinander bringen</summary>
+    <div class="inner">
+      <p>Für Go lässt sich die Zahl direkt aus dem Limit ableiten, statt sie zu raten. Ohne Anpassung entspricht sie der Kernanzahl des Hosts.</p>
+      <pre><code>GOMAXPROCS=2
+<span class="c"># oder im Deployment aus dem Limit ableiten</span>
+kubectl set env deployment/&lt;name&gt; GOMAXPROCS=2</code></pre>
+      <p>Aktuelle JVM-Versionen berücksichtigen cgroup-Grenzen von sich aus; nachsehen lohnt trotzdem, weil eigene Pools davon unberührt bleiben.</p>
+      <pre><code>java -XX:+PrintFlagsFinal -version | grep -i ActiveProcessorCount</code></pre>
+    </div>
+  </details>
+</section>
+
+<!-- ================= 5 RACES ================= -->
+<section id="races" class="butter">
+  <div class="sec-head"><div class="badge">5</div><h2>Race Conditions: der Preis des gemeinsamen Speichers</h2></div>
+  <p class="sec-sub">Gemeinsamer Speicher heißt gemeinsamer Zugriff. Ohne Regel gewinnt derjenige, der zufällig zuletzt schreibt – und die Zufälligkeit ist das eigentliche Problem.</p>
+
+  <div class="card">
+    <h3>Eine verlorene Erhöhung, Schritt für Schritt</h3>
+    <p>Eine Zeile Quelltext ist keine Einheit für die CPU. <code>counter++</code> zerfällt in Laden, Rechnen und Zurückschreiben – und zwischen diesen Schritten darf jederzeit umgeschaltet werden.</p>
+<div style="overflow-x:auto">
+<svg viewBox="0 0 960 412" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Zeitachse einer Race Condition: zwei Threads lesen denselben Zählerstand, rechnen und schreiben, das Ergebnis ist 1 statt 2" style="width:100%;min-width:780px;height:auto;display:block">
+  <defs><marker id="ar" viewBox="0 0 10 10" refX="9.5" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="var(--ink-soft)"/></marker></defs>
+  <rect x="20" y="70" width="170" height="52" rx="13" fill="var(--peach)" stroke="var(--peach-deep)" stroke-width="2"/>
+  <text x="105" y="94" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="13" fill="var(--peach-deep)">Thread A</text>
+  <text x="105" y="111" text-anchor="middle" font-family="Inter,sans-serif" font-size="10.5" fill="var(--peach-deep)" opacity=".9">counter++</text>
+  <line x1="200" y1="96" x2="940" y2="96" stroke="var(--peach-deep)" stroke-width="1.4" stroke-dasharray="3 6" opacity=".6"/>
+  <rect x="20" y="170" width="170" height="52" rx="13" fill="var(--lav)" stroke="var(--lav-deep)" stroke-width="2"/>
+  <text x="105" y="194" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="13" fill="var(--lav-deep)">Speicher</text>
+  <text x="105" y="211" text-anchor="middle" font-family="Inter,sans-serif" font-size="10.5" fill="var(--lav-deep)" opacity=".9">counter</text>
+  <line x1="200" y1="196" x2="940" y2="196" stroke="var(--lav-deep)" stroke-width="1.4" stroke-dasharray="3 6" opacity=".6"/>
+  <rect x="20" y="270" width="170" height="52" rx="13" fill="var(--sky)" stroke="var(--sky-deep)" stroke-width="2"/>
+  <text x="105" y="294" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="13" fill="var(--sky-deep)">Thread B</text>
+  <text x="105" y="311" text-anchor="middle" font-family="Inter,sans-serif" font-size="10.5" fill="var(--sky-deep)" opacity=".9">counter++</text>
+  <line x1="200" y1="296" x2="940" y2="296" stroke="var(--sky-deep)" stroke-width="1.4" stroke-dasharray="3 6" opacity=".6"/>
+  <text x="206" y="230" text-anchor="start" font-family="Inter,sans-serif" font-weight="400" font-size="10.5" fill="var(--lav-deep)">Start: counter = 0</text>
+  <line x1="260" y1="182" x2="260" y2="112" stroke="var(--ink-soft)" stroke-width="2" marker-end="url(#ar)" opacity=".85"/>
+  <rect x="208" y="44" width="104" height="24" rx="9" fill="var(--peach)" stroke="var(--peach-deep)" stroke-width="1.6"/>
+  <text x="260" y="61" text-anchor="middle" font-family="Inter,sans-serif" font-weight="600" font-size="10.5" fill="var(--peach-deep)">liest 0</text>
+  <text x="260" y="38" text-anchor="middle" font-family="Inter,sans-serif" font-weight="400" font-size="9.5" fill="var(--ink-soft)">t1</text>
+  <line x1="384" y1="182" x2="384" y2="280" stroke="var(--ink-soft)" stroke-width="2" marker-end="url(#ar)" opacity=".85"/>
+  <rect x="332" y="322" width="104" height="24" rx="9" fill="var(--sky)" stroke="var(--sky-deep)" stroke-width="1.6"/>
+  <text x="384" y="339" text-anchor="middle" font-family="Inter,sans-serif" font-weight="600" font-size="10.5" fill="var(--sky-deep)">liest 0</text>
+  <text x="384" y="362" text-anchor="middle" font-family="Inter,sans-serif" font-weight="400" font-size="9.5" fill="var(--ink-soft)">t2</text>
+  <rect x="456" y="44" width="104" height="24" rx="9" fill="var(--peach)" stroke="var(--peach-deep)" stroke-width="1.6"/>
+  <text x="508" y="61" text-anchor="middle" font-family="Inter,sans-serif" font-weight="600" font-size="10.5" fill="var(--peach-deep)">rechnet 0+1</text>
+  <text x="508" y="38" text-anchor="middle" font-family="Inter,sans-serif" font-weight="400" font-size="9.5" fill="var(--ink-soft)">t3</text>
+  <rect x="580" y="322" width="104" height="24" rx="9" fill="var(--sky)" stroke="var(--sky-deep)" stroke-width="1.6"/>
+  <text x="632" y="339" text-anchor="middle" font-family="Inter,sans-serif" font-weight="600" font-size="10.5" fill="var(--sky-deep)">rechnet 0+1</text>
+  <text x="632" y="362" text-anchor="middle" font-family="Inter,sans-serif" font-weight="400" font-size="9.5" fill="var(--ink-soft)">t4</text>
+  <line x1="756" y1="80" x2="756" y2="210" stroke="var(--ink-soft)" stroke-width="2" marker-end="url(#ar)" opacity=".85"/>
+  <rect x="704" y="44" width="104" height="24" rx="9" fill="var(--peach)" stroke="var(--peach-deep)" stroke-width="1.6"/>
+  <text x="756" y="61" text-anchor="middle" font-family="Inter,sans-serif" font-weight="600" font-size="10.5" fill="var(--peach-deep)">schreibt 1</text>
+  <text x="756" y="38" text-anchor="middle" font-family="Inter,sans-serif" font-weight="400" font-size="9.5" fill="var(--ink-soft)">t5</text>
+  <line x1="880" y1="312" x2="880" y2="182" stroke="var(--ink-soft)" stroke-width="2" marker-end="url(#ar)" opacity=".85"/>
+  <rect x="828" y="322" width="104" height="24" rx="9" fill="var(--sky)" stroke="var(--sky-deep)" stroke-width="1.6"/>
+  <text x="880" y="339" text-anchor="middle" font-family="Inter,sans-serif" font-weight="600" font-size="10.5" fill="var(--sky-deep)">schreibt 1</text>
+  <text x="880" y="362" text-anchor="middle" font-family="Inter,sans-serif" font-weight="400" font-size="9.5" fill="var(--ink-soft)">t6</text>
+  <text x="756" y="230" text-anchor="middle" font-family="Inter,sans-serif" font-weight="600" font-size="10.5" fill="var(--lav-deep)">counter = 1</text>
+  <text x="880" y="230" text-anchor="middle" font-family="Inter,sans-serif" font-weight="600" font-size="10.5" fill="var(--lav-deep)">counter = 1</text>
+  <rect x="754" y="352" width="186" height="46" rx="14" fill="var(--rose)" stroke="var(--rose-deep)" stroke-width="2"/>
+  <text x="847" y="380" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="12.5" fill="var(--rose-deep)">Ergebnis: 1 statt 2</text>
+  <text x="20" y="372" text-anchor="start" font-family="Inter,sans-serif" font-weight="400" font-size="11.5" fill="var(--ink-soft)">counter++ ist drei Schritte: lesen, rechnen, schreiben. Zwischen ihnen darf der Scheduler wechseln –</text>
+  <text x="20" y="392" text-anchor="start" font-family="Inter,sans-serif" font-weight="400" font-size="11.5" fill="var(--ink-soft)">und beide Threads arbeiten mit demselben veralteten Wert. Ohne Sperre geht genau eine Erhöhung verloren.</text>
+</svg>
+</div>
+    <p>Der Fehler ist selten, weil das Zeitfenster kurz ist. Genau deshalb überlebt er Tests: Auf einem Kern mit wenig Last tritt er kaum auf, unter Produktionslast auf vielen Kernen ständig.</p>
+  </div>
+
+  <div class="card">
+    <h3>Die üblichen Mittel</h3>
+    <table>
+      <thead><tr><th>Mittel</th><th>Wofür</th><th>Preis</th></tr></thead>
+      <tbody>
+        <tr><td><b>Mutex</b></td><td>zusammenhängende Abschnitte schützen</td><td>Wartezeit, Gefahr von Verklemmungen</td></tr>
+        <tr><td><b>Atomare Operation</b></td><td>einzelne Zähler und Zeiger</td><td>nur für kleine Einheiten geeignet</td></tr>
+        <tr><td><b>Nachrichten statt Zustand</b></td><td>Übergabe zwischen Arbeitseinheiten</td><td>Kopieraufwand, dafür kein gemeinsamer Zustand</td></tr>
+        <tr><td><b>Unveränderliche Daten</b></td><td>alles, was gelesen wird</td><td>Speicher für Kopien</td></tr>
+      </tbody>
+    </table>
+    <div class="mnemo"><b>Der Mutex ist der Schlüssel zum Besprechungsraum</b> – wer ihn hat, ist drin; wer ihn behält und in Urlaub fährt, legt die ganze Firma lahm.</div>
+  </div>
+
+  <div class="warn"><b>Achtung:</b> Zwei Denkfehler halten sich hartnäckig. Erstens: Eine Zuweisung sei atomar, weil sie eine Zeile ist – das gilt schon für einen 64-Bit-Wert auf mancher Architektur nicht. Zweitens: <code>volatile</code> in C oder C++ mache einen Zugriff threadsicher – es unterdrückt nur bestimmte Optimierungen und garantiert weder Atomarität noch eine Reihenfolge zwischen Kernen. Threadsicherheit kommt von atomaren Typen oder Sperren, nicht von Schlüsselwörtern, die danach klingen.</div>
+
+  <details>
+    <summary>Races finden, statt auf sie zu warten</summary>
+    <div class="inner">
+      <p>Wettlaufsituationen lassen sich nicht zuverlässig ertesten, aber die Werkzeuge der Sprachen finden sie zur Laufzeit, indem sie Zugriffe protokollieren statt auf den Zufall zu warten.</p>
+      <pre><code><span class="c"># Go</span>
+go test -race ./...
+
+<span class="c"># C und C++ mit Clang oder GCC</span>
+gcc -fsanitize=thread -g programm.c -o programm</code></pre>
+      <p>Für Verklemmungen ist der Blick auf blockierte Tasks der schnellste Weg: Wer worauf wartet, steht im Kernel-Zustand jeder Task.</p>
+      <pre><code>cat /proc/&lt;pid&gt;/task/*/stack
+grep State /proc/&lt;pid&gt;/task/*/status</code></pre>
+    </div>
+  </details>
+</section>
+
+<!-- ================= 6 BEOBACHTEN ================= -->
+<section id="praxis" class="rose">
+  <div class="sec-head"><div class="badge">6</div><h2>Beobachten: was die Zahlen wirklich sagen</h2></div>
+  <p class="sec-sub">Die meisten Fehlschlüsse über Speicher entstehen nicht durch falsche Werkzeuge, sondern durch das Addieren von Werten, die man nicht addieren darf.</p>
+
+  <div class="card">
+    <h3>Die drei Speicherzahlen</h3>
+    <table>
+      <thead><tr><th>Wert</th><th>Bedeutung</th><th>Nützlich für</th></tr></thead>
+      <tbody>
+        <tr><td><b>VSZ</b></td><td>reservierter Adressraum</td><td>fast nichts – enthält alles Ungenutzte</td></tr>
+        <tr><td><b>RSS</b></td><td>tatsächlich belegte Seiten, gemeinsame eingerechnet</td><td>ein einzelner Prozess</td></tr>
+        <tr><td><b>PSS</b></td><td>belegte Seiten, gemeinsame anteilig verrechnet</td><td>Summen über mehrere Prozesse</td></tr>
+      </tbody>
+    </table>
+    <pre><code>ps -o pid,tid,rss,vsz,comm -L -p &lt;pid&gt;
+grep -E '^(Rss|Pss)' /proc/&lt;pid&gt;/smaps_rollup
+pmap -x &lt;pid&gt; | tail -3</code></pre>
+  </div>
+
+  <div class="warn"><b>Achtung:</b> Die Summe der RSS-Werte aller Prozesse ist regelmäßig größer als der eingebaute Speicher – gemeinsame Bibliotheken und Copy-on-Write-Seiten werden bei jedem Prozess voll mitgezählt. Bei zwanzig Kindprozessen desselben Servers erscheint derselbe Cache zwanzigmal. Für Summen ist PSS zuständig, für die Frage, was ein Container verbraucht, der Wert aus der cgroup – nicht die addierte Prozessliste.</div>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>Womit man anfängt</h3>
+      <ul class="clean">
+        <li><b>Wie viele Tasks?</b> – <code>ls /proc/&lt;pid&gt;/task | wc -l</code></li>
+        <li><b>Wer rechnet?</b> – <code>top -H -p &lt;pid&gt;</code></li>
+        <li><b>Wer wartet worauf?</b> – <code>strace -f -p &lt;pid&gt;</code></li>
+        <li><b>Was liegt im Adressraum?</b> – <code>cat /proc/&lt;pid&gt;/maps</code></li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Im Container</h3>
+      <ul class="clean">
+        <li><b>Speicher</b> – <code>/sys/fs/cgroup/memory.current</code> statt Prozessliste</li>
+        <li><b>Drosselung</b> – <code>/sys/fs/cgroup/cpu.stat</code></li>
+        <li><b>Prozessgrenze</b> – <code>/sys/fs/cgroup/pids.max</code></li>
+        <li><b>Beendigungen</b> – Events des Nodes, nicht das Anwendungslog</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="note"><b>Hinweis:</b> Die Prozessgrenze der cgroup zählt Tasks, also auch Threads. Ein Programm, das viele Threads erzeugt, kann sie erreichen, obwohl es nur einen Prozess betreibt – der Aufruf scheitert dann mit „resource temporarily unavailable" statt mit einer Speichermeldung.</div>
+</section>
+
+<!-- ================= 7 MODELLWAHL ================= -->
+<section id="wahl" class="mint">
+  <div class="sec-head"><div class="badge">7</div><h2>Modellwahl, der Reihe nach</h2></div>
+  <p class="sec-sub">Die Frage ist nicht „Prozess oder Thread", sondern in welcher Reihenfolge man die Anforderungen abarbeitet. Am Ende steht meist eine Mischung.</p>
+
+  <div class="card">
+    <h3>Die vier Phasen auf einen Blick</h3>
+    <ol class="steps">
+      <li><div><b>Phase A · Isolation klären</b><small>Schritt 1: Darf ein Fehler alles mitreißen?</small></div></li>
+      <li><div><b>Phase B · Datenfluss klären</b><small>Schritt 2: Wie viel gemeinsamer Zustand ist wirklich nötig?</small></div></li>
+      <li><div><b>Phase C · Lastart klären</b><small>Schritt 3: Wartet die Arbeit oder rechnet sie?</small></div></li>
+      <li><div><b>Phase D · Grenzen setzen</b><small>Schritt 4: Anzahl an das CPU-Limit binden und messen.</small></div></li>
+    </ol>
+  </div>
+
+  <h3 style="margin:26px 0 6px;font-size:1.15rem">Phase A · Isolation</h3>
+
+  <details>
+    <summary>Schritt 1 · Wie viel darf ein Fehler mitreißen</summary>
+    <div class="inner">
+      <p>Wenn eine Arbeitseinheit unabhängig überleben soll, ist die Antwort ein eigener Prozess – es gibt keinen Weg, einen abgestürzten Thread zu isolieren. Klassische Beispiele: ein Browser mit einem Prozess je Website, ein Webserver mit mehreren Worker-Prozessen, eine Datenbank mit einem Prozess je Verbindung.</p>
+      <p>Der Preis ist teurerer Datenaustausch – gemeinsame Speicherbereiche, Sockets oder eine Datenbank statt eines Zeigers.</p>
+    </div>
+  </details>
+
+  <h3 style="margin:26px 0 6px;font-size:1.15rem">Phase B · Datenfluss</h3>
+
+  <details>
+    <summary>Schritt 2 · Gemeinsamen Zustand kleinhalten</summary>
+    <div class="inner">
+      <p>Threads sind attraktiv, wenn große Datenmengen geteilt werden – ein Zwischenspeicher, ein geladenes Modell, ein Index. Sobald aber jeder Zugriff eine Sperre braucht, verschwindet der Vorteil in Wartezeiten.</p>
+      <p>Die belastbare Regel: gemeinsam nur, was gelesen wird; alles Veränderliche entweder in eine Einheit legen oder über Nachrichten übergeben.</p>
+    </div>
+  </details>
+
+  <h3 style="margin:26px 0 6px;font-size:1.15rem">Phase C · Lastart</h3>
+
+  <details>
+    <summary>Schritt 3 · Wartende und rechnende Arbeit trennen</summary>
+    <div class="inner">
+      <p>Wartet die Arbeit überwiegend auf Netz oder Platte, brauchen tausend gleichzeitige Vorgänge keine tausend Threads: Ein ereignisgesteuertes Modell oder leichtgewichtige Einheiten der Sprache – Goroutinen, virtuelle Threads, Coroutinen – erledigen das auf wenigen Betriebssystem-Threads.</p>
+      <p>Rechnet die Arbeit dagegen, hilft nur echte Parallelität, und die ist durch die verfügbaren Kerne begrenzt. Mehr Threads als Kerne erzeugen dann nur zusätzliche Umschaltvorgänge.</p>
+    </div>
+  </details>
+
+  <h3 style="margin:26px 0 6px;font-size:1.15rem">Phase D · Grenzen</h3>
+
+  <details>
+    <summary>Schritt 4 · Anzahl an das Limit binden</summary>
+    <div class="inner">
+      <p>Der letzte Schritt ist der, der in Containern am häufigsten fehlt: Die Anzahl der Arbeitseinheiten muss aus dem Limit folgen, nicht aus der Hardware des Nodes. Danach messen, ob gedrosselt wird – vorher ist jede Zahl geraten.</p>
+      <pre><code>grep nr_throttled /sys/fs/cgroup/cpu.stat
+ls /proc/&lt;pid&gt;/task | wc -l</code></pre>
+    </div>
+  </details>
+
+  <div class="card">
+    <h3>Wie es andere machen</h3>
+    <table>
+      <thead><tr><th>System</th><th>Modell</th><th>Grund</th></tr></thead>
+      <tbody>
+        <tr><td><b>Webserver mit Worker-Prozessen</b></td><td>mehrere Prozesse, je ereignisgesteuert</td><td>Isolation plus wenig Umschalten</td></tr>
+        <tr><td><b>Klassische relationale Datenbank</b></td><td>ein Prozess je Verbindung</td><td>ein abgestürzter Vorgang reißt nichts mit</td></tr>
+        <tr><td><b>Browser</b></td><td>Prozess je Website, Threads darin</td><td>Sicherheitsgrenze zwischen fremdem Code</td></tr>
+        <tr><td><b>Go-Programme</b></td><td>viele leichte Einheiten auf wenigen Threads</td><td>wartende Last ohne Thread je Vorgang</td></tr>
+        <tr><td><b>Container-Laufzeit</b></td><td>ein Prozess je Container, eigene Namespaces</td><td>dieselben clone-Flags, andere Schalterstellung</td></tr>
+      </tbody>
+    </table>
+    <div class="mnemo"><b>Die Wahl ist eine Frage nach dem Schaden, nicht nach der Geschwindigkeit</b> – erst klären, was ein Fehler mitreißen darf, dann optimieren.</div>
+  </div>
+</section>
+
+</main>
+
+<footer>Zusammengefasst aus der Linux-Dokumentation zu clone, Namespaces und cgroups sowie den Manpages zu pthreads, fork und proc; Anlass war ein Kurzvideo zum Speicherlayout von Prozessen und Threads, dessen Bild hier ausgeführt und um die Kernel-Sicht ergänzt wird. Kein Ersatz für die offizielle Doku – Details vor Produktionseinsatz gegen man7.org bzw. kernel.org prüfen.</footer>
+
+</body>
+</html>
