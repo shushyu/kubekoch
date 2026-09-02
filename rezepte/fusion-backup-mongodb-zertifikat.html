@@ -510,19 +510,12 @@ chmod 700 ~/ibm-fusion-mongodb-cert-rotation</code></pre>
   </details>
 
   <details>
-    <summary>Schritt 4 · MongoDB-Secret exportieren und beide Exporte verifizieren</summary>
+    <summary>Schritt 4 · MongoDB-Secret exportieren</summary>
     <div class="inner">
       <p>Sichert das bestehende MongoDB-Secret als Rollback-Grundlage.</p>
       <pre><code>oc -n ibm-backup-restore get secret mongodb \
   -o yaml > ~/ibm-fusion-mongodb-cert-rotation/mongodb-secret-before.yaml</code></pre>
-      <p>Beide Exporte auf Vollständigkeit prüfen:</p>
-      <pre><code>test -s ~/ibm-fusion-mongodb-cert-rotation/guardianmongo-before.yaml \
-  &amp;&amp; test -s ~/ibm-fusion-mongodb-cert-rotation/mongodb-secret-before.yaml \
-  &amp;&amp; echo "Exports vorhanden und nicht leer"</code></pre>
-      <p>Und mit einer Prüfsumme absichern, um spätere Manipulation oder Beschädigung erkennbar zu machen:</p>
-      <pre><code>sha256sum ~/ibm-fusion-mongodb-cert-rotation/guardianmongo-before.yaml \
-  ~/ibm-fusion-mongodb-cert-rotation/mongodb-secret-before.yaml</code></pre>
-      <div class="warn"><b>Achtung:</b> Erst weitermachen, wenn beide Dateien erfolgreich gesichert und geprüft sind – sie werden für das Rollback in Phase C benötigt. Keine Backup-, Restore-, Policy- oder Service-Änderungen parallel zu dieser Prozedur durchführen.</div>
+      <div class="warn"><b>Achtung:</b> Erst weitermachen, wenn beide Dateien (<code>guardianmongo-before.yaml</code>, <code>mongodb-secret-before.yaml</code>) gesichert sind – sie werden für das Rollback in Phase C benötigt. Keine Backup-, Restore-, Policy- oder Service-Änderungen parallel zu dieser Prozedur durchführen.</div>
     </div>
   </details>
 
