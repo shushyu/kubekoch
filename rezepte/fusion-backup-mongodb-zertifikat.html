@@ -5,9 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>IBM Fusion 2.12.x – Backup-Ausfall trotz erreichbarem S3-Ziel</title>
 <meta name="rezept-kategorie"    content="storage">
-<meta name="rezept-beschreibung" content="Die Backup Location meldet Connected, doch es entstehen keine neuen Backups – die Spur führt über eine fehlgeschlagene Readiness Probe zu einem abgelaufenen TLS-Zertifikat im MongoDB-Replica-Set.">
+<meta name="rezept-beschreibung" content="Die Backup Location meldet Connected, doch es entstehen keine neuen Backups – von der Fehlerkette bis zur abgelaufenen MongoDB-CA (mongoCA) und ihrer Regeneration.">
 <meta name="rezept-stand"        content="IBM Fusion 2.12.x · 08/2026">
-<meta name="rezept-suche"        content="ibm fusion backup restore mongodb tls zertifikat readiness probe failedcreating policy assignment hub spoke s3 mongotimeoutexception">
+<meta name="rezept-suche"        content="ibm fusion backup restore mongodb tls mongoca ca-zertifikat readiness probe failedcreating policy assignment hub spoke s3 mongotimeoutexception guardianmongo statefulset certificates-tls-secret rs.status primary">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
@@ -41,7 +41,7 @@ header h1 span{color:var(--mint-deep)}
 .lede{color:var(--ink-soft);max-width:640px;margin-top:14px;font-size:1.05rem}
 
 /* ---------- Route ---------- */
-.route{max-width:1060px;margin:34px auto 10px;padding:0 24px;display:grid;grid-template-columns:repeat(6,1fr);gap:12px}
+.route{max-width:1060px;margin:34px auto 10px;padding:0 24px;display:grid;grid-template-columns:repeat(7,1fr);gap:12px}
 .route a{display:flex;flex-direction:column;gap:8px;text-decoration:none;color:var(--ink);background:var(--card);border:1.5px solid var(--line);border-radius:var(--r-md);padding:16px 14px;transition:transform .15s ease,box-shadow .15s ease}
 .route a:hover,.route a:focus-visible{transform:translateY(-3px);box-shadow:0 8px 22px rgba(60,60,90,.10);outline:none}
 .route .dot{width:34px;height:34px;border-radius:12px;display:grid;place-items:center;font-family:'Sora';font-weight:700;font-size:.9rem}
@@ -53,6 +53,7 @@ header h1 span{color:var(--mint-deep)}
 .route a:nth-child(4) .dot{background:var(--lav);color:var(--lav-deep)}
 .route a:nth-child(5) .dot{background:var(--peach);color:var(--peach-deep)}
 .route a:nth-child(6) .dot{background:var(--butter);color:var(--butter-deep)}
+.route a:nth-child(7) .dot{background:var(--rose);color:var(--rose-deep)}
 
 /* ---------- Sticky-Nav ---------- */
 nav{position:sticky;top:0;z-index:50;background:rgba(251,250,247,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);margin-top:26px}
@@ -73,6 +74,7 @@ section h2{font-size:clamp(1.4rem,3vw,1.9rem);font-weight:700}
 .lav .badge{background:var(--lav);color:var(--lav-deep)}
 .peach .badge{background:var(--peach);color:var(--peach-deep)}
 .butter .badge{background:var(--butter);color:var(--butter-deep)}
+.rose .badge{background:var(--rose);color:var(--rose-deep)}
 
 /* ---------- Karten & Schritte ---------- */
 .card{background:var(--card);border:1.5px solid var(--line);border-radius:var(--r-lg);padding:26px 28px;margin-bottom:20px}
@@ -87,6 +89,7 @@ ol.steps li::before{content:counter(s);width:30px;height:30px;border-radius:10px
 .lav ol.steps li::before{background:var(--lav);color:var(--lav-deep)}
 .peach ol.steps li::before{background:var(--peach);color:var(--peach-deep)}
 .butter ol.steps li::before{background:var(--butter);color:var(--butter-deep)}
+.rose ol.steps li::before{background:var(--rose);color:var(--rose-deep)}
 .steps b{font-weight:600}
 .steps small{display:block;color:var(--ink-soft);font-size:.86rem;margin-top:2px}
 
@@ -99,6 +102,7 @@ ul.clean li::before{content:"";position:absolute;left:4px;top:.62em;width:9px;he
 .lav ul.clean li::before{background:var(--lav-deep)}
 .peach ul.clean li::before{background:var(--peach-deep)}
 .butter ul.clean li::before{background:var(--butter-deep)}
+.rose ul.clean li::before{background:var(--rose-deep)}
 
 /* ---------- Code ---------- */
 pre{background:var(--code-bg);color:var(--code-ink);border-radius:var(--r-sm);padding:16px 18px;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:.82rem;line-height:1.6;margin:10px 0}
@@ -146,8 +150,8 @@ footer a{color:var(--ink-soft)}
 
 <header>
   <span class="kicker">IBM Fusion 2.12.x · Backup &amp; Restore · Troubleshooting</span>
-  <h1>Backups bleiben aus trotz „Connected“:<br>der Weg zum <span>MongoDB-Zertifikat</span></h1>
-  <p class="lede">Eine Backup Location zeigt einen unauffälligen Status – und trotzdem entstehen keine neuen Backups. Sechs Ebenen von der Oberfläche bis zur eigentlichen Ursache, jede mit dem Log-Ausschnitt, der zur nächsten führte.</p>
+  <h1>Backups bleiben aus trotz „Connected“:<br>der Weg zum <span>MongoDB-CA-Zertifikat</span></h1>
+  <p class="lede">Eine Backup Location zeigt einen unauffälligen Status – und trotzdem entstehen keine neuen Backups. Sieben Abschnitte von der Oberfläche über die eigentliche Ursache bis zur Behebung.</p>
 </header>
 
 <div class="route">
@@ -155,8 +159,9 @@ footer a{color:var(--ink-soft)}
   <a href="#symptom"><span class="dot">1</span><span class="t">Symptom</span><span class="s">Policy Assignment FailedCreating</span></a>
   <a href="#pod"><span class="dot">2</span><span class="t">Backend-Pod</span><span class="s">Readiness Probe schlägt fehl</span></a>
   <a href="#mongodb"><span class="dot">3</span><span class="t">Datenbank</span><span class="s">MongoDB-Timeout</span></a>
-  <a href="#ursache"><span class="dot">4</span><span class="t">Ursache</span><span class="s">Abgelaufenes TLS-Zertifikat</span></a>
+  <a href="#ursache"><span class="dot">4</span><span class="t">Ursache</span><span class="s">Abgelaufenes CA-Zertifikat</span></a>
   <a href="#fazit"><span class="dot">5</span><span class="t">Fehlerkette</span><span class="s">Zusammenfassung &amp; Diagnose</span></a>
+  <a href="#loesung"><span class="dot">6</span><span class="t">Behebung</span><span class="s">Zertifikat regenerieren</span></a>
 </div>
 
 <nav><div class="wrap">
@@ -166,6 +171,7 @@ footer a{color:var(--ink-soft)}
   <a href="#mongodb">3 · Datenbank</a>
   <a href="#ursache">4 · Ursache</a>
   <a href="#fazit">5 · Fehlerkette</a>
+  <a href="#loesung">6 · Behebung</a>
 </div></nav>
 
 <main>
@@ -182,8 +188,80 @@ footer a{color:var(--ink-soft)}
       <li><div><b>Keine Policy zugeordnet</b><small>Der Location fehlen aktive Backup Policies und zugeordnete Anwendungen, es laufen keine Backup-Jobs.</small></div></li>
       <li><div><b>Interner Service nicht bereit</b><small>Der zuständige Backend-Pod besteht seine Readiness Probe nicht.</small></div></li>
       <li><div><b>Datenbank nicht erreichbar</b><small>Der Service findet keinen nutzbaren MongoDB-Primary.</small></div></li>
-      <li><div><b>TLS-Zertifikat abgelaufen</b><small>Ein selbstsigniertes Zertifikat im MongoDB-Replica-Set ist ausgelaufen – die eigentliche Ursache.</small></div></li>
+      <li><div><b>MongoDB-CA abgelaufen</b><small>Das selbstsignierte CA-Zertifikat (<code>mongoCA</code>) des Replica-Sets ist ausgelaufen – die eigentliche Ursache.</small></div></li>
     </ol>
+  </div>
+
+  <div class="card">
+    <h3>Komponenten und ihre Beziehungen</h3>
+    <p style="color:var(--ink-soft);font-size:.9rem;margin-bottom:16px">Zwei Stränge, die sich unten treffen: links der unauffällige Pfad (S3 erreichbar, Location Connected), rechts die eigentliche Fehlerkette vom Zertifikat bis zum Policy Assignment.</p>
+    <svg viewBox="0 0 680 620" width="100%" style="max-width:640px;display:block;margin:0 auto" role="img" aria-labelledby="diagT diagD">
+      <title id="diagT">Komponentenbeziehungen und Fehlerursache</title>
+      <desc id="diagD">Zeigt, wie eine abgelaufene MongoDB-CA (mongoCA) über das Replica-Set, den Backup-Policy-Service und das Policy Assignment dazu führt, dass trotz erreichbarem S3-Object-Storage keine neuen Backups entstehen.</desc>
+      <defs>
+        <marker id="diagram-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M2 1L8 5L2 9" fill="none" stroke="var(--ink-soft)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </marker>
+      </defs>
+
+      <g stroke="var(--ink-soft)" stroke-width="1.3" fill="none" marker-end="url(#diagram-arrow)">
+        <line x1="155" y1="96" x2="155" y2="156"/>
+        <line x1="155" y1="212" x2="155" y2="504"/>
+        <line x1="490" y1="96" x2="490" y2="156"/>
+        <line x1="490" y1="212" x2="490" y2="272"/>
+        <line x1="490" y1="328" x2="490" y2="388"/>
+        <line x1="490" y1="444" x2="490" y2="504"/>
+      </g>
+
+      <g>
+        <rect x="45" y="40" width="220" height="56" rx="12" fill="var(--card)" stroke="var(--line)" stroke-width="1.5"/>
+        <text x="155" y="58" text-anchor="middle" dominant-baseline="central" font-family="Sora" font-weight="700" font-size="14" fill="var(--ink)">S3 Object Storage</text>
+        <text x="155" y="78" text-anchor="middle" dominant-baseline="central" font-family="Inter" font-size="12" fill="var(--ink-soft)">Erreichbar</text>
+      </g>
+
+      <g>
+        <rect x="45" y="156" width="220" height="56" rx="12" fill="var(--card)" stroke="var(--line)" stroke-width="1.5"/>
+        <text x="155" y="174" text-anchor="middle" dominant-baseline="central" font-family="Sora" font-weight="700" font-size="14" fill="var(--ink)">Backup Location</text>
+        <text x="155" y="194" text-anchor="middle" dominant-baseline="central" font-family="Inter" font-size="12" fill="var(--ink-soft)">Connected</text>
+      </g>
+
+      <g>
+        <rect x="370" y="40" width="240" height="56" rx="12" fill="var(--rose)" stroke="var(--rose-deep)" stroke-width="1.5"/>
+        <text x="490" y="58" text-anchor="middle" dominant-baseline="central" font-family="Sora" font-weight="700" font-size="14" fill="var(--rose-deep)">MongoDB-CA (mongoCA)</text>
+        <text x="490" y="78" text-anchor="middle" dominant-baseline="central" font-family="Inter" font-size="12" fill="var(--rose-deep)">Zertifikat abgelaufen</text>
+      </g>
+
+      <g>
+        <rect x="370" y="156" width="240" height="56" rx="12" fill="var(--butter)" stroke="var(--butter-deep)" stroke-width="1.5"/>
+        <text x="490" y="174" text-anchor="middle" dominant-baseline="central" font-family="Sora" font-weight="700" font-size="14" fill="var(--butter-deep)">MongoDB Replica-Set</text>
+        <text x="490" y="194" text-anchor="middle" dominant-baseline="central" font-family="Inter" font-size="12" fill="var(--butter-deep)">Kein Primary verfügbar</text>
+      </g>
+
+      <g>
+        <rect x="370" y="272" width="240" height="56" rx="12" fill="var(--butter)" stroke="var(--butter-deep)" stroke-width="1.5"/>
+        <text x="490" y="290" text-anchor="middle" dominant-baseline="central" font-family="Sora" font-weight="700" font-size="14" fill="var(--butter-deep)">Backup-Policy-Service</text>
+        <text x="490" y="310" text-anchor="middle" dominant-baseline="central" font-family="Inter" font-size="12" fill="var(--butter-deep)">Probe schlägt fehl</text>
+      </g>
+
+      <g>
+        <rect x="370" y="388" width="240" height="56" rx="12" fill="var(--butter)" stroke="var(--butter-deep)" stroke-width="1.5"/>
+        <text x="490" y="406" text-anchor="middle" dominant-baseline="central" font-family="Sora" font-weight="700" font-size="14" fill="var(--butter-deep)">Policy Assignment</text>
+        <text x="490" y="426" text-anchor="middle" dominant-baseline="central" font-family="Inter" font-size="12" fill="var(--butter-deep)">FailedCreating</text>
+      </g>
+
+      <g>
+        <rect x="140" y="504" width="400" height="56" rx="12" fill="var(--rose)" stroke="var(--rose-deep)" stroke-width="1.5"/>
+        <text x="340" y="522" text-anchor="middle" dominant-baseline="central" font-family="Sora" font-weight="700" font-size="14" fill="var(--rose-deep)">Keine neuen Backups</text>
+        <text x="340" y="542" text-anchor="middle" dominant-baseline="central" font-family="Inter" font-size="12" fill="var(--rose-deep)">Trotz Connected-Status</text>
+      </g>
+
+      <rect x="140" y="584" width="14" height="14" rx="3" fill="var(--card)" stroke="var(--line)" stroke-width="1.5"/>
+      <text x="162" y="595" font-family="Inter" font-size="12" fill="var(--ink-soft)">Fehlerfrei</text>
+      <rect x="290" y="584" width="14" height="14" rx="3" fill="var(--butter)" stroke="var(--butter-deep)" stroke-width="1.5"/>
+      <text x="312" y="595" font-family="Inter" font-size="12" fill="var(--ink-soft)">Betroffen</text>
+      <rect x="430" y="584" width="14" height="14" rx="3" fill="var(--rose)" stroke="var(--rose-deep)" stroke-width="1.5"/>
+      <text x="452" y="595" font-family="Inter" font-size="12" fill="var(--ink-soft)">Ursache / Ergebnis</text>
+    </svg>
   </div>
 
   <div class="mnemo"><b>„Connected“ ist wie der Empfangsbalken am Handy</b> – er zeigt, dass die Antenne Kontakt hat, nicht, dass die App im Hintergrund noch läuft.</div>
@@ -193,6 +271,8 @@ footer a{color:var(--ink-soft)}
 <section id="symptom" class="mint">
   <div class="sec-head"><div class="badge">1</div><h2>Symptom: Policy Assignment bleibt FailedCreating</h2></div>
   <p class="sec-sub">Die Backup Location war verbunden, ihr aber waren keine aktiven Backup Policies und keine Anwendungen mehr zugeordnet. Grund dafür war ein fehlgeschlagenes Policy Assignment.</p>
+
+  <div class="note"><b>Wichtig:</b> Der Status <code>Connected</code> einer Backup Location bewertet die Erreichbarkeit und grundlegende Validierung des Object-Storage-Ziels. Er ist kein End-to-End-Gesundheitsnachweis für den gesamten Backup-Prozess.</div>
 
   <div class="card">
     <h3>Trennung von Location, Policy und Assignment</h3>
@@ -237,37 +317,79 @@ Timed out after 30000 ms while waiting for a server that matches
 ReadPreferenceServerSelector{readPreference=primary}</code></pre>
     <p>Der Backup-Policy-Service erwartete einen erreichbaren MongoDB-Primary. Da keiner verfügbar war, schlug der Datenbankzugriff fehl und der Health-Check konnte nicht erfolgreich abgeschlossen werden.</p>
   </div>
+
+  <div class="note"><b>Was „kein nutzbarer Primary" konkret heißt:</b> nicht zwingend, dass alle MongoDB-Pods beendet sind. Der anfragende Service fand innerhalb seines Timeouts keinen Knoten, der gleichzeitig erreichbar ist, als <code>PRIMARY</code> fungiert, per TLS mit gültiger Vertrauenskette ansprechbar ist und vom Treiber für <code>readPreference=primary</code> akzeptiert wird.</div>
 </section>
 
 <!-- ================= 4 URSACHE ================= -->
 <section id="ursache" class="peach">
-  <div class="sec-head"><div class="badge">4</div><h2>Ursache: Abgelaufenes TLS-Zertifikat im Replica-Set</h2></div>
-  <p class="sec-sub">Die MongoDB-Logs lieferten schließlich die zugrunde liegende Ursache der gesamten Kette.</p>
+  <div class="sec-head"><div class="badge">4</div><h2>Ursache: Abgelaufene MongoDB-CA (mongoCA)</h2></div>
+  <p class="sec-sub">Die MongoDB-Logs lieferten den ersten Hinweis auf die zugrunde liegende Ursache – die anschließende Zertifikatsprüfung bestätigte sie konkret.</p>
 
   <div class="card">
     <h3>TLS-Validierung zwischen Replica-Set-Mitgliedern schlägt fehl</h3>
     <pre><code><span class="c">// MongoDB · Log</span>
 SSL peer certificate validation failed: certificate has expired</code></pre>
-    <p>Ein abgelaufenes selbstsigniertes TLS-Zertifikat verhinderte die erfolgreiche TLS-Validierung zwischen den Mitgliedern des MongoDB-Replica-Sets. Dadurch war die interne Kommunikation im Replica-Set beeinträchtigt und kein stabil nutzbarer Primary verfügbar.</p>
+    <p>Das Log zeigt zunächst nur eine fehlgeschlagene TLS-Peer-Validierung. Die anschließende Zertifikatsprüfung bestätigte: abgelaufen war nicht irgendein Server- oder Peer-Zertifikat, sondern das selbstsignierte MongoDB-CA-Zertifikat (<code>mongoCA</code>) selbst – die Vertrauensbasis für die gesamte TLS-Kommunikation zwischen den Replica-Set-Mitgliedern. War die CA nicht mehr gültig, konnten die Peers die Zertifikatsketten ihrer Kommunikationspartner nicht mehr validieren. Betroffen war damit nicht ein einzelnes Zertifikat, sondern die komplette Vertrauenskette des Replica-Sets.</p>
   </div>
 
-  <div class="mnemo"><b>Ein Replica-Set ist wie ein Team, das nur über eine verschlüsselte Leitung sprechen darf.</b> Läuft der Schlüssel ab, verstummen alle gleichzeitig – obwohl jeder Einzelne für sich weiterläuft.</div>
+  <div class="card">
+    <h3>Zertifikatsprüfung: die tatsächliche CA identifizieren</h3>
+    <p>Die naheliegende Prüfung eines einzelnen Peer-Zertifikats reicht nicht aus, um die CA selbst zu bestätigen. Zwei Schritte dafür:</p>
+
+    <details><summary>Schritt A · Vorhandene Keys im TLS-Secret ermitteln</summary><div class="inner">
+      <pre><code>oc -n ibm-backup-restore get secret certificates-tls-secret -o json | jq -r '.data | keys[]'</code></pre>
+      <div class="warn"><b>Achtung:</b> Nur die Namen der Secret-Datenfelder ausgeben. Die Inhalte selbst dürfen nicht in Tickets, Chats oder unverschlüsselte Dokumente kopiert werden.</div>
+    </div></details>
+
+    <details><summary>Schritt B · Die tatsächliche MongoDB-CA prüfen</summary><div class="inner">
+      <p>Platzhalter <code>&lt;mongo-ca-key&gt;</code> durch den in Schritt A bestätigten Key-Namen ersetzen, zum Beispiel <code>mongoCA.pem</code>, falls dieser im Secret vorhanden ist.</p>
+      <pre><code>oc -n ibm-backup-restore get secret certificates-tls-secret \
+  -o jsonpath='{.data.&lt;mongo-ca-key&gt;}' \
+  | base64 -d \
+  | openssl x509 -noout -subject -issuer -serial -dates -text \
+  | grep -E 'Subject:|Issuer:|Serial Number:|Not Before:|Not After :|CA:TRUE'</code></pre>
+      <p>Erwartete Prüfungsergebnisse vor der Korrektur:</p>
+      <ul class="clean">
+        <li><code>Not After</code> liegt vor dem aktuellen Datum</li>
+        <li>das Zertifikat ist als CA gekennzeichnet, z. B. mit <code>CA:TRUE</code></li>
+        <li>Subject und Issuer passen zur erwarteten internen MongoDB-PKI</li>
+      </ul>
+    </div></details>
+
+    <details><summary>Zusätzlich: Leaf-/Peer-Zertifikat prüfen</summary><div class="inner">
+      <pre><code>oc -n ibm-backup-restore get secret certificates-tls-secret \
+  -o jsonpath='{.data.mongodb-0-guardian\.pem}' \
+  | base64 -d \
+  | openssl x509 -noout -subject -issuer -serial -dates</code></pre>
+      <p>Diese Abfrage prüft ein MongoDB-Peer-/Leaf-Zertifikat. Sie ersetzt nicht die Prüfung des <code>mongoCA</code>-Zertifikats aus Schritt B.</p>
+    </div></details>
+  </div>
+
+  <div class="mnemo"><b>Eine CA ist wie ein Ausweisamt.</b> Läuft ihr eigenes Siegel ab, werden auf einen Schlag alle davon ausgestellten Ausweise wertlos – selbst wenn die einzelnen Ausweise selbst noch taufrisch sind.</div>
 </section>
 
 <!-- ================= 5 FEHLERKETTE ================= -->
 <section id="fazit" class="butter">
   <div class="sec-head"><div class="badge">5</div><h2>Fehlerkette im Überblick &amp; weiterführende Diagnose</h2></div>
-  <p class="sec-sub">Fünf Ursache-Wirkungs-Schritte zwischen einem abgelaufenen Zertifikat und ausbleibenden Backups.</p>
+  <p class="sec-sub">Elf Ursache-Wirkungs-Schritte zwischen der abgelaufenen CA und ausbleibenden Backups.</p>
+
+  <div class="card" style="background:var(--rose);border-color:var(--rose-deep)">
+    <h3 style="color:var(--rose-deep)">Kurzfazit</h3>
+    <p style="color:var(--rose-deep)">Die Ursache für die ausbleibenden Backups war nicht die Erreichbarkeit des Object-Storage-Ziels – die Backup Location konnte weiterhin als <code>Connected</code> validiert werden. Der Ausfall wurde durch ein abgelaufenes selbstsigniertes MongoDB-CA-Zertifikat (<code>mongoCA</code>) verursacht. Dadurch konnten die Replica-Set-Mitglieder ihre TLS-Verbindungen nicht mehr validieren, der Backup-Policy-Service erreichte keinen nutzbaren Primary, wurde nicht Ready und konnte Backup Policies nicht mehr anwenden. Das Policy Assignment verblieb dadurch im Status <code>FailedCreating</code>, sodass keine neuen Backups entstanden.</p>
+  </div>
 
   <div class="card">
     <h3>Von der Ursache zur Wirkung</h3>
     <ol class="steps">
-      <li><div><b>Abgelaufenes MongoDB-TLS-Zertifikat</b><small>Selbstsigniertes Zertifikat im Replica-Set läuft ab.</small></div></li>
-      <li><div><b>TLS-Validierung zwischen Replica-Set-Mitgliedern schlägt fehl</b><small>Interne Kommunikation ist gestört.</small></div></li>
-      <li><div><b>Kein stabil nutzbarer MongoDB-Primary</b><small>Kein Mitglied kann zuverlässig als Primary angesprochen werden.</small></div></li>
-      <li><div><b>Backup-Policy-Service kann Datenbankzugriff nicht abschließen</b><small><code>MongoTimeoutException</code> beim Warten auf den Primary.</small></div></li>
+      <li><div><b>Abgelaufene MongoDB-CA (mongoCA)</b><small>Selbstsigniertes CA-Zertifikat des Replica-Sets läuft ab.</small></div></li>
+      <li><div><b>Zertifikatsketten nicht mehr validierbar</b><small>Replica-Set-Peers können die Ketten ihrer Kommunikationspartner nicht mehr prüfen.</small></div></li>
+      <li><div><b>TLS-Verbindungen schlagen fehl oder werden instabil</b><small>Zwischen den Replica-Set-Mitgliedern.</small></div></li>
+      <li><div><b>Replica-Set-Kommunikation beeinträchtigt</b><small>Auch die Mehrheitsbildung (Election) ist betroffen.</small></div></li>
+      <li><div><b>Kein stabil nutzbarer MongoDB-Primary</b><small>Für Clients nicht erreichbar.</small></div></li>
+      <li><div><b>Backup-Policy-Service läuft in einen MongoDB-Timeout</b><small><code>MongoTimeoutException</code> bei <code>readPreference=primary</code>.</small></div></li>
       <li><div><b>Readiness Probe schlägt fehl</b><small>Der Health-Endpunkt <code>/health/ready</code> antwortet nicht rechtzeitig.</small></div></li>
-      <li><div><b>Backup-Policy-Service ist NotReady</b><small>Der Pod gilt nicht als bereit für Anfragen.</small></div></li>
+      <li><div><b>Backup-Policy-Service ist NotReady</b><small>Liefert 503 bzw. <code>context deadline exceeded</code>.</small></div></li>
       <li><div><b>Policy Assignment bleibt FailedCreating</b><small>Die Zuordnung von Policy zu Anwendung kann nicht abgeschlossen werden.</small></div></li>
       <li><div><b>Backup Policy wird nicht angewendet</b><small>Der Location fehlen aktive Policies und Anwendungen.</small></div></li>
       <li><div><b>Keine neuen Backups werden erstellt</b><small>Trotz <code>Connected</code>-Status der Backup Location.</small></div></li>
@@ -276,18 +398,22 @@ SSL peer certificate validation failed: certificate has expired</code></pre>
 
   <div class="grid2">
     <div class="card">
-      <h3>Was „Connected“ bedeutet</h3>
+      <h3>Was „Connected“ bestätigt</h3>
       <ul class="clean">
-        <li>Object-Storage-Endpunkt ist erreichbar</li>
-        <li>Grundlegende Validierung des S3-Ziels war erfolgreich</li>
+        <li>Der konfigurierte Object-Storage-Endpunkt ist erreichbar</li>
+        <li>Der Bucket kann im Rahmen der Location-Validierung angesprochen werden</li>
+        <li>Die Location-Konfiguration ist grundsätzlich verwendbar</li>
       </ul>
     </div>
     <div class="card">
-      <h3>Was „Connected“ nicht bedeutet</h3>
+      <h3>Was „Connected“ nicht bestätigt</h3>
       <ul class="clean">
-        <li>Backup Policies wurden erfolgreich angewendet</li>
-        <li>Anwendungen sind der Location zugeordnet</li>
-        <li>interne Backup-&amp;-Restore-Komponenten inklusive ihrer Datenbankabhängigkeiten arbeiten gesund</li>
+        <li>eine Backup Policy wurde erfolgreich angewendet</li>
+        <li>eine Anwendung ist aktiv einer Policy zugeordnet</li>
+        <li>das Policy Assignment ist erfolgreich</li>
+        <li>der interne Backup-Policy-Service ist bereit</li>
+        <li>MongoDB und weitere Backend-Abhängigkeiten sind gesund</li>
+        <li>neue Backup-Jobs werden erstellt oder abgeschlossen</li>
       </ul>
     </div>
   </div>
@@ -295,21 +421,238 @@ SSL peer certificate validation failed: certificate has expired</code></pre>
   <div class="card">
     <h3>Weiterführende Diagnose</h3>
     <p>Für die weitere Untersuchung empfiehlt IBM, gezielt Backup-&amp;-Restore-Logs zu erfassen. Das Log-Paket enthält primär Ressourcen des Namespace <code>ibm-backup-restore</code>; in Hub-and-Spoke-Umgebungen lassen sich zusätzlich gezielt Logs einzelner Spoke-Cluster auswählen.</p>
-    <details><summary>Weiterführende IBM-Referenzen</summary><div class="inner">
+    <details><summary>Weiterführende Referenzen</summary><div class="inner">
+      <p style="margin-bottom:8px"><b>IBM Fusion</b></p>
       <ul class="clean">
         <li><a href="https://www.ibm.com/docs/en/fusion-software/2.12.x?topic=overview-hub-spoke-model">Hub and spoke model of Fusion Backup &amp; Restore service</a></li>
         <li><a href="https://www.ibm.com/docs/en/fusion-software/2.12.x?topic=fusion-collecting-logs-in">Collecting logs in IBM Fusion</a></li>
         <li><a href="https://www.ibm.com/docs/en/fusion-software/2.12.x?topic=policies-creating-backup-policy">Creating backup policy</a></li>
         <li><a href="https://www.ibm.com/docs/en/fusion-software/2.12.x?topic=fusion-analyzing-events-in">Analyzing events in IBM Fusion</a></li>
         <li><a href="https://www.ibm.com/docs/en/fusion-software/2.12.x?topic=restore-backup-service-installation-upgrade-issues">Backup &amp; Restore service installation and upgrade issues</a></li>
+        <li><a href="https://www.ibm.com/docs/en/fusion-software/2.12.x?topic=fusion-backup-restore-events-error-codes">Backup &amp; Restore events and error codes</a></li>
+        <li><a href="https://www.ibm.com/docs/en/fusion-software/2.12.x?topic=issues-backup">Backup issues</a></li>
+      </ul>
+      <p style="margin:14px 0 8px"><b>MongoDB</b></p>
+      <ul class="clean">
+        <li><a href="https://www.mongodb.com/docs/manual/core/replica-set-primary/">Replica Set Primary</a></li>
+        <li><a href="https://www.mongodb.com/docs/manual/core/read-preference/">Read Preference</a></li>
+        <li><a href="https://www.mongodb.com/docs/manual/reference/replica-states/">Replica Set Member States</a></li>
       </ul>
     </div></details>
   </div>
 </section>
 
+<!-- ================= 6 BEHEBUNG ================= -->
+<section id="loesung" class="rose">
+  <div class="sec-head"><div class="badge">6</div><h2>Behebung: MongoDB-CA regenerieren</h2></div>
+  <p class="sec-sub">Die abgelaufene MongoDB-CA wird durch Neuerzeugung der <code>GuardianMongo</code>-Custom-Resource regeneriert.</p>
+
+  <div class="warn"><b>Vor Beginn:</b> Support-Paket sammeln und die in Schritt 3–4 exportierten YAML-Dateien sichern. Die Prozedur in einem geplanten Wartungsfenster durchführen – sie verursacht eine vorübergehende Unterbrechung des Backup-&amp;-Restore-Service auf dem Spoke-Cluster.</div>
+
+  <div class="card">
+    <h3>Eine PKI-Regeneration muss konsistent sein</h3>
+    <p>Bei einer abgelaufenen <code>mongoCA</code> genügt es nicht, nur ein einzelnes Server- oder Peer-Zertifikat auszutauschen. CA, davon abhängige Leaf-/Peer-Zertifikate und die Trust-Referenzen aller Replica-Set-Mitglieder müssen zueinander passen. Deshalb setzt die Prozedur an der <code>GuardianMongo</code>-CR an, die die gesamte PKI verwaltet, statt an einem einzelnen Zertifikat.</p>
+    <pre><code>Neue mongoCA
+  + gültige MongoDB-Server-/Peer-Zertifikate
+  + korrekte Signaturkette
+  + aktualisierte Trust-Referenzen bei allen Replica-Set-Mitgliedern
+  + kontrollierter Neustart der betroffenen MongoDB-Workloads
+  = wieder funktionierende TLS-Kommunikation im Replica Set</code></pre>
+  </div>
+
+  <div class="card">
+    <h3>Die vier Phasen auf einen Blick</h3>
+    <ol class="steps">
+      <li><div><b>Phase A · Vorbereiten &amp; sichern</b><small>Schritt 0–4: Support-Paket sammeln, sicheren Arbeitsordner anlegen, Ablauf der CA bestätigen, GuardianMongo-CR und MongoDB-Secret exportieren.</small></div></li>
+      <li><div><b>Phase B · CR neu erzeugen</b><small>Schritt 5–6: GuardianMongo-CR löschen und neu anlegen – das stößt die PKI-Regeneration an.</small></div></li>
+      <li><div><b>Phase C · Original-Secret wiederherstellen</b><small>Schritt 7–9: neu generiertes MongoDB-Secret verwerfen, Original-Secret zurückspielen, StatefulSet neu starten.</small></div></li>
+      <li><div><b>Phase D · Validieren</b><small>Schritt 10–14: neue CA, StatefulSet/Pods, Replica-Set-Status, Backup-Policy-Service und Policy Assignment prüfen.</small></div></li>
+    </ol>
+  </div>
+
+  <h3 style="margin:26px 0 6px;font-size:1.15rem">Phase A · Vorbereiten &amp; sichern</h3>
+
+  <details>
+    <summary>Schritt 0 · Backup-&amp;-Restore-Logs sammeln (empfohlen)</summary>
+    <div class="inner">
+      <p>Vor jeder Änderung den aktuellen Zustand über Logs, Events und Ressourcenstatus dokumentieren – nützlich für die Fehlersuche und als Rollback-Grundlage, falls die Prozedur unerwartet verläuft. Über die Fusion-UI: <b>Support → Log Collection</b> → neue Anfrage anlegen → betroffenen Spoke-Cluster auswählen → Backup-&amp;-Restore-Komponenten einschließen → Paket herunterladen und sicher ablegen.</p>
+      <div class="note"><b>Wichtig:</b> Erst mit der Zertifikatsregeneration fortfahren, wenn das Log-Paket erfolgreich heruntergeladen und gesichert ist.</div>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 1 · Sicheren Arbeitsordner anlegen</summary>
+    <div class="inner">
+      <p>Alle Exporte dieser Prozedur landen in einem eigenen, geschützten Ordner statt in <code>/tmp</code> – die Dateien können sensible Konfiguration enthalten.</p>
+      <pre><code>mkdir -p ~/ibm-fusion-mongodb-cert-rotation
+chmod 700 ~/ibm-fusion-mongodb-cert-rotation</code></pre>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 2 · Ablauf und Fingerprint der CA bestätigen</summary>
+    <div class="inner">
+      <p>Die Zertifikatsprüfung aus Abschnitt 4 (Schritt A/B) hier wiederholen und zusätzlich Seriennummer sowie SHA-256-Fingerprint notieren – als Vergleichswert für die Validierung nach der Regeneration.</p>
+      <pre><code>oc -n ibm-backup-restore get secret certificates-tls-secret \
+  -o jsonpath='{.data.&lt;mongo-ca-key&gt;}' \
+  | base64 -d \
+  | openssl x509 -noout -subject -issuer -serial -dates -fingerprint -sha256</code></pre>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 3 · GuardianMongo-CR exportieren</summary>
+    <div class="inner">
+      <p>Sichert den aktuellen Zustand der Custom Resource, bevor sie gelöscht wird.</p>
+      <pre><code>oc -n ibm-backup-restore get guardianmongo guardianmongo \
+  -o yaml > ~/ibm-fusion-mongodb-cert-rotation/guardianmongo-before.yaml</code></pre>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 4 · MongoDB-Secret exportieren und beide Exporte verifizieren</summary>
+    <div class="inner">
+      <p>Sichert das bestehende MongoDB-Secret als Rollback-Grundlage.</p>
+      <pre><code>oc -n ibm-backup-restore get secret mongodb \
+  -o yaml > ~/ibm-fusion-mongodb-cert-rotation/mongodb-secret-before.yaml</code></pre>
+      <p>Beide Exporte auf Vollständigkeit prüfen:</p>
+      <pre><code>test -s ~/ibm-fusion-mongodb-cert-rotation/guardianmongo-before.yaml \
+  &amp;&amp; test -s ~/ibm-fusion-mongodb-cert-rotation/mongodb-secret-before.yaml \
+  &amp;&amp; echo "Exports vorhanden und nicht leer"</code></pre>
+      <p>Und mit einer Prüfsumme absichern, um spätere Manipulation oder Beschädigung erkennbar zu machen:</p>
+      <pre><code>sha256sum ~/ibm-fusion-mongodb-cert-rotation/guardianmongo-before.yaml \
+  ~/ibm-fusion-mongodb-cert-rotation/mongodb-secret-before.yaml</code></pre>
+      <div class="warn"><b>Achtung:</b> Erst weitermachen, wenn beide Dateien erfolgreich gesichert und geprüft sind – sie werden für das Rollback in Phase C benötigt. Keine Backup-, Restore-, Policy- oder Service-Änderungen parallel zu dieser Prozedur durchführen.</div>
+    </div>
+  </details>
+
+  <h3 style="margin:26px 0 6px;font-size:1.15rem">Phase B · CR neu erzeugen</h3>
+
+  <details>
+    <summary>Schritt 5 · GuardianMongo-CR löschen</summary>
+    <div class="inner">
+      <p>Entfernt die Custom Resource, die den fehlerhaften CA-Zustand referenziert. Keine Secrets oder Zertifikate ohne bestätigte Owner- bzw. Controller-Beziehung blind löschen – hier ist die Beziehung über die CR eindeutig.</p>
+      <pre><code>oc delete GuardianMongo/guardianmongo -n ibm-backup-restore</code></pre>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 6 · GuardianMongo-CR neu erzeugen</summary>
+    <div class="inner">
+      <p>Entweder den zuvor exportierten Stand erneut anwenden:</p>
+      <pre><code>oc apply -n ibm-backup-restore -f ~/ibm-fusion-mongodb-cert-rotation/guardianmongo-before.yaml</code></pre>
+      <p>oder die CR manuell mit den Werten aus dem Original-YAML neu anlegen:</p>
+      <pre><code>apiVersion: fusion.guardian.ibm.com/v1
+kind: GuardianMongo
+metadata:
+  name: guardianmongo
+  namespace: ibm-backup-restore
+spec:
+  mongoname: mongodb
+  mongonamespace: ibm-backup-restore
+  mongostate: Installed
+  mongostorageclassname: &lt;storage-class-from-original-yaml&gt;
+  mongousage: Full</code></pre>
+      <p>Etwa 2–3 Minuten warten – das löst die Regeneration von <code>certificates-tls-secret</code> (neue CA plus neue Leaf-/Peer-Zertifikate und Trust-Referenzen) und die Neuanlage eines <code>mongodb</code>-Secrets aus. Danach prüfen, ob beide Ressourcen entstanden sind:</p>
+      <pre><code>oc get secret certificates-tls-secret -n ibm-backup-restore
+oc get secret mongodb -n ibm-backup-restore</code></pre>
+    </div>
+  </details>
+
+  <h3 style="margin:26px 0 6px;font-size:1.15rem">Phase C · Original-Secret wiederherstellen</h3>
+
+  <details>
+    <summary>Schritt 7 · neu generiertes MongoDB-Secret löschen</summary>
+    <div class="inner">
+      <p>Das frisch erzeugte <code>mongodb</code>-Secret weicht vom ursprünglichen ab und wird durch das gesicherte Original ersetzt.</p>
+      <pre><code>oc delete secret/mongodb -n ibm-backup-restore</code></pre>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 8 · Original-MongoDB-Secret wiederherstellen</summary>
+    <div class="inner">
+      <p>Spielt das in Schritt 4 gesicherte <code>mongodb</code>-Secret zurück.</p>
+      <pre><code>oc apply -n ibm-backup-restore -f ~/ibm-fusion-mongodb-cert-rotation/mongodb-secret-before.yaml</code></pre>
+      <div class="warn"><b>Wichtig:</b> Nur das <code>mongodb</code>-Secret wird wiederhergestellt. Das alte <code>certificates-tls-secret</code> darf <b>nicht</b> zurückgespielt werden – es enthält die abgelaufene <code>mongoCA</code>. Ein Rollback dieses Secrets würde die abgelaufene Vertrauenskette erneut aktivieren und den ursprünglichen Fehler reproduzieren.</div>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 9 · MongoDB-StatefulSet neu starten</summary>
+    <div class="inner">
+      <p>Damit alle Replica-Set-Mitglieder die neue CA, die neuen Zertifikate und das wiederhergestellte Secret übernehmen, wird das StatefulSet komplett neu gestartet.</p>
+      <pre><code>oc scale statefulset/mongodb --replicas=0 -n ibm-backup-restore</code></pre>
+      <p>Prüfen, dass alle MongoDB-Pods beendet sind:</p>
+      <pre><code>oc get pods -n ibm-backup-restore | grep mongo</code></pre>
+      <p>StatefulSet wieder auf 3 Replicas hochskalieren:</p>
+      <pre><code>oc scale statefulset/mongodb --replicas=3 -n ibm-backup-restore</code></pre>
+      <p>Ein paar Minuten warten und prüfen, ob die Backup-&amp;-Restore-Services wieder zu MongoDB verbinden können. Vor einem vollständigen Neustart sicherstellen, dass das Wartungsfenster dafür ausreichend lang bemessen ist.</p>
+    </div>
+  </details>
+
+  <h3 style="margin:26px 0 6px;font-size:1.15rem">Phase D · Validieren</h3>
+  <p style="color:var(--ink-soft);font-size:.92rem;margin-bottom:6px">Nach einer erfolgreichen Regeneration müssen alle Ebenen der Fehlerkette geprüft werden, nicht nur das Zertifikat selbst.</p>
+
+  <details>
+    <summary>Schritt 10 · Neue CA prüfen</summary>
+    <div class="inner">
+      <pre><code>oc -n ibm-backup-restore get secret certificates-tls-secret \
+  -o jsonpath='{.data.&lt;mongo-ca-key&gt;}' \
+  | base64 -d \
+  | openssl x509 -noout -subject -issuer -serial -dates -fingerprint -sha256</code></pre>
+      <p>Erwartete Ergebnisse:</p>
+      <ul class="clean">
+        <li><code>Not After</code> liegt deutlich in der Zukunft</li>
+        <li>Seriennummer und/oder SHA-256-Fingerprint unterscheiden sich vom in Schritt 2 notierten alten Wert</li>
+        <li>das Zertifikat ist weiterhin als CA markiert</li>
+        <li>die Leaf-/Peer-Zertifikate sind über eine gültige Vertrauenskette prüfbar</li>
+      </ul>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 11 · StatefulSet und Pods prüfen</summary>
+    <div class="inner">
+      <pre><code>oc -n ibm-backup-restore get statefulset mongodb -o wide
+oc -n ibm-backup-restore get pods -o wide | grep -i mongo</code></pre>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 12 · Replica-Set-Status prüfen</summary>
+    <div class="inner">
+      <p>Falls <code>mongosh</code> im MongoDB-Pod verfügbar ist:</p>
+      <pre><code>oc -n ibm-backup-restore exec -it mongodb-ab-0 -- mongosh --eval \
+  'rs.status().members.map(m => ({name: m.name, state: m.stateStr, health: m.health, self: m.self}))'</code></pre>
+      <p>Erwartung: genau ein Mitglied ist <code>PRIMARY</code>, die übrigen sind <code>SECONDARY</code>, alle verfügbaren Mitglieder zeigen <code>health: 1</code>.</p>
+      <div class="note"><b>Hinweis:</b> <code>mongodb-ab-0</code> ist nicht automatisch der Primary. Die Rolle muss über <code>rs.status()</code> bzw. <code>db.hello()</code> geprüft werden.</div>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 13 · Backup-Policy-Service prüfen</summary>
+    <div class="inner">
+      <pre><code>oc -n ibm-backup-restore get deployment backuppolicy-deployment -o wide
+oc -n ibm-backup-restore get pods -o wide | grep -i backuppolicy
+oc -n ibm-backup-restore get endpoints backuppolicy-service -o wide</code></pre>
+      <p>Erwartung: der <code>backuppolicy</code>-Pod ist <code>Running</code> und <code>Ready</code>, der Health-Endpunkt <code>/health/ready</code> schlägt nicht mehr fehl, der Service besitzt mindestens einen Ready Endpoint, keine neuen HTTP-503- oder <code>context deadline exceeded</code>-Fehler.</p>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 14 · Policy Assignment und End-to-End-Funktion prüfen</summary>
+    <div class="inner">
+      <pre><code>oc -n ibm-spectrum-fusion-ns get policyassignment
+oc -n ibm-spectrum-fusion-ns describe policyassignment &lt;policyassignment-name&gt;</code></pre>
+      <p>Erwartung: Das Policy Assignment verbleibt nicht in <code>FailedCreating</code>, die Policy wird wieder erfolgreich der Anwendung zugeordnet, neue Backup-Jobs werden erzeugt, die Backup Location zeigt wieder aktive Policies und Anwendungen, und neue Backupdaten werden in das konfigurierte Object-Storage-Ziel geschrieben.</p>
+    </div>
+  </details>
+</section>
+
 </main>
 
-<footer>Zusammengefasst aus einer IBM-Fusion-Incident-Analyse (Backup &amp; Restore, Version 2.12.x) und der verlinkten IBM-Dokumentation. Kein Ersatz für die offizielle Doku – Details vor Produktionseinsatz gegen die IBM-Fusion-Dokumentation prüfen.</footer>
+<footer>Diagnose zusammengefasst aus einer IBM-Fusion-Incident-Analyse (Backup &amp; Restore, Version 2.12.x), einer nachträglichen Präzisierung auf die MongoDB-CA (<code>mongoCA</code>) als bestätigte Ursache, und der verlinkten IBM- und MongoDB-Dokumentation. Kein Ersatz für die offizielle Doku oder den IBM-Support – Details und Auswirkungen vor Produktionseinsatz mit IBM abstimmen.</footer>
 
 </body>
 </html>
