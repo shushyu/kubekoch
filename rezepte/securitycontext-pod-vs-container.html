@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>securityContext – Pod-Ebene vs. Container-Ebene</title>
+<meta name="rezept-kategorie"    content="security">
+<meta name="rezept-beschreibung" content="Welches securityContext-Feld gehört an den Pod, welches an den Container – mit der Faustregel dahinter, dem Restricted-Standard-Rezept und den Fehlern, die immer wieder passieren.">
+<meta name="rezept-stand"        content="Kubernetes · 08/2026">
+<meta name="rezept-suche"        content="securitycontext podsecuritycontext runasuser runasnonroot fsgroup allowprivilegeescalation readonlyrootfilesystem capabilities privileged seccompprofile runtimedefault restricted pod security standard sysctls supplementalgroups no_new_privs cka cks">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#33394a;
+  --ink-soft:#5c6376;
+  --paper:#fbfaf7;
+  --card:#ffffff;
+  --line:#e9e6df;
+  --code-bg:#31364a;
+  --code-ink:#e8eaf2;
+  --mint:#d9f2e4;      --mint-deep:#2f8f6b;
+  --sky:#dcebf9;       --sky-deep:#2d6fa8;
+  --lav:#e7e2f7;       --lav-deep:#6b5bb5;
+  --peach:#fbe6d7;     --peach-deep:#c2703d;
+  --butter:#faf0cf;    --butter-deep:#a5842a;
+  --rose:#f9e0e6;      --rose-deep:#b34f6d;
+  --aqua:#d7eff0;      --aqua-deep:#2b8288;
+  --r-lg:26px; --r-md:18px; --r-sm:12px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;scroll-padding-top:90px}
+body{font-family:'Inter',sans-serif;background:var(--paper);color:var(--ink);line-height:1.65;font-size:16px}
+h1,h2,h3,h4{font-family:'Sora',sans-serif;line-height:1.2}
+
+/* ---------- Kopf ---------- */
+header{max-width:1060px;margin:0 auto;padding:56px 24px 8px}
+.kicker{display:inline-block;background:var(--lav);color:var(--lav-deep);font-weight:600;font-size:.8rem;letter-spacing:.08em;text-transform:uppercase;padding:6px 14px;border-radius:999px;margin-bottom:18px}
+header h1{font-size:clamp(1.9rem,4.5vw,3rem);font-weight:800;letter-spacing:-.02em}
+header h1 span{color:var(--mint-deep)}
+.lede{color:var(--ink-soft);max-width:640px;margin-top:14px;font-size:1.05rem}
+
+/* ---------- Route ---------- */
+.route{max-width:1060px;margin:34px auto 10px;padding:0 24px;display:grid;grid-template-columns:repeat(6,1fr);gap:12px}
+.route a{display:flex;flex-direction:column;gap:8px;text-decoration:none;color:var(--ink);background:var(--card);border:1.5px solid var(--line);border-radius:var(--r-md);padding:16px 14px;transition:transform .15s ease,box-shadow .15s ease}
+.route a:hover,.route a:focus-visible{transform:translateY(-3px);box-shadow:0 8px 22px rgba(60,60,90,.10);outline:none}
+.route .dot{width:34px;height:34px;border-radius:12px;display:grid;place-items:center;font-family:'Sora';font-weight:700;font-size:.9rem}
+.route .t{font-weight:600;font-size:.86rem;line-height:1.3}
+.route .s{font-size:.74rem;color:var(--ink-soft)}
+.route a:nth-child(1) .dot{background:var(--aqua);color:var(--aqua-deep)}
+.route a:nth-child(2) .dot{background:var(--mint);color:var(--mint-deep)}
+.route a:nth-child(3) .dot{background:var(--sky);color:var(--sky-deep)}
+.route a:nth-child(4) .dot{background:var(--lav);color:var(--lav-deep)}
+.route a:nth-child(5) .dot{background:var(--peach);color:var(--peach-deep)}
+.route a:nth-child(6) .dot{background:var(--butter);color:var(--butter-deep)}
+
+/* ---------- Sticky-Nav ---------- */
+nav{position:sticky;top:0;z-index:50;background:rgba(251,250,247,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);margin-top:26px}
+nav .wrap{max-width:1060px;margin:0 auto;padding:10px 24px;display:flex;gap:8px;overflow-x:auto}
+nav a{white-space:nowrap;text-decoration:none;font-size:.82rem;font-weight:600;color:var(--ink-soft);padding:7px 14px;border-radius:999px;border:1px solid transparent}
+nav a:hover{background:var(--card);border-color:var(--line);color:var(--ink)}
+
+/* ---------- Sektionen ---------- */
+main{max-width:1060px;margin:0 auto;padding:20px 24px 90px}
+section{margin-top:64px}
+.sec-head{display:flex;align-items:center;gap:16px;margin-bottom:8px}
+.badge{width:52px;height:52px;border-radius:16px;display:grid;place-items:center;font-family:'Sora';font-weight:800;font-size:1.25rem;flex-shrink:0}
+section h2{font-size:clamp(1.4rem,3vw,1.9rem);font-weight:700}
+.sec-sub{color:var(--ink-soft);margin-bottom:22px;max-width:720px}
+.aqua .badge{background:var(--aqua);color:var(--aqua-deep)}
+.mint .badge{background:var(--mint);color:var(--mint-deep)}
+.sky .badge{background:var(--sky);color:var(--sky-deep)}
+.lav .badge{background:var(--lav);color:var(--lav-deep)}
+.peach .badge{background:var(--peach);color:var(--peach-deep)}
+.butter .badge{background:var(--butter);color:var(--butter-deep)}
+
+/* ---------- Karten & Schritte ---------- */
+.card{background:var(--card);border:1.5px solid var(--line);border-radius:var(--r-lg);padding:26px 28px;margin-bottom:20px}
+.card h3{font-size:1.08rem;margin-bottom:14px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+ol.steps{list-style:none;counter-reset:s;display:flex;flex-direction:column;gap:14px}
+ol.steps li{counter-increment:s;display:grid;grid-template-columns:34px 1fr;gap:14px;align-items:start}
+ol.steps li::before{content:counter(s);width:30px;height:30px;border-radius:10px;display:grid;place-items:center;font-family:'Sora';font-weight:700;font-size:.85rem;margin-top:2px}
+.aqua ol.steps li::before{background:var(--aqua);color:var(--aqua-deep)}
+.mint ol.steps li::before{background:var(--mint);color:var(--mint-deep)}
+.sky ol.steps li::before{background:var(--sky);color:var(--sky-deep)}
+.lav ol.steps li::before{background:var(--lav);color:var(--lav-deep)}
+.peach ol.steps li::before{background:var(--peach);color:var(--peach-deep)}
+.butter ol.steps li::before{background:var(--butter);color:var(--butter-deep)}
+.steps b{font-weight:600}
+.steps small{display:block;color:var(--ink-soft);font-size:.86rem;margin-top:2px}
+
+ul.clean{list-style:none;display:flex;flex-direction:column;gap:10px}
+ul.clean li{padding-left:24px;position:relative}
+ul.clean li::before{content:"";position:absolute;left:4px;top:.62em;width:9px;height:9px;border-radius:3px;background:var(--line)}
+.aqua ul.clean li::before{background:var(--aqua-deep)}
+.mint ul.clean li::before{background:var(--mint-deep)}
+.sky ul.clean li::before{background:var(--sky-deep)}
+.lav ul.clean li::before{background:var(--lav-deep)}
+.peach ul.clean li::before{background:var(--peach-deep)}
+.butter ul.clean li::before{background:var(--butter-deep)}
+
+/* ---------- Code ---------- */
+pre{background:var(--code-bg);color:var(--code-ink);border-radius:var(--r-sm);padding:16px 18px;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:.82rem;line-height:1.6;margin:10px 0}
+code{font-family:'JetBrains Mono',monospace;font-size:.85em;background:#efede7;border-radius:6px;padding:2px 6px}
+pre code{background:none;padding:0;font-size:1em}
+pre .c{color:#9aa3c0}
+
+/* ---------- Hinweisboxen ---------- */
+.note,.warn,.mnemo{border-radius:var(--r-md);padding:14px 18px;margin:14px 0;font-size:.92rem}
+.note{background:var(--sky)}
+.warn{background:var(--rose)}
+.mnemo{background:var(--butter)}
+.note b,.warn b,.mnemo b{font-weight:700}
+.mnemo::before{content:"🧠 Merkbild · ";font-weight:700}
+.warn::before{content:"⚠️ ";font-weight:700}
+
+/* ---------- Tabellen ---------- */
+table{width:100%;border-collapse:separate;border-spacing:0;font-size:.88rem;margin:10px 0}
+th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-family:'Sora';font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft)}
+tr:last-child td{border-bottom:none}
+thead th:first-child{border-top-left-radius:var(--r-sm)}
+thead th:last-child{border-top-right-radius:var(--r-sm)}
+thead{background:var(--paper)}
+
+/* ---------- Details ---------- */
+details{border:1.5px solid var(--line);border-radius:var(--r-md);margin:12px 0;background:var(--card)}
+details summary{cursor:pointer;padding:14px 18px;font-weight:600;font-size:.94rem;list-style:none;display:flex;align-items:center;gap:10px}
+details summary::before{content:"+";font-family:'Sora';font-weight:700;width:24px;height:24px;border-radius:8px;background:var(--paper);display:grid;place-items:center;flex-shrink:0}
+details[open] summary::before{content:"–"}
+details .inner{padding:0 18px 18px}
+summary::-webkit-details-marker{display:none}
+
+footer{max-width:1060px;margin:0 auto;padding:30px 24px 60px;color:var(--ink-soft);font-size:.82rem;border-top:1px solid var(--line)}
+footer a{color:var(--ink-soft)}
+
+@media(max-width:820px){
+  .route{grid-template-columns:repeat(2,1fr)}
+  .grid2{grid-template-columns:1fr}
+}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.route a{transition:none}}
+</style>
+</head>
+<body>
+
+<header>
+  <span class="kicker">Kubernetes · Workload-Security</span>
+  <h1>securityContext:<br>Pod-Ebene vs. <span>Container-Ebene</span></h1>
+  <p class="lede">Zwei API-Typen, teilweise gleiche Feldnamen, unterschiedliche Wirkung – das ist die Hauptquelle für Verwirrung. Sechs Abschnitte von der Faustregel über die Feldübersicht bis zum Standard-Rezept und den typischen Fehlern.</p>
+</header>
+
+<div class="route">
+  <a href="#grundidee"><span class="dot">0</span><span class="t">Grundidee</span><span class="s">Zwei Orte, eine Faustregel</span></a>
+  <a href="#uebersicht"><span class="dot">1</span><span class="t">Was gehört wohin</span><span class="s">Pod, Container, beide</span></a>
+  <a href="#felder"><span class="dot">2</span><span class="t">Felder im Detail</span><span class="s">Wirkung und Stolpersteine</span></a>
+  <a href="#rezept"><span class="dot">3</span><span class="t">Standard-Rezept</span><span class="s">Restricted, A-C-R-S</span></a>
+  <a href="#fehler"><span class="dot">4</span><span class="t">Häufige Fehler</span><span class="s">Fünf Klassiker</span></a>
+  <a href="#pruefen"><span class="dot">5</span><span class="t">Nachschlagen</span><span class="s">explain und Realitätscheck</span></a>
+</div>
+
+<nav><div class="wrap">
+  <a href="#grundidee">0 · Grundidee</a>
+  <a href="#uebersicht">1 · Was gehört wohin</a>
+  <a href="#felder">2 · Felder im Detail</a>
+  <a href="#rezept">3 · Standard-Rezept</a>
+  <a href="#fehler">4 · Häufige Fehler</a>
+  <a href="#pruefen">5 · Nachschlagen</a>
+</div></nav>
+
+<main>
+
+<!-- ================= 0 GRUNDIDEE ================= -->
+<section id="grundidee" class="aqua">
+  <div class="sec-head"><div class="badge">0</div><h2>Grundidee: zwei Orte, eine Faustregel</h2></div>
+  <p class="sec-sub">Der <code>securityContext</code> ist kein Kubernetes-Feature, sondern ein Formular, das Kubernetes an die Container-Runtime weiterreicht. Alles darin sind Linux-Grundlagen: Benutzer-ID, Gruppen, Capabilities, Mount-Optionen, Kernel-Flags.</p>
+
+  <div class="card">
+    <h3>Die Faustregel</h3>
+    <p>Ist die Einstellung etwas, das der Kernel <b>pro Prozess</b> setzt, gehört sie an den <b>Container</b>. Ist es etwas, das für den <b>ganzen Pod gemeinsam</b> gilt – Volumes, Netzwerk, Kernel-Parameter –, gehört sie an den <b>Pod</b>.</p>
+    <p style="margin-top:10px">Damit beantwortet sich fast jede Zuordnungsfrage von selbst.</p>
+  </div>
+
+  <div class="card">
+    <h3>Die zwei Orte im YAML</h3>
+    <pre><code>apiVersion: v1
+kind: Pod
+spec:
+  securityContext:            <span class="c"># ← PodSecurityContext</span>
+    runAsUser: 1000           <span class="c">#   gilt als Vorgabe für ALLE Container</span>
+    fsGroup: 2000
+  containers:
+  - name: app
+    image: nginx
+    securityContext:          <span class="c"># ← SecurityContext (Container)</span>
+      runAsUser: 30000        <span class="c">#   gewinnt bei Konflikt → 30000, nicht 1000</span>
+      readOnlyRootFilesystem: true</code></pre>
+    <p>Zwei verschiedene API-Typen mit teilweise gleichen Feldnamen.</p>
+  </div>
+
+  <div class="note"><b>Regel:</b> Container schlägt Pod. Was am Container steht, überschreibt die Pod-Vorgabe – aber nur für diesen einen Container.</div>
+
+  <div class="mnemo"><b>Der Pod ist die Hausordnung im Treppenhaus, der Container der Aushang an der Wohnungstür.</b> Wo beide etwas sagen, gilt der Aushang. Manche Dinge – Waschküche, Hausanschluss – kann nur die Hausordnung regeln, weil sie allen gemeinsam gehören.</div>
+</section>
+
+<!-- ================= 1 ÜBERSICHT ================= -->
+<section id="uebersicht" class="mint">
+  <div class="sec-head"><div class="badge">1</div><h2>Was gehört wohin</h2></div>
+  <p class="sec-sub">Drei Gruppen: Felder, die es nur am Pod gibt, Felder nur am Container, und solche, die an beiden Stellen erlaubt sind.</p>
+
+  <div class="card">
+    <h3>Nur Pod-Ebene</h3>
+    <table>
+      <thead><tr><th>Feld</th><th>Was es macht</th></tr></thead>
+      <tbody>
+        <tr><td><b><code>fsGroup</code></b></td><td>Setzt eine Gruppen-ID auf gemountete Volumes und die darin erzeugten Dateien</td></tr>
+        <tr><td><b><code>fsGroupChangePolicy</code></b></td><td><code>OnRootMismatch</code> oder <code>Always</code> – ob bei jedem Start alle Dateirechte neu gesetzt werden</td></tr>
+        <tr><td><b><code>supplementalGroups</code></b></td><td>Zusätzliche Gruppen für alle Container-Prozesse</td></tr>
+        <tr><td><b><code>supplementalGroupsPolicy</code></b></td><td><code>Merge</code> (Default) oder <code>Strict</code> – ob Gruppen aus <code>/etc/group</code> des Images dazukommen</td></tr>
+        <tr><td><b><code>sysctls</code></b></td><td>Kernel-Parameter für den Pod, z. B. <code>net.core.somaxconn</code></td></tr>
+      </tbody>
+    </table>
+    <p style="margin-top:12px"><b>Warum nur hier:</b> Volumes und der Netzwerk-Namespace gehören dem Pod, nicht einem einzelnen Container. Es gäbe keine sinnvolle Antwort darauf, welche <code>fsGroup</code> gelten soll, wenn zwei Container im selben Pod verschiedene angeben.</p>
+  </div>
+
+  <div class="card">
+    <h3>Nur Container-Ebene</h3>
+    <table>
+      <thead><tr><th>Feld</th><th>Was es macht</th></tr></thead>
+      <tbody>
+        <tr><td><b><code>allowPrivilegeEscalation</code></b></td><td>Setzt das Kernel-Flag <code>no_new_privs</code>. Verhindert, dass ein Prozess über setuid-Binaries – klassisch <code>sudo</code> – mehr Rechte bekommt als sein Elternprozess</td></tr>
+        <tr><td><b><code>readOnlyRootFilesystem</code></b></td><td>Mountet das Wurzel-Dateisystem des Containers schreibgeschützt</td></tr>
+        <tr><td><b><code>privileged</code></b></td><td>Der Generalschlüssel: praktisch alle Capabilities plus Zugriff auf die Geräte der Node</td></tr>
+        <tr><td><b><code>capabilities</code></b></td><td>Einzelne Kernel-Rechte gezielt geben (<code>add</code>) oder wegnehmen (<code>drop</code>)</td></tr>
+        <tr><td><b><code>procMount</code></b></td><td>Wie <code>/proc</code> gemountet wird – Sonderfall, praktisch nur für verschachtelte Container</td></tr>
+      </tbody>
+    </table>
+    <p style="margin-top:12px"><b>Warum nur hier:</b> Das sind Eigenschaften, die der Kernel beim Start <i>eines</i> Prozesses setzt oder die am Dateisystem <i>eines</i> Containers hängen. Jeder Container startet einzeln, jeder hat sein eigenes Root-Dateisystem.</p>
+    <div class="note"><b>Der Klassiker:</b> <code>allowPrivilegeEscalation</code> sucht fast jeder zuerst auf Pod-Ebene. Dort gibt es das Feld nicht – es ist ein reines Prozess-Flag ohne gemeinsamen Elternprozess, auf den man es einmal anwenden könnte.</div>
+  </div>
+
+  <div class="card">
+    <h3>Auf beiden Ebenen</h3>
+    <table>
+      <thead><tr><th>Feld</th><th>Verhalten</th></tr></thead>
+      <tbody>
+        <tr><td><b><code>runAsUser</code></b></td><td>Pod = Vorgabe, Container überschreibt</td></tr>
+        <tr><td><b><code>runAsGroup</code></b></td><td>dito. Ohne Angabe ist die primäre Gruppe root (0)</td></tr>
+        <tr><td><b><code>runAsNonRoot</code></b></td><td>Nur eine Prüfung: startet der Container als UID 0, wird er abgelehnt</td></tr>
+        <tr><td><b><code>seccompProfile</code></b></td><td>Syscall-Filter, <code>RuntimeDefault</code> oder <code>Localhost</code></td></tr>
+        <tr><td><b><code>seLinuxOptions</code></b></td><td>SELinux-Labels</td></tr>
+        <tr><td><b><code>appArmorProfile</code></b></td><td>AppArmor-Profil – seit 1.30 eigenes Feld, davor Annotation</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>Kurz-Referenz zum Merken</h3>
+    <table>
+      <thead><tr><th>Frage</th><th>Ebene</th></tr></thead>
+      <tbody>
+        <tr><td><b>Wer bin ich?</b><br><code>runAsUser</code>, <code>runAsGroup</code>, <code>runAsNonRoot</code></td><td>beide, Container gewinnt</td></tr>
+        <tr><td><b>Was darf mein Prozess?</b><br><code>capabilities</code>, <code>privileged</code>, <code>allowPrivilegeEscalation</code></td><td>nur Container</td></tr>
+        <tr><td><b>Darf ich schreiben?</b><br><code>readOnlyRootFilesystem</code></td><td>nur Container</td></tr>
+        <tr><td><b>Wem gehören die Volumes?</b><br><code>fsGroup</code>, <code>supplementalGroups</code></td><td>nur Pod</td></tr>
+        <tr><td><b>Kernel-Parameter</b><br><code>sysctls</code></td><td>nur Pod</td></tr>
+        <tr><td><b>Syscall- und MAC-Filter</b><br><code>seccompProfile</code>, <code>seLinuxOptions</code>, <code>appArmorProfile</code></td><td>beide, Container gewinnt</td></tr>
+      </tbody>
+    </table>
+    <p style="margin-top:12px">Der rote Faden: <b>Prozess-Eigenschaften an den Container, gemeinsame Ressourcen an den Pod.</b></p>
+  </div>
+</section>
+
+<!-- ================= 2 FELDER ================= -->
+<section id="felder" class="sky">
+  <div class="sec-head"><div class="badge">2</div><h2>Die wichtigsten Felder im Detail</h2></div>
+  <p class="sec-sub">Was die Felder tatsächlich bewirken – und woran man bei jedem einzelnen typischerweise hängenbleibt.</p>
+
+  <details>
+    <summary><code>runAsUser</code> / <code>runAsNonRoot</code> · Wer bin ich?</summary>
+    <div class="inner">
+      <p>Ohne Angabe läuft der Container mit dem User aus dem Image – meistens root (UID 0). Container-root ist derselbe Kernel-root wie auf der Node, nur eingeschränkt. Bricht jemand aus, ist er oben angekommen.</p>
+      <p style="margin-top:10px"><code>runAsNonRoot: true</code> ist die robustere Variante: man muss keine konkrete UID kennen, Kubernetes lehnt einfach jeden Container ab, der als 0 startet.</p>
+      <div class="warn"><b>Achtung:</b> Wenn das Image keinen non-root User definiert, startet der Pod gar nicht. Dann braucht es zusätzlich ein <code>runAsUser: &lt;irgendwas&gt;</code>.</div>
+    </div>
+  </details>
+
+  <details>
+    <summary><code>readOnlyRootFilesystem</code> · Darf ich schreiben?</summary>
+    <div class="inner">
+      <p>Ein Angreifer kann keine Tools nachinstallieren, keine Binaries austauschen, kein Skript ablegen. Sehr wirksam, sehr billig.</p>
+      <p style="margin-top:10px">Der übliche Stolperstein: Anwendungen wollen irgendwo schreiben. Lösung sind <code>emptyDir</code>-Volumes an genau diesen Pfaden:</p>
+      <pre><code>volumeMounts:
+- name: tmp
+  mountPath: /tmp
+- name: cache
+  mountPath: /var/cache/nginx
+volumes:
+- name: tmp
+  emptyDir: {}
+- name: cache
+  emptyDir: {}</code></pre>
+      <div class="note"><b>Merksatz:</b> read-only Root plus <code>emptyDir</code> für die Schreibpfade. Wenn ein Pod nach <code>readOnlyRootFilesystem: true</code> in CrashLoop geht, fehlt fast immer genau so ein Volume.</div>
+    </div>
+  </details>
+
+  <details>
+    <summary><code>capabilities</code> · Root in Einzelteilen</summary>
+    <div class="inner">
+      <p>Linux hat root in etwa 40 Einzelrechte zerlegt. <code>CAP_NET_BIND_SERVICE</code> = darf auf Ports unter 1024 lauschen. <code>CAP_SYS_ADMIN</code> = praktisch root.</p>
+      <p style="margin-top:10px">Best Practice ist immer dasselbe Muster: alles wegnehmen, dann gezielt zurückgeben.</p>
+      <pre><code>capabilities:
+  drop: ["ALL"]
+  add: ["NET_BIND_SERVICE"]</code></pre>
+      <p>Die Namen werden ohne <code>CAP_</code>-Präfix geschrieben.</p>
+    </div>
+  </details>
+
+  <details>
+    <summary><code>privileged</code> · Der Aus-Schalter für alles andere</summary>
+    <div class="inner">
+      <p>Ein privilegierter Container ist keine Sicherheitsgrenze mehr, sondern ein Prozess auf der Node mit einem anderen Dateisystem. Damit lässt sich <code>/dev/mem</code> lesen, der Host mounten, Kernel-Module laden.</p>
+      <div class="warn"><b>Wichtig:</b> <code>privileged: true</code> macht <code>allowPrivilegeEscalation</code> automatisch wirkungslos – das Flag ist dann immer true. Dasselbe gilt bei <code>CAP_SYS_ADMIN</code>.</div>
+    </div>
+  </details>
+
+  <details>
+    <summary><code>allowPrivilegeEscalation</code> · Der unterschätzte Riegel</summary>
+    <div class="inner">
+      <p>Ohne dieses Flag nützt eine niedrige UID wenig: Gibt es im Image ein setuid-root-Binary, kann sich ein Prozess damit hocharbeiten. <code>false</code> setzt <code>no_new_privs</code> im Kernel und schließt diesen Weg.</p>
+    </div>
+  </details>
+
+  <details>
+    <summary><code>fsGroup</code> · Wem gehören die Volumes?</summary>
+    <div class="inner">
+      <p>Klassisches Problem: Der Container läuft als UID 1000, das gemountete Volume gehört root. Der Prozess kann nichts schreiben.</p>
+      <p style="margin-top:10px"><code>fsGroup: 2000</code> setzt die Gruppe des Volumes auf 2000 und hängt den Container-Prozess in diese Gruppe. Zusätzlich wird das setgid-Bit gesetzt, damit auch neu erzeugte Dateien der Gruppe gehören.</p>
+      <div class="warn"><b>Nebenwirkung bei großen Volumes:</b> Kubernetes läuft beim Start rekursiv durch alle Dateien. Das kann Minuten dauern. Dagegen hilft <code>fsGroupChangePolicy: OnRootMismatch</code> – dann wird nur geprüft, ob das Wurzelverzeichnis schon passt.</div>
+    </div>
+  </details>
+
+  <details>
+    <summary><code>seccompProfile</code> · Syscall-Filter</summary>
+    <div class="inner">
+      <p>Seccomp filtert Systemaufrufe. <code>RuntimeDefault</code> nimmt das Profil der Container-Runtime, das rund 60 gefährliche Syscalls sperrt. Kostet nichts, bricht fast nie etwas, ist Pflicht im Restricted-Standard.</p>
+      <pre><code>seccompProfile:
+  type: RuntimeDefault</code></pre>
+    </div>
+  </details>
+</section>
+
+<!-- ================= 3 REZEPT ================= -->
+<section id="rezept" class="lav">
+  <div class="sec-head"><div class="badge">3</div><h2>Das Standard-Rezept</h2></div>
+  <p class="sec-sub">Für praktisch jeden normalen Workload – und gleichzeitig die Umsetzung des Restricted Pod Security Standard.</p>
+
+  <div class="card">
+    <h3>Der vollständige Block</h3>
+    <pre><code>spec:
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10000
+    fsGroup: 10000
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+  - name: app
+    securityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      privileged: false
+      capabilities:
+        drop: ["ALL"]</code></pre>
+  </div>
+
+  <div class="card">
+    <h3>Die vier Pflichtfelder des Restricted-Standards</h3>
+    <ul class="clean">
+      <li><code>allowPrivilegeEscalation: false</code></li>
+      <li><code>capabilities.drop: ["ALL"]</code></li>
+      <li><code>runAsNonRoot: true</code></li>
+      <li><code>seccompProfile.type: RuntimeDefault</code></li>
+    </ul>
+    <div class="note"><b>Zur Platzierung:</b> <code>runAsNonRoot</code> und <code>seccompProfile</code> dürfen laut Standard auch auf Pod-Ebene stehen. Die anderen beiden müssen an jeden Container.</div>
+  </div>
+
+  <div class="mnemo"><b>A-C-R-S</b> – <b>A</b>ufstieg verboten, <b>C</b>apabilities weg, <b>R</b>oot verboten, <b>S</b>eccomp an.</div>
+</section>
+
+<!-- ================= 4 FEHLER ================= -->
+<section id="fehler" class="peach">
+  <div class="sec-head"><div class="badge">4</div><h2>Häufige Fehler</h2></div>
+  <p class="sec-sub">Fünf Muster, die immer wieder auftreten – die ersten beiden erzeugen still gar keine Wirkung, die anderen einen Pod, der nicht startet.</p>
+
+  <div class="card">
+    <ol class="steps">
+      <li><div><b>Alles auf Pod-Ebene schreiben</b><small><code>readOnlyRootFilesystem</code> und <code>allowPrivilegeEscalation</code> werden dort stillschweigend als unbekanntes Feld abgelehnt oder – je nach Client – als Fehler gemeldet. Wirkung: keine.</small></div></li>
+      <li><div><b>Nur einen von mehreren Containern anpassen</b><small>Bei zwei Containern brauchen beide ihren eigenen Block. Sidecars und Init-Container zählen mit.</small></div></li>
+      <li><div><b><code>runAsNonRoot: true</code> ohne passendes Image</b><small>Der Pod bleibt in <code>CreateContainerConfigError</code> hängen, mit der Meldung, dass der Container als root laufen würde.</small></div></li>
+      <li><div><b><code>readOnlyRootFilesystem</code> ohne emptyDir</b><small>CrashLoop, oft mit einer wenig aussagekräftigen Fehlermeldung der Anwendung.</small></div></li>
+      <li><div><b><code>privileged: false</code> setzen und sich sicher fühlen</b><small>Ohne <code>capabilities.drop</code> und <code>allowPrivilegeEscalation: false</code> bleiben genug Wege offen.</small></div></li>
+    </ol>
+  </div>
+</section>
+
+<!-- ================= 5 PRÜFEN ================= -->
+<section id="pruefen" class="butter">
+  <div class="sec-head"><div class="badge">5</div><h2>Nachschlagen und prüfen, was tatsächlich läuft</h2></div>
+  <p class="sec-sub">Welches Feld auf welcher Ebene existiert, lässt sich direkt im Cluster nachschlagen – schneller als jede Website und auch in der Prüfung verfügbar.</p>
+
+  <div class="card">
+    <h3>Felder nachschlagen mit <code>kubectl explain</code></h3>
+    <pre><code>kubectl explain pod.spec.securityContext
+kubectl explain pod.spec.containers.securityContext
+
+<span class="c"># Ein einzelnes Feld:</span>
+kubectl explain pod.spec.containers.securityContext.allowPrivilegeEscalation
+
+<span class="c"># Alles auf einmal, gut zum Überfliegen:</span>
+kubectl explain pod.spec.containers.securityContext --recursive</code></pre>
+    <p>Fehlt ein Feld in der einen Ausgabe und steht in der anderen, ist die Zuordnungsfrage beantwortet.</p>
+  </div>
+
+  <div class="card">
+    <h3>Realitätscheck am laufenden Pod</h3>
+    <p>Was im Objekt steht:</p>
+    <pre><code>kubectl get pod &lt;pod&gt; -o jsonpath='{.spec.securityContext}{"\n"}'
+kubectl get pod &lt;pod&gt; -o jsonpath='{.spec.containers[*].securityContext}{"\n"}'</code></pre>
+    <p>Was der Prozess wirklich macht:</p>
+    <pre><code>kubectl exec &lt;pod&gt; -- id
+kubectl exec &lt;pod&gt; -- touch /test        <span class="c"># scheitert bei read-only Root</span>
+kubectl exec &lt;pod&gt; -- cat /proc/1/status | grep NoNewPrivs   <span class="c"># 1 = gesetzt</span></code></pre>
+    <div class="note"><b><code>id</code> ist der ehrlichste Test:</b> Was der Kernel sagt, gilt – nicht was im YAML steht.</div>
+  </div>
+</section>
+
+</main>
+
+<footer>Überblick über die Zuordnung von <code>securityContext</code>-Feldern zu Pod- und Container-Ebene sowie den Restricted Pod Security Standard. Feldverfügbarkeit ist versionsabhängig – im Zweifel mit <code>kubectl explain</code> gegen die eigene Cluster-Version prüfen.</footer>
+
+</body>
+</html>
