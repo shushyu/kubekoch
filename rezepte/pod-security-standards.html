@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pod Security Standards – Privileged, Baseline und Restricted verstehen</title>
+<meta name="rezept-kategorie"    content="security">
+<meta name="rezept-beschreibung" content="Die drei Sicherheitsstufen für Pods – was jede verbietet, wie sie über Namespace-Labels aktiviert werden und wie man ohne Ausfall einsteigt.">
+<meta name="rezept-stand"        content="Kubernetes · 08/2026">
+<meta name="rezept-suche"        content="pod security standards pss privileged baseline restricted pod security admission psa namespace labels enforce audit warn hostnetwork hostpath capabilities seccomp runasnonroot allowprivilegeescalation podsecuritypolicy psp ablösung">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#33394a;
+  --ink-soft:#5c6376;
+  --paper:#fbfaf7;
+  --card:#ffffff;
+  --line:#e9e6df;
+  --code-bg:#31364a;
+  --code-ink:#e8eaf2;
+  --mint:#d9f2e4;      --mint-deep:#2f8f6b;
+  --sky:#dcebf9;       --sky-deep:#2d6fa8;
+  --lav:#e7e2f7;       --lav-deep:#6b5bb5;
+  --peach:#fbe6d7;     --peach-deep:#c2703d;
+  --butter:#faf0cf;    --butter-deep:#a5842a;
+  --rose:#f9e0e6;      --rose-deep:#b34f6d;
+  --aqua:#d7eff0;      --aqua-deep:#2b8288;
+  --r-lg:26px; --r-md:18px; --r-sm:12px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;scroll-padding-top:90px}
+body{font-family:'Inter',sans-serif;background:var(--paper);color:var(--ink);line-height:1.65;font-size:16px}
+h1,h2,h3,h4{font-family:'Sora',sans-serif;line-height:1.2}
+
+/* ---------- Kopf ---------- */
+header{max-width:1060px;margin:0 auto;padding:56px 24px 8px}
+.kicker{display:inline-block;background:var(--lav);color:var(--lav-deep);font-weight:600;font-size:.8rem;letter-spacing:.08em;text-transform:uppercase;padding:6px 14px;border-radius:999px;margin-bottom:18px}
+header h1{font-size:clamp(1.9rem,4.5vw,3rem);font-weight:800;letter-spacing:-.02em}
+header h1 span{color:var(--mint-deep)}
+.lede{color:var(--ink-soft);max-width:640px;margin-top:14px;font-size:1.05rem}
+
+/* ---------- Route ---------- */
+.route{max-width:1060px;margin:34px auto 10px;padding:0 24px;display:grid;grid-template-columns:repeat(7,1fr);gap:12px}
+.route a{display:flex;flex-direction:column;gap:8px;text-decoration:none;color:var(--ink);background:var(--card);border:1.5px solid var(--line);border-radius:var(--r-md);padding:16px 14px;transition:transform .15s ease,box-shadow .15s ease}
+.route a:hover,.route a:focus-visible{transform:translateY(-3px);box-shadow:0 8px 22px rgba(60,60,90,.10);outline:none}
+.route .dot{width:34px;height:34px;border-radius:12px;display:grid;place-items:center;font-family:'Sora';font-weight:700;font-size:.9rem}
+.route .t{font-weight:600;font-size:.86rem;line-height:1.3}
+.route .s{font-size:.74rem;color:var(--ink-soft)}
+.route a:nth-child(1) .dot{background:var(--aqua);color:var(--aqua-deep)}
+.route a:nth-child(2) .dot{background:var(--mint);color:var(--mint-deep)}
+.route a:nth-child(3) .dot{background:var(--sky);color:var(--sky-deep)}
+.route a:nth-child(4) .dot{background:var(--lav);color:var(--lav-deep)}
+.route a:nth-child(5) .dot{background:var(--peach);color:var(--peach-deep)}
+.route a:nth-child(6) .dot{background:var(--butter);color:var(--butter-deep)}
+.route a:nth-child(7) .dot{background:var(--rose);color:var(--rose-deep)}
+
+/* ---------- Sticky-Nav ---------- */
+nav{position:sticky;top:0;z-index:50;background:rgba(251,250,247,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);margin-top:26px}
+nav .wrap{max-width:1060px;margin:0 auto;padding:10px 24px;display:flex;gap:8px;overflow-x:auto}
+nav a{white-space:nowrap;text-decoration:none;font-size:.82rem;font-weight:600;color:var(--ink-soft);padding:7px 14px;border-radius:999px;border:1px solid transparent}
+nav a:hover{background:var(--card);border-color:var(--line);color:var(--ink)}
+
+/* ---------- Sektionen ---------- */
+main{max-width:1060px;margin:0 auto;padding:20px 24px 90px}
+section{margin-top:64px}
+.sec-head{display:flex;align-items:center;gap:16px;margin-bottom:8px}
+.badge{width:52px;height:52px;border-radius:16px;display:grid;place-items:center;font-family:'Sora';font-weight:800;font-size:1.25rem;flex-shrink:0}
+section h2{font-size:clamp(1.4rem,3vw,1.9rem);font-weight:700}
+.sec-sub{color:var(--ink-soft);margin-bottom:22px;max-width:720px}
+.aqua .badge{background:var(--aqua);color:var(--aqua-deep)}
+.mint .badge{background:var(--mint);color:var(--mint-deep)}
+.sky .badge{background:var(--sky);color:var(--sky-deep)}
+.lav .badge{background:var(--lav);color:var(--lav-deep)}
+.peach .badge{background:var(--peach);color:var(--peach-deep)}
+.butter .badge{background:var(--butter);color:var(--butter-deep)}
+.rose .badge{background:var(--rose);color:var(--rose-deep)}
+
+/* ---------- Karten & Schritte ---------- */
+.card{background:var(--card);border:1.5px solid var(--line);border-radius:var(--r-lg);padding:26px 28px;margin-bottom:20px}
+.card h3{font-size:1.08rem;margin-bottom:14px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+ol.steps{list-style:none;counter-reset:s;display:flex;flex-direction:column;gap:14px}
+ol.steps li{counter-increment:s;display:grid;grid-template-columns:34px 1fr;gap:14px;align-items:start}
+ol.steps li::before{content:counter(s);width:30px;height:30px;border-radius:10px;display:grid;place-items:center;font-family:'Sora';font-weight:700;font-size:.85rem;margin-top:2px}
+.aqua ol.steps li::before{background:var(--aqua);color:var(--aqua-deep)}
+.mint ol.steps li::before{background:var(--mint);color:var(--mint-deep)}
+.sky ol.steps li::before{background:var(--sky);color:var(--sky-deep)}
+.lav ol.steps li::before{background:var(--lav);color:var(--lav-deep)}
+.peach ol.steps li::before{background:var(--peach);color:var(--peach-deep)}
+.butter ol.steps li::before{background:var(--butter);color:var(--butter-deep)}
+.rose ol.steps li::before{background:var(--rose);color:var(--rose-deep)}
+.steps b{font-weight:600}
+.steps small{display:block;color:var(--ink-soft);font-size:.86rem;margin-top:2px}
+
+ul.clean{list-style:none;display:flex;flex-direction:column;gap:10px}
+ul.clean li{padding-left:24px;position:relative}
+ul.clean li::before{content:"";position:absolute;left:4px;top:.62em;width:9px;height:9px;border-radius:3px;background:var(--line)}
+.aqua ul.clean li::before{background:var(--aqua-deep)}
+.mint ul.clean li::before{background:var(--mint-deep)}
+.sky ul.clean li::before{background:var(--sky-deep)}
+.lav ul.clean li::before{background:var(--lav-deep)}
+.peach ul.clean li::before{background:var(--peach-deep)}
+.butter ul.clean li::before{background:var(--butter-deep)}
+.rose ul.clean li::before{background:var(--rose-deep)}
+
+/* ---------- Code ---------- */
+pre{background:var(--code-bg);color:var(--code-ink);border-radius:var(--r-sm);padding:16px 18px;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:.82rem;line-height:1.6;margin:10px 0}
+code{font-family:'JetBrains Mono',monospace;font-size:.85em;background:#efede7;border-radius:6px;padding:2px 6px}
+pre code{background:none;padding:0;font-size:1em}
+pre .c{color:#9aa3c0}
+
+/* ---------- Hinweisboxen ---------- */
+.note,.warn,.mnemo{border-radius:var(--r-md);padding:14px 18px;margin:14px 0;font-size:.92rem}
+.note{background:var(--sky)}
+.warn{background:var(--rose)}
+.mnemo{background:var(--butter)}
+.note b,.warn b,.mnemo b{font-weight:700}
+.mnemo::before{content:"🧠 Merkbild · ";font-weight:700}
+.warn::before{content:"⚠️ ";font-weight:700}
+
+/* ---------- Tabellen ---------- */
+table{width:100%;border-collapse:separate;border-spacing:0;font-size:.88rem;margin:10px 0}
+th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-family:'Sora';font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft)}
+tr:last-child td{border-bottom:none}
+thead th:first-child{border-top-left-radius:var(--r-sm)}
+thead th:last-child{border-top-right-radius:var(--r-sm)}
+thead{background:var(--paper)}
+
+/* ---------- Details ---------- */
+details{border:1.5px solid var(--line);border-radius:var(--r-md);margin:12px 0;background:var(--card)}
+details summary{cursor:pointer;padding:14px 18px;font-weight:600;font-size:.94rem;list-style:none;display:flex;align-items:center;gap:10px}
+details summary::before{content:"+";font-family:'Sora';font-weight:700;width:24px;height:24px;border-radius:8px;background:var(--paper);display:grid;place-items:center;flex-shrink:0}
+details[open] summary::before{content:"–"}
+details .inner{padding:0 18px 18px}
+summary::-webkit-details-marker{display:none}
+
+footer{max-width:1060px;margin:0 auto;padding:30px 24px 60px;color:var(--ink-soft);font-size:.82rem;border-top:1px solid var(--line)}
+footer a{color:var(--ink-soft)}
+
+@media(max-width:820px){
+  .route{grid-template-columns:repeat(2,1fr)}
+  .grid2,.grid3{grid-template-columns:1fr}
+}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.route a{transition:none}}
+</style>
+</head>
+<body>
+
+<header>
+  <span class="kicker">Kubernetes · Workload-Security · Grundlagen</span>
+  <h1>Pod Security Standards:<br>drei Stufen, <span>ein Namespace-Label</span></h1>
+  <p class="lede">Kubernetes definiert drei fertige Sicherheitsstufen für Pods. Man muss keine eigenen Regeln schreiben – nur wissen, welche Stufe passt und wie man sie auf einen Namespace klebt. Sieben Abschnitte vom Grundprinzip bis zum schrittweisen Einstieg ohne Ausfall.</p>
+</header>
+
+<div class="route">
+  <a href="#grundidee"><span class="dot">0</span><span class="t">Grundidee</span><span class="s">Drei Stufen, kumulativ</span></a>
+  <a href="#vergleich"><span class="dot">1</span><span class="t">Die drei Stufen</span><span class="s">Vergleich und Auswahl</span></a>
+  <a href="#abgrenzung"><span class="dot">2</span><span class="t">Standard vs. Context</span><span class="s">Regel oder Einstellung</span></a>
+  <a href="#baseline"><span class="dot">3</span><span class="t">Baseline</span><span class="s">Was verboten wird</span></a>
+  <a href="#restricted"><span class="dot">4</span><span class="t">Restricted</span><span class="s">Was zusätzlich gilt</span></a>
+  <a href="#aktivieren"><span class="dot">5</span><span class="t">Aktivieren</span><span class="s">Labels, enforce/audit/warn</span></a>
+  <a href="#einstieg"><span class="dot">6</span><span class="t">Einstieg</span><span class="s">Schrittweise, ohne Ausfall</span></a>
+</div>
+
+<nav><div class="wrap">
+  <a href="#grundidee">0 · Grundidee</a>
+  <a href="#vergleich">1 · Die drei Stufen</a>
+  <a href="#abgrenzung">2 · Standard vs. Context</a>
+  <a href="#baseline">3 · Baseline</a>
+  <a href="#restricted">4 · Restricted</a>
+  <a href="#aktivieren">5 · Aktivieren</a>
+  <a href="#einstieg">6 · Einstieg</a>
+</div></nav>
+
+<main>
+
+<!-- ================= 0 GRUNDIDEE ================= -->
+<section id="grundidee" class="aqua">
+  <div class="sec-head"><div class="badge">0</div><h2>Grundidee: drei fertige Stufen</h2></div>
+  <p class="sec-sub">Die Pod Security Standards sind drei vordefinierte Regelsätze, die das Sicherheitsspektrum grob abdecken – von „alles erlaubt“ bis „nur das Nötigste“. Sie sind <b>kumulativ</b>: jede Stufe enthält alles aus der darunter.</p>
+
+  <div class="card">
+    <h3>Die drei Stufen im Aufbau</h3>
+    <svg viewBox="0 0 660 300" width="100%" style="max-width:620px;display:block;margin:8px auto" role="img" aria-labelledby="stufenT stufenD">
+      <title id="stufenT">Die drei Pod Security Standards als aufeinander aufbauende Stufen</title>
+      <desc id="stufenD">Privileged erlaubt alles. Baseline verbietet bekannte Ausbruchswege. Restricted enthält alles aus Baseline und fordert zusätzlich Härtungsmaßnahmen.</desc>
+
+      <rect x="30" y="30" width="600" height="240" rx="16" fill="var(--rose)" opacity="0.45"/>
+      <text x="50" y="56" font-family="Sora" font-weight="700" font-size="14" fill="var(--rose-deep)">Privileged — keine Einschränkungen</text>
+
+      <rect x="55" y="80" width="550" height="165" rx="14" fill="var(--butter)" opacity="0.75"/>
+      <text x="75" y="106" font-family="Sora" font-weight="700" font-size="14" fill="var(--butter-deep)">Baseline — bekannte Ausbruchswege gesperrt</text>
+
+      <rect x="80" y="130" width="500" height="90" rx="12" fill="var(--mint)"/>
+      <text x="100" y="156" font-family="Sora" font-weight="700" font-size="14" fill="var(--mint-deep)">Restricted — zusätzlich gehärtet</text>
+      <text x="100" y="180" font-family="Inter" font-size="12" fill="var(--mint-deep)">non-root · Rechte-Aufstieg gesperrt · alle Capabilities weg</text>
+      <text x="100" y="200" font-family="Inter" font-size="12" fill="var(--mint-deep)">seccomp aktiv · nur unkritische Volume-Typen</text>
+
+      <text x="50" y="262" font-family="Inter" font-size="12" fill="var(--ink-soft)">außen = mehr erlaubt · innen = strenger</text>
+    </svg>
+    <p style="margin-top:8px">Wer <b>Restricted</b> erfüllt, erfüllt automatisch auch <b>Baseline</b>. Die Stufen sind keine Alternativen zueinander, sondern Verschärfungen.</p>
+  </div>
+
+  <div class="mnemo"><b>Wie Sicherheitszonen am Flughafen.</b> Draußen darf jeder alles mitnehmen. Hinter der Kontrolle sind bekannte gefährliche Gegenstände verboten. Im Sicherheitsbereich der Crew gelten zusätzlich eigene Regeln – aber die Kontrolle davor hat trotzdem jeder passiert.</div>
+
+  <div class="note"><b>Warum es das gibt:</b> Vor den Standards musste jedes Team eigene Regeln über PodSecurityPolicy formulieren – aufwendig und fehleranfällig. Die Standards sind der fertige, vom Projekt gepflegte Ersatz dafür.</div>
+</section>
+
+<!-- ================= 1 VERGLEICH ================= -->
+<section id="vergleich" class="mint">
+  <div class="sec-head"><div class="badge">1</div><h2>Die drei Stufen im Vergleich</h2></div>
+  <p class="sec-sub">Wofür jede Stufe gedacht ist und wer sie typischerweise braucht.</p>
+
+  <div class="card">
+    <table>
+      <thead><tr><th>Stufe</th><th>Bedeutung</th><th>Gedacht für</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><b>Privileged</b></td>
+          <td>Bewusst offen, ohne jede Einschränkung. Erlaubt auch bekannte Wege, die Container-Isolation zu umgehen – etwa direkten Zugriff auf das Host-Netzwerk.</td>
+          <td>System- und Infrastruktur-Workloads, die von vertrauenswürdigen Admins betrieben werden: CNI-Plugins, Storage-Treiber, Monitoring-Agents</td>
+        </tr>
+        <tr>
+          <td><b>Baseline</b></td>
+          <td>Minimal einschränkend. Verhindert bekannte Wege der Rechte-Ausweitung, lässt aber eine normale Pod-Konfiguration ohne Anpassung durchgehen.</td>
+          <td>Anwendungsbetrieb und Entwicklung nicht-kritischer Anwendungen</td>
+        </tr>
+        <tr>
+          <td><b>Restricted</b></td>
+          <td>Stark einschränkend, folgt dem aktuellen Stand der Pod-Härtung – auf Kosten der Kompatibilität mit manchen Images.</td>
+          <td>Sicherheitskritische Anwendungen und Umgebungen mit weniger vertrauenswürdigen Nutzern</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>Welche Stufe passt?</h3>
+    <svg viewBox="0 0 660 290" width="100%" style="max-width:620px;display:block;margin:8px auto" role="img" aria-labelledby="wahlT wahlD">
+      <title id="wahlT">Entscheidungshilfe für die passende Stufe</title>
+      <desc id="wahlD">Braucht der Workload Host-Zugriff, bleibt nur Privileged. Sonst Restricted versuchen; scheitert das Image daran, Baseline verwenden.</desc>
+
+      <rect x="180" y="16" width="300" height="46" rx="12" fill="var(--card)" stroke="var(--line)" stroke-width="1.5"/>
+      <text x="330" y="39" text-anchor="middle" dominant-baseline="central" font-family="Sora" font-weight="700" font-size="13" fill="var(--ink)">Braucht der Workload Host-Zugriff?</text>
+
+      <line x1="330" y1="62" x2="330" y2="92" stroke="var(--ink-soft)" stroke-width="1.3"/>
+      <line x1="150" y1="92" x2="510" y2="92" stroke="var(--ink-soft)" stroke-width="1.3"/>
+      <line x1="150" y1="92" x2="150" y2="116" stroke="var(--ink-soft)" stroke-width="1.3"/>
+      <line x1="510" y1="92" x2="510" y2="116" stroke="var(--ink-soft)" stroke-width="1.3"/>
+      <text x="138" y="86" text-anchor="end" font-family="Inter" font-size="11" fill="var(--ink-soft)">ja</text>
+      <text x="522" y="86" font-family="Inter" font-size="11" fill="var(--ink-soft)">nein</text>
+
+      <rect x="35" y="116" width="230" height="46" rx="12" fill="var(--rose)" stroke="var(--rose-deep)" stroke-width="1.5"/>
+      <text x="150" y="132" text-anchor="middle" dominant-baseline="central" font-family="Sora" font-weight="700" font-size="13" fill="var(--rose-deep)">Privileged</text>
+      <text x="150" y="150" text-anchor="middle" dominant-baseline="central" font-family="Inter" font-size="11" fill="var(--rose-deep)">eigener Namespace, wenige Pods</text>
+
+      <rect x="395" y="116" width="230" height="46" rx="12" fill="var(--card)" stroke="var(--line)" stroke-width="1.5"/>
+      <text x="510" y="139" text-anchor="middle" dominant-baseline="central" font-family="Sora" font-weight="700" font-size="13" fill="var(--ink)">Läuft das Image als non-root?</text>
+
+      <line x1="510" y1="162" x2="510" y2="186" stroke="var(--ink-soft)" stroke-width="1.3"/>
+      <line x1="330" y1="186" x2="580" y2="186" stroke="var(--ink-soft)" stroke-width="1.3"/>
+      <line x1="330" y1="186" x2="330" y2="214" stroke="var(--ink-soft)" stroke-width="1.3"/>
+      <line x1="580" y1="186" x2="580" y2="214" stroke="var(--ink-soft)" stroke-width="1.3"/>
+      <text x="318" y="180" text-anchor="end" font-family="Inter" font-size="11" fill="var(--ink-soft)">nein</text>
+      <text x="592" y="180" font-family="Inter" font-size="11" fill="var(--ink-soft)">ja</text>
+
+      <rect x="230" y="214" width="200" height="46" rx="12" fill="var(--butter)" stroke="var(--butter-deep)" stroke-width="1.5"/>
+      <text x="330" y="230" text-anchor="middle" dominant-baseline="central" font-family="Sora" font-weight="700" font-size="13" fill="var(--butter-deep)">Baseline</text>
+      <text x="330" y="248" text-anchor="middle" dominant-baseline="central" font-family="Inter" font-size="11" fill="var(--butter-deep)">Image später anpassen</text>
+
+      <rect x="470" y="214" width="180" height="46" rx="12" fill="var(--mint)" stroke="var(--mint-deep)" stroke-width="1.5"/>
+      <text x="560" y="230" text-anchor="middle" dominant-baseline="central" font-family="Sora" font-weight="700" font-size="13" fill="var(--mint-deep)">Restricted</text>
+      <text x="560" y="248" text-anchor="middle" dominant-baseline="central" font-family="Inter" font-size="11" fill="var(--mint-deep)">der Normalfall</text>
+    </svg>
+    <p style="margin-top:8px">Die ehrliche Kurzfassung: <b>Restricted ist das Ziel für alles, was eine normale Anwendung ist.</b> Baseline ist die Zwischenstation, wenn ein Image noch nicht mitspielt. Privileged bleibt der begründete Sonderfall in einem eigenen Namespace.</p>
+  </div>
+
+  <div class="note"><b>Warum es nichts zwischen Privileged und Baseline gibt:</b> Die Standards sollen wenige, klar unterscheidbare Stufen bieten. Wer etwas dazwischen braucht, setzt eine der Stufen und ergänzt eigene Regeln über ein Policy-Werkzeug.</div>
+</section>
+
+<!-- ================= 2 ABGRENZUNG ================= -->
+<section id="abgrenzung" class="sky">
+  <div class="sec-head"><div class="badge">2</div><h2>Standard oder securityContext – was ist was?</h2></div>
+  <p class="sec-sub">Die häufigste Anfängerverwirrung. Beide Begriffe reden über dieselben Felder, aber aus entgegengesetzter Richtung.</p>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>securityContext</h3>
+      <p><b>Die Einstellung.</b> Steht im Pod-Manifest und legt fest, wie dieser eine Pod läuft: als welcher Benutzer, mit welchen Capabilities, mit welchem seccomp-Profil.</p>
+      <p style="margin-top:10px">Geschrieben vom Team, das die Anwendung deployt.</p>
+    </div>
+    <div class="card">
+      <h3>Pod Security Standard</h3>
+      <p><b>Die Regel.</b> Legt fest, welche Werte im <code>securityContext</code> überhaupt erlaubt sind – und welche zu einer Ablehnung führen.</p>
+      <p style="margin-top:10px">Gesetzt vom Team, das den Cluster oder den Namespace verantwortet.</p>
+    </div>
+  </div>
+
+  <div class="mnemo"><b>Der securityContext ist der ausgefüllte Antrag, der Standard ist die Prüfstelle.</b> Man schreibt selbst hinein, was man möchte; die Stelle entscheidet, ob das durchgeht.</div>
+
+  <div class="card">
+    <h3>Und wer prüft das tatsächlich?</h3>
+    <p>Der Standard ist zunächst nur ein Dokument. Durchgesetzt wird er vom <b>Pod Security Admission Controller</b> – der ist seit Kubernetes 1.25 fest eingebaut und muss nicht installiert werden. Er liest das Namespace-Label, prüft jeden neuen Pod dagegen und lehnt ab, was nicht passt.</p>
+    <pre><code>Pod-Manifest wird eingereicht
+        │
+        ▼
+Pod Security Admission liest das Namespace-Label
+        │
+        ▼
+Prüfung des securityContext gegen die Stufe
+        │
+        ├── passt      → Pod wird erstellt
+        └── passt nicht → Ablehnung mit Begründung</code></pre>
+  </div>
+
+  <div class="warn"><b>Wichtig:</b> Die Prüfung greift, wenn ein Pod erstellt wird. Bereits laufende Pods bleiben unberührt, wenn ein Label nachträglich verschärft wird. Das Problem taucht erst beim nächsten Rollout oder Neustart auf – oft Wochen später und dann überraschend.</div>
+</section>
+
+<!-- ================= 3 BASELINE ================= -->
+<section id="baseline" class="lav">
+  <div class="sec-head"><div class="badge">3</div><h2>Baseline: was verboten wird</h2></div>
+  <p class="sec-sub">Baseline sperrt die bekannten Wege, mit denen ein Container die Isolation zur Node durchbricht. Eine gewöhnliche Anwendung merkt davon in der Regel nichts.</p>
+
+  <div class="card">
+    <h3>Die Verbote in Alltagssprache</h3>
+    <table>
+      <thead><tr><th>Bereich</th><th>Was Baseline verlangt</th></tr></thead>
+      <tbody>
+        <tr><td><b>Host-Namespaces</b></td><td>Kein Mitbenutzen von Netzwerk, Prozessliste oder IPC der Node (<code>hostNetwork</code>, <code>hostPID</code>, <code>hostIPC</code>)</td></tr>
+        <tr><td><b>Privilegierte Container</b></td><td><code>privileged: true</code> ist nicht erlaubt</td></tr>
+        <tr><td><b>Capabilities</b></td><td>Nur ein fester Satz gängiger Capabilities darf hinzugefügt werden – alles darüber hinaus ist gesperrt</td></tr>
+        <tr><td><b>HostPath-Volumes</b></td><td>Keine Verzeichnisse der Node in den Pod mounten</td></tr>
+        <tr><td><b>Host-Ports</b></td><td>Möglichst gar nicht, sonst nur eine bekannte Liste</td></tr>
+        <tr><td><b>Probes und Lifecycle-Hooks</b></td><td>Das <code>host</code>-Feld darin darf nicht gesetzt werden (seit 1.34)</td></tr>
+        <tr><td><b>AppArmor</b></td><td>Das Standardprofil darf nicht abgeschaltet oder beliebig überschrieben werden</td></tr>
+        <tr><td><b>SELinux</b></td><td>Nur bestimmte Typen erlaubt; eigener SELinux-User oder eigene Rolle sind verboten</td></tr>
+        <tr><td><code>/proc</code>-Mount</td><td>Muss auf der Voreinstellung bleiben, damit die Schutzmasken greifen</td></tr>
+        <tr><td><b>Seccomp</b></td><td>Darf nicht ausdrücklich auf <code>Unconfined</code> gesetzt werden</td></tr>
+        <tr><td><b>Sysctls</b></td><td>Nur ein kleiner Satz als sicher eingestufter Kernel-Parameter</td></tr>
+        <tr><td><b>HostProcess (Windows)</b></td><td>Privilegierter Zugriff auf den Windows-Host ist nicht erlaubt</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <details>
+    <summary>Welche Capabilities Baseline zulässt</summary>
+    <div class="inner">
+      <p>Hinzugefügt werden dürfen nur diese – Namen jeweils ohne <code>CAP_</code>-Präfix:</p>
+      <pre><code>AUDIT_WRITE   CHOWN            DAC_OVERRIDE
+FOWNER        FSETID           KILL
+MKNOD         NET_BIND_SERVICE SETFCAP
+SETGID        SETPCAP          SETUID
+SYS_CHROOT</code></pre>
+      <p>Alles andere – insbesondere <code>SYS_ADMIN</code>, <code>NET_ADMIN</code> oder <code>SYS_PTRACE</code> – wird abgelehnt.</p>
+    </div>
+  </details>
+
+  <div class="note"><b>Der Grundgedanke:</b> Baseline verbietet nichts, was eine normale Anwendung tut. Es verbietet, was eine normale Anwendung <i>nicht</i> tut – und was fast immer ein Warnsignal ist, wenn es doch auftaucht.</div>
+</section>
+
+<!-- ================= 4 RESTRICTED ================= -->
+<section id="restricted" class="peach">
+  <div class="sec-head"><div class="badge">4</div><h2>Restricted: was zusätzlich gilt</h2></div>
+  <p class="sec-sub">Restricted enthält alles aus Baseline und fordert darüber hinaus aktive Härtung. Hier reicht es nicht mehr, nichts Verbotenes zu tun – bestimmte Felder müssen gesetzt sein.</p>
+
+  <div class="card">
+    <h3>Die zusätzlichen Anforderungen</h3>
+    <table>
+      <thead><tr><th>Bereich</th><th>Was gefordert wird</th></tr></thead>
+      <tbody>
+        <tr><td><b>Volume-Typen</b></td><td>Nur unkritische Typen: <code>configMap</code>, <code>csi</code>, <code>downwardAPI</code>, <code>emptyDir</code>, <code>ephemeral</code>, <code>persistentVolumeClaim</code>, <code>projected</code>, <code>secret</code></td></tr>
+        <tr><td><b>Rechte-Aufstieg</b></td><td><code>allowPrivilegeEscalation: false</code> an jedem Container</td></tr>
+        <tr><td><b>Als non-root laufen</b></td><td><code>runAsNonRoot: true</code> – darf auf Pod-Ebene stehen</td></tr>
+        <tr><td><b>Keine UID 0</b></td><td><code>runAsUser</code> darf nicht 0 sein (darf auch weggelassen werden)</td></tr>
+        <tr><td><b>Seccomp</b></td><td>Muss ausdrücklich auf <code>RuntimeDefault</code> oder <code>Localhost</code> stehen – Weglassen reicht hier nicht mehr</td></tr>
+        <tr><td><b>Capabilities</b></td><td><code>drop: ["ALL"]</code> ist Pflicht; zurückgeben darf man nur <code>NET_BIND_SERVICE</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>Der Unterschied in einem Satz</h3>
+    <div class="grid2">
+      <div>
+        <p style="font-weight:600;margin-bottom:6px;color:var(--butter-deep)">Baseline</p>
+        <p style="font-size:.92rem">Prüft, ob du etwas <b>Verbotenes</b> tust. Ein Pod ganz ohne <code>securityContext</code> kommt durch.</p>
+      </div>
+      <div>
+        <p style="font-weight:600;margin-bottom:6px;color:var(--mint-deep)">Restricted</p>
+        <p style="font-size:.92rem">Prüft zusätzlich, ob du das <b>Vorgeschriebene</b> tust. Ein Pod ohne <code>securityContext</code> wird abgelehnt.</p>
+      </div>
+    </div>
+  </div>
+
+  <details>
+    <summary>Ein Pod, der Restricted erfüllt</summary>
+    <div class="inner">
+      <pre><code>apiVersion: v1
+kind: Pod
+metadata:
+  name: beispiel
+spec:
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10000
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+  - name: app
+    image: nginxinc/nginx-unprivileged
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop: ["ALL"]</code></pre>
+      <p>Das ist die Minimalform. <code>runAsNonRoot</code> und <code>seccompProfile</code> dürfen auf Pod-Ebene stehen und gelten dann für alle Container; <code>allowPrivilegeEscalation</code> und <code>capabilities</code> müssen an jeden einzelnen Container.</p>
+    </div>
+  </details>
+
+  <div class="warn"><b>Init- und Sidecar-Container zählen mit.</b> Die Prüfung betrachtet alle Container eines Pods. Ein einziger, der die Anforderungen nicht erfüllt, lässt den kompletten Pod durchfallen.</div>
+
+  <div class="mnemo"><b>A-C-R-S</b> für die vier Pflichtfelder: <b>A</b>ufstieg verboten, <b>C</b>apabilities weg, <b>R</b>oot verboten, <b>S</b>eccomp an.</div>
+</section>
+
+<!-- ================= 5 AKTIVIEREN ================= -->
+<section id="aktivieren" class="butter">
+  <div class="sec-head"><div class="badge">5</div><h2>Aktivieren: ein Label pro Namespace</h2></div>
+  <p class="sec-sub">Die Stufe wird nicht im Pod hinterlegt, sondern am Namespace. Drei Modi bestimmen, was bei einem Verstoß passiert – und genau darin liegt der sichere Einstiegsweg.</p>
+
+  <div class="card">
+    <h3>Die drei Modi</h3>
+    <table>
+      <thead><tr><th>Modus</th><th>Wirkung bei Verstoß</th><th>Wofür</th></tr></thead>
+      <tbody>
+        <tr><td><code>enforce</code></td><td>Der Pod wird abgelehnt und startet nicht</td><td>Scharfschaltung</td></tr>
+        <tr><td><code>audit</code></td><td>Der Pod läuft; der Verstoß landet im Audit-Log</td><td>stille Bestandsaufnahme</td></tr>
+        <tr><td><code>warn</code></td><td>Der Pod läuft; der Nutzer bekommt sofort eine Warnung im Terminal</td><td>Feedback an Entwickler</td></tr>
+      </tbody>
+    </table>
+    <p style="margin-top:12px">Die Modi lassen sich <b>kombinieren</b> – und das ist der entscheidende Trick: man kann eine strengere Stufe warnend beobachten, während eine mildere scharf geschaltet ist.</p>
+  </div>
+
+  <div class="card">
+    <h3>Labels setzen</h3>
+    <pre><code><span class="c"># Baseline scharf, Restricted nur beobachtend</span>
+kubectl label namespace meine-app \
+  pod-security.kubernetes.io/enforce=baseline \
+  pod-security.kubernetes.io/warn=restricted \
+  pod-security.kubernetes.io/audit=restricted</code></pre>
+    <p>Oder direkt im Namespace-Manifest:</p>
+    <pre><code>apiVersion: v1
+kind: Namespace
+metadata:
+  name: meine-app
+  labels:
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce-version: v1.34
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/audit: restricted</code></pre>
+    <details><summary>Wozu das <code>-version</code>-Label?</summary><div class="inner">
+      <p>Die Standards entwickeln sich weiter – neue Kubernetes-Versionen ergänzen gelegentlich Prüfungen. Ohne Versionsangabe gilt immer die aktuellste Fassung, ein Cluster-Update kann dann unerwartet Pods ablehnen.</p>
+      <p style="margin-top:10px">Mit einer festen Version friert man das Verhalten ein und hebt es bewusst an, wenn man Zeit zum Testen hat. Für produktive Namespaces ist das die ruhigere Variante.</p>
+    </div></details>
+  </div>
+
+  <div class="card">
+    <h3>Prüfen, was gesetzt ist</h3>
+    <pre><code><span class="c"># Labels eines Namespace</span>
+kubectl get namespace meine-app --show-labels
+
+<span class="c"># Alle Namespaces auf einmal</span>
+kubectl get namespaces -o custom-columns=\
+NAME:.metadata.name,\
+ENFORCE:.metadata.labels.pod-security\\.kubernetes\\.io/enforce</code></pre>
+  </div>
+
+  <div class="warn"><b>Namespaces ohne Label werden nicht geprüft.</b> Fehlt das Label, gilt faktisch Privileged. Ein frisch angelegter Namespace ist damit ungeschützt – daran denken, wenn Namespaces automatisiert erzeugt werden.</div>
+</section>
+
+<!-- ================= 6 EINSTIEG ================= -->
+<section id="einstieg" class="rose">
+  <div class="sec-head"><div class="badge">6</div><h2>Einstieg ohne Ausfall</h2></div>
+  <p class="sec-sub">Direkt <code>enforce: restricted</code> auf einen bestehenden Namespace zu setzen ist der zuverlässigste Weg, einen Abend zu verlieren. Der schrittweise Weg kostet mehr Geduld und keinen Ausfall.</p>
+
+  <div class="card">
+    <h3>Der Weg in fünf Schritten</h3>
+    <ol class="steps">
+      <li><div><b>Beobachten statt blockieren</b><small>Nur <code>warn</code> und <code>audit</code> auf <code>restricted</code> setzen, <code>enforce</code> weglassen. Nichts wird abgelehnt, aber jeder Verstoß wird sichtbar.</small></div></li>
+      <li><div><b>Bestand durchtesten</b><small>Die vorhandenen Deployments einmal neu ausrollen und die Warnungen sammeln. Erst dieser Schritt zeigt, welche Workloads betroffen sind.</small></div></li>
+      <li><div><b>Manifeste nachziehen</b><small>Fehlende Felder ergänzen, Images auf non-root umstellen. Das ist der eigentliche Aufwand – und der Grund, warum Schritt 1 vorher kommt.</small></div></li>
+      <li><div><b>Baseline scharf schalten</b><small><code>enforce: baseline</code> setzen, während <code>warn</code> weiterhin auf <code>restricted</code> steht. Die erste echte Schutzstufe steht.</small></div></li>
+      <li><div><b>Auf Restricted anheben</b><small>Wenn keine Warnungen mehr auflaufen, <code>enforce: restricted</code> setzen.</small></div></li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h3>Typische Stolpersteine</h3>
+    <ul class="clean">
+      <li><b>Image läuft als root</b> – viele offizielle Images tun das. Für gängige Anwendungen gibt es unprivilegierte Varianten, sonst hilft ein eigenes Image mit passendem <code>USER</code>.</li>
+      <li><b>Schreibzugriff aufs Root-Dateisystem</b> – nicht von den Standards verboten, fällt aber beim Härten meist zusammen mit auf. Lösung sind <code>emptyDir</code>-Volumes an den Schreibpfaden.</li>
+      <li><b>Sidecars aus fremden Charts</b> – Service-Mesh-Proxies und Logging-Agents bringen eigene Anforderungen mit und sind nicht immer Restricted-tauglich.</li>
+      <li><b>Nachträgliches Verschärfen</b> – bestehende Pods laufen weiter, der Bruch zeigt sich erst beim nächsten Rollout. Deshalb in Schritt 2 aktiv neu ausrollen statt abzuwarten.</li>
+      <li><b>Infrastruktur-Namespaces</b> – CNI, CSI und Monitoring brauchen oft echten Host-Zugriff. Diese Namespaces bekommen bewusst <code>privileged</code>, nicht das ganze Cluster.</li>
+    </ul>
+  </div>
+
+  <div class="note"><b>Faustregel für den Zielzustand:</b> Anwendungs-Namespaces auf <code>restricted</code>, einzelne Ausnahmen auf <code>baseline</code> mit Begründung, Infrastruktur-Namespaces auf <code>privileged</code> – und kein Namespace ganz ohne Label.</div>
+</section>
+
+</main>
+
+<footer>Erklärung der Pod Security Standards nach der offiziellen Kubernetes-Dokumentation
+(<a href="https://kubernetes.io/docs/concepts/security/pod-security-standards/">Pod Security Standards</a>,
+<a href="https://kubernetes.io/docs/concepts/security/pod-security-admission/">Pod Security Admission</a>).
+Einzelne Prüfungen sind versionsabhängig – die verbindliche Liste steht in der Dokumentation zur eigenen Cluster-Version.</footer>
+
+</body>
+</html>
