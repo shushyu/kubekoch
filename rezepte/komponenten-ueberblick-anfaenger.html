@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kubernetes-Komponenten im Überblick – Control Plane, Worker, Pod oder systemd</title>
+<meta name="rezept-kategorie"    content="cluster-ops">
+<meta name="rezept-beschreibung" content="Welche Komponente läuft auf welcher Node und ob sie ein Pod oder ein systemd-Dienst ist – der Einstieg in den Aufbau eines Clusters.">
+<meta name="rezept-stand"        content="Kubernetes · 08/2026">
+<meta name="rezept-suche"        content="control plane worker node kubelet kube-proxy etcd apiserver scheduler controller-manager containerd cri-o static pod systemd daemonset pause container namespaces cgroups grundlagen anfänger architektur">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#33394a;
+  --ink-soft:#5c6376;
+  --paper:#fbfaf7;
+  --card:#ffffff;
+  --line:#e9e6df;
+  --code-bg:#31364a;
+  --code-ink:#e8eaf2;
+  --mint:#d9f2e4;      --mint-deep:#2f8f6b;
+  --sky:#dcebf9;       --sky-deep:#2d6fa8;
+  --lav:#e7e2f7;       --lav-deep:#6b5bb5;
+  --peach:#fbe6d7;     --peach-deep:#c2703d;
+  --butter:#faf0cf;    --butter-deep:#a5842a;
+  --rose:#f9e0e6;      --rose-deep:#b34f6d;
+  --aqua:#d7eff0;      --aqua-deep:#2b8288;
+  --r-lg:26px; --r-md:18px; --r-sm:12px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;scroll-padding-top:90px}
+body{font-family:'Inter',sans-serif;background:var(--paper);color:var(--ink);line-height:1.65;font-size:16px}
+h1,h2,h3,h4{font-family:'Sora',sans-serif;line-height:1.2}
+
+/* ---------- Kopf ---------- */
+header{max-width:1060px;margin:0 auto;padding:56px 24px 8px}
+.kicker{display:inline-block;background:var(--lav);color:var(--lav-deep);font-weight:600;font-size:.8rem;letter-spacing:.08em;text-transform:uppercase;padding:6px 14px;border-radius:999px;margin-bottom:18px}
+header h1{font-size:clamp(1.9rem,4.5vw,3rem);font-weight:800;letter-spacing:-.02em}
+header h1 span{color:var(--mint-deep)}
+.lede{color:var(--ink-soft);max-width:640px;margin-top:14px;font-size:1.05rem}
+
+/* ---------- Route ---------- */
+.route{max-width:1060px;margin:34px auto 10px;padding:0 24px;display:grid;grid-template-columns:repeat(7,1fr);gap:12px}
+.route a{display:flex;flex-direction:column;gap:8px;text-decoration:none;color:var(--ink);background:var(--card);border:1.5px solid var(--line);border-radius:var(--r-md);padding:16px 14px;transition:transform .15s ease,box-shadow .15s ease}
+.route a:hover,.route a:focus-visible{transform:translateY(-3px);box-shadow:0 8px 22px rgba(60,60,90,.10);outline:none}
+.route .dot{width:34px;height:34px;border-radius:12px;display:grid;place-items:center;font-family:'Sora';font-weight:700;font-size:.9rem}
+.route .t{font-weight:600;font-size:.86rem;line-height:1.3}
+.route .s{font-size:.74rem;color:var(--ink-soft)}
+.route a:nth-child(1) .dot{background:var(--aqua);color:var(--aqua-deep)}
+.route a:nth-child(2) .dot{background:var(--mint);color:var(--mint-deep)}
+.route a:nth-child(3) .dot{background:var(--sky);color:var(--sky-deep)}
+.route a:nth-child(4) .dot{background:var(--lav);color:var(--lav-deep)}
+.route a:nth-child(5) .dot{background:var(--peach);color:var(--peach-deep)}
+.route a:nth-child(6) .dot{background:var(--butter);color:var(--butter-deep)}
+.route a:nth-child(7) .dot{background:var(--rose);color:var(--rose-deep)}
+
+/* ---------- Sticky-Nav ---------- */
+nav{position:sticky;top:0;z-index:50;background:rgba(251,250,247,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);margin-top:26px}
+nav .wrap{max-width:1060px;margin:0 auto;padding:10px 24px;display:flex;gap:8px;overflow-x:auto}
+nav a{white-space:nowrap;text-decoration:none;font-size:.82rem;font-weight:600;color:var(--ink-soft);padding:7px 14px;border-radius:999px;border:1px solid transparent}
+nav a:hover{background:var(--card);border-color:var(--line);color:var(--ink)}
+
+/* ---------- Sektionen ---------- */
+main{max-width:1060px;margin:0 auto;padding:20px 24px 90px}
+section{margin-top:64px}
+.sec-head{display:flex;align-items:center;gap:16px;margin-bottom:8px}
+.badge{width:52px;height:52px;border-radius:16px;display:grid;place-items:center;font-family:'Sora';font-weight:800;font-size:1.25rem;flex-shrink:0}
+section h2{font-size:clamp(1.4rem,3vw,1.9rem);font-weight:700}
+.sec-sub{color:var(--ink-soft);margin-bottom:22px;max-width:720px}
+.aqua .badge{background:var(--aqua);color:var(--aqua-deep)}
+.mint .badge{background:var(--mint);color:var(--mint-deep)}
+.sky .badge{background:var(--sky);color:var(--sky-deep)}
+.lav .badge{background:var(--lav);color:var(--lav-deep)}
+.peach .badge{background:var(--peach);color:var(--peach-deep)}
+.butter .badge{background:var(--butter);color:var(--butter-deep)}
+.rose .badge{background:var(--rose);color:var(--rose-deep)}
+
+/* ---------- Karten & Schritte ---------- */
+.card{background:var(--card);border:1.5px solid var(--line);border-radius:var(--r-lg);padding:26px 28px;margin-bottom:20px}
+.card h3{font-size:1.08rem;margin-bottom:14px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+ol.steps{list-style:none;counter-reset:s;display:flex;flex-direction:column;gap:14px}
+ol.steps li{counter-increment:s;display:grid;grid-template-columns:34px 1fr;gap:14px;align-items:start}
+ol.steps li::before{content:counter(s);width:30px;height:30px;border-radius:10px;display:grid;place-items:center;font-family:'Sora';font-weight:700;font-size:.85rem;margin-top:2px}
+.aqua ol.steps li::before{background:var(--aqua);color:var(--aqua-deep)}
+.mint ol.steps li::before{background:var(--mint);color:var(--mint-deep)}
+.sky ol.steps li::before{background:var(--sky);color:var(--sky-deep)}
+.lav ol.steps li::before{background:var(--lav);color:var(--lav-deep)}
+.peach ol.steps li::before{background:var(--peach);color:var(--peach-deep)}
+.butter ol.steps li::before{background:var(--butter);color:var(--butter-deep)}
+.rose ol.steps li::before{background:var(--rose);color:var(--rose-deep)}
+.steps b{font-weight:600}
+.steps small{display:block;color:var(--ink-soft);font-size:.86rem;margin-top:2px}
+
+ul.clean{list-style:none;display:flex;flex-direction:column;gap:10px}
+ul.clean li{padding-left:24px;position:relative}
+ul.clean li::before{content:"";position:absolute;left:4px;top:.62em;width:9px;height:9px;border-radius:3px;background:var(--line)}
+.aqua ul.clean li::before{background:var(--aqua-deep)}
+.mint ul.clean li::before{background:var(--mint-deep)}
+.sky ul.clean li::before{background:var(--sky-deep)}
+.lav ul.clean li::before{background:var(--lav-deep)}
+.peach ul.clean li::before{background:var(--peach-deep)}
+.butter ul.clean li::before{background:var(--butter-deep)}
+.rose ul.clean li::before{background:var(--rose-deep)}
+
+/* ---------- Code ---------- */
+pre{background:var(--code-bg);color:var(--code-ink);border-radius:var(--r-sm);padding:16px 18px;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:.82rem;line-height:1.6;margin:10px 0}
+code{font-family:'JetBrains Mono',monospace;font-size:.85em;background:#efede7;border-radius:6px;padding:2px 6px}
+pre code{background:none;padding:0;font-size:1em}
+pre .c{color:#9aa3c0}
+
+/* ---------- Hinweisboxen ---------- */
+.note,.warn,.mnemo{border-radius:var(--r-md);padding:14px 18px;margin:14px 0;font-size:.92rem}
+.note{background:var(--sky)}
+.warn{background:var(--rose)}
+.mnemo{background:var(--butter)}
+.note b,.warn b,.mnemo b{font-weight:700}
+.mnemo::before{content:"🧠 Merkbild · ";font-weight:700}
+.warn::before{content:"⚠️ ";font-weight:700}
+
+/* ---------- Tabellen ---------- */
+table{width:100%;border-collapse:separate;border-spacing:0;font-size:.88rem;margin:10px 0}
+th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-family:'Sora';font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft)}
+tr:last-child td{border-bottom:none}
+thead th:first-child{border-top-left-radius:var(--r-sm)}
+thead th:last-child{border-top-right-radius:var(--r-sm)}
+thead{background:var(--paper)}
+.scroll-x{overflow-x:auto}
+.scroll-x table{min-width:600px}
+.tag{display:inline-block;font-family:'Sora';font-weight:700;font-size:.7rem;padding:3px 9px;border-radius:999px;white-space:nowrap}
+.tag-sys{background:var(--peach);color:var(--peach-deep)}
+.tag-pod{background:var(--mint);color:var(--mint-deep)}
+
+/* ---------- Details ---------- */
+details{border:1.5px solid var(--line);border-radius:var(--r-md);margin:12px 0;background:var(--card)}
+details summary{cursor:pointer;padding:14px 18px;font-weight:600;font-size:.94rem;list-style:none;display:flex;align-items:center;gap:10px}
+details summary::before{content:"+";font-family:'Sora';font-weight:700;width:24px;height:24px;border-radius:8px;background:var(--paper);display:grid;place-items:center;flex-shrink:0}
+details[open] summary::before{content:"–"}
+details .inner{padding:0 18px 18px}
+summary::-webkit-details-marker{display:none}
+
+footer{max-width:1060px;margin:0 auto;padding:30px 24px 60px;color:var(--ink-soft);font-size:.82rem;border-top:1px solid var(--line)}
+footer a{color:var(--ink-soft)}
+
+@media(max-width:820px){
+  .route{grid-template-columns:repeat(2,1fr)}
+  .grid2{grid-template-columns:1fr}
+}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.route a{transition:none}}
+</style>
+</head>
+<body>
+
+<header>
+  <span class="kicker">Kubernetes · Grundlagen · Einstieg</span>
+  <h1>Die Komponenten im Überblick:<br>Pod oder <span>systemd-Dienst</span>?</h1>
+  <p class="lede">Ein Cluster besteht aus überschaubar wenigen Teilen. Der Einstieg wird leichter, wenn man für jedes Teil zwei Fragen beantworten kann: <b>auf welcher Node läuft es</b> und <b>wird es von Kubernetes oder von Linux gestartet</b>. Sieben Abschnitte, die genau das klären.</p>
+</header>
+
+<div class="route">
+  <a href="#zwei-welten"><span class="dot">0</span><span class="t">Zwei Welten</span><span class="s">Linux und Kubernetes</span></a>
+  <a href="#pod"><span class="dot">1</span><span class="t">Was ist ein Pod?</span><span class="s">Hülle, kein Container</span></a>
+  <a href="#nodes"><span class="dot">2</span><span class="t">Zwei Node-Rollen</span><span class="s">Control Plane und Worker</span></a>
+  <a href="#control-plane"><span class="dot">3</span><span class="t">Control Plane</span><span class="s">Vier Komponenten</span></a>
+  <a href="#worker"><span class="dot">4</span><span class="t">Worker</span><span class="s">Drei Komponenten</span></a>
+  <a href="#tabelle"><span class="dot">5</span><span class="t">Gesamtübersicht</span><span class="s">Pod oder systemd</span></a>
+  <a href="#nachsehen"><span class="dot">6</span><span class="t">Selbst nachsehen</span><span class="s">Befehle zum Prüfen</span></a>
+</div>
+
+<nav><div class="wrap">
+  <a href="#zwei-welten">0 · Zwei Welten</a>
+  <a href="#pod">1 · Was ist ein Pod?</a>
+  <a href="#nodes">2 · Node-Rollen</a>
+  <a href="#control-plane">3 · Control Plane</a>
+  <a href="#worker">4 · Worker</a>
+  <a href="#tabelle">5 · Gesamtübersicht</a>
+  <a href="#nachsehen">6 · Selbst nachsehen</a>
+</div></nav>
+
+<main>
+
+<!-- ================= 0 ZWEI WELTEN ================= -->
+<section id="zwei-welten" class="aqua">
+  <div class="sec-head"><div class="badge">0</div><h2>Zwei Welten auf derselben Maschine</h2></div>
+  <p class="sec-sub">Jede Node eines Clusters ist zunächst ein ganz normaler Linux-Server. Darauf läuft Kubernetes. Beide Welten starten Dinge – nur mit unterschiedlichen Mitteln.</p>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>Welt 1 · Linux und systemd</h3>
+      <p>Beim Booten startet der Kernel genau <b>einen</b> Prozess: <code>systemd</code> mit der PID 1. Alles andere auf der Maschine ist ein Kind davon.</p>
+      <p style="margin-top:10px">systemd startet Dienste, startet sie neu wenn sie abstürzen, und sammelt ihre Logs. Das ist gewöhnliche Server-Administration – älter als Kubernetes und unabhängig davon.</p>
+      <pre><code>systemctl status &lt;dienst&gt;
+journalctl -u &lt;dienst&gt; -f</code></pre>
+    </div>
+    <div class="card">
+      <h3>Welt 2 · Kubernetes und Pods</h3>
+      <p>Kubernetes verwaltet Pods – über viele Maschinen hinweg. Es entscheidet, <i>wo</i> etwas läuft, und sorgt dafür, dass der gewünschte Zustand erhalten bleibt.</p>
+      <p style="margin-top:10px">Man beschreibt, was laufen soll; Kubernetes kümmert sich um das Wie und Wo.</p>
+      <pre><code>kubectl get pods -A
+kubectl logs &lt;pod&gt; -n &lt;namespace&gt;</code></pre>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Wo die zwei Welten sich berühren</h3>
+    <p>An genau <b>einer</b> Stelle: dem <b>kubelet</b>. Es ist ein systemd-Dienst und gleichzeitig der Agent von Kubernetes auf der Node. Es übersetzt zwischen beiden Welten.</p>
+    <pre><code>Kernel
+  └─ systemd (PID 1)                <span class="c">← Linux-Welt</span>
+       ├─ sshd
+       ├─ chronyd
+       └─ kubelet                   <span class="c">← der Übergang</span>
+            └─ containerd / CRI-O
+                 └─ Container-Prozesse   <span class="c">← Kubernetes-Welt</span></code></pre>
+  </div>
+
+  <div class="mnemo"><b>systemd ist der Hausmeister eines Gebäudes, Kubernetes die Zentrale einer Filialkette.</b> Der Hausmeister kennt nur sein Haus. Die Zentrale entscheidet, in welcher Filiale was passiert – aufschließen muss trotzdem immer der Hausmeister vor Ort.</div>
+</section>
+
+<!-- ================= 1 POD ================= -->
+<section id="pod" class="mint">
+  <div class="sec-head"><div class="badge">1</div><h2>Was ist ein Pod eigentlich?</h2></div>
+  <p class="sec-sub">Der Begriff, der am Anfang am häufigsten falsch verstanden wird. Ein Pod ist kein Container – er ist eine gemeinsame Hülle für einen oder mehrere Container.</p>
+
+  <div class="card">
+    <h3>Ein Container ist nur ein Prozess</h3>
+    <p>Der Linux-Kernel kennt keine Container. Er kennt Prozesse. Ein Container ist ein normaler Prozess, dem der Kernel zwei Dinge gegeben hat:</p>
+    <ul class="clean">
+      <li><b>Namespaces</b> – die Scheuklappen. Der Prozess sieht nur seine eigene Prozessliste, sein eigenes Netzwerk, sein eigenes Dateisystem.</li>
+      <li><b>cgroups</b> – die Fesseln. Wie viel CPU und Arbeitsspeicher er verbrauchen darf.</li>
+    </ul>
+    <p style="margin-top:12px">Mehr ist es nicht. Kein eigenes Betriebssystem, keine virtuelle Maschine. Ein <code>ps aux</code> auf der Node zeigt Container-Prozesse direkt an, gleichberechtigt neben sshd.</p>
+  </div>
+
+  <div class="card">
+    <h3>Der Pod ist die gemeinsame Hülle</h3>
+    <p>Kubernetes startet für jeden Pod zuerst einen winzigen Hilfscontainer, der nichts tut außer zu schlafen. Sein einziger Zweck ist, die Namespaces zu <b>halten</b>. Alle echten Container des Pods hängen sich dann in dessen Netzwerk-Namespace ein.</p>
+    <p style="margin-top:12px">Daraus folgt alles, was über Pods zu wissen ist:</p>
+    <ul class="clean">
+      <li>Alle Container eines Pods teilen sich <b>eine IP-Adresse</b></li>
+      <li>Sie erreichen sich gegenseitig über <code>localhost</code></li>
+      <li>Zwei Container im selben Pod können nicht denselben Port belegen</li>
+      <li>Sie können sich Volumes teilen</li>
+      <li>Sie landen immer gemeinsam auf derselben Node</li>
+    </ul>
+  </div>
+
+  <div class="mnemo"><b>Der Pod ist die Wohnung, die Container sind die WG-Mitbewohner.</b> Eine Klingel, eine Adresse, gemeinsame Küche – aber jeder hat sein eigenes Zimmer mit eigenem Kram.</div>
+
+  <div class="note"><b>Praktische Konsequenz:</b> Man kann keinen einzelnen Container deployen, immer nur einen Pod. In der Praxis enthalten die allermeisten Pods genau einen Container – die Hülle ist dann trotzdem da.</div>
+</section>
+
+<!-- ================= 2 NODES ================= -->
+<section id="nodes" class="sky">
+  <div class="sec-head"><div class="badge">2</div><h2>Zwei Rollen für Nodes</h2></div>
+  <p class="sec-sub">Ein Cluster besteht aus Maschinen in zwei Rollen. Beide sind Linux-Server, beide haben ein kubelet – der Unterschied liegt darin, was zusätzlich darauf läuft.</p>
+
+  <div class="card">
+    <h3>Der Aufbau eines Clusters</h3>
+    <svg viewBox="0 0 660 330" width="100%" style="max-width:640px;display:block;margin:8px auto" role="img" aria-labelledby="nodesT nodesD">
+      <title id="nodesT">Control-Plane-Node und Worker-Node im Vergleich</title>
+      <desc id="nodesD">Beide Node-Typen laufen auf Linux mit systemd, kubelet und einer Container-Runtime. Auf der Control-Plane-Node laufen zusätzlich etcd, apiserver, controller-manager und scheduler als Static Pods. Auf der Worker-Node laufen kube-proxy und die Anwendungs-Pods.</desc>
+
+      <text x="20" y="18" font-family="Sora" font-weight="700" font-size="13" fill="var(--ink-soft)">Control-Plane-Node</text>
+      <rect x="20" y="28" width="300" height="286" rx="14" fill="var(--card)" stroke="var(--line)" stroke-width="1.5"/>
+
+      <rect x="38" y="46" width="264" height="52" rx="10" fill="var(--mint)"/>
+      <text x="170" y="64" text-anchor="middle" dominant-baseline="central" font-family="Sora" font-weight="700" font-size="12" fill="var(--mint-deep)">etcd · kube-apiserver</text>
+      <text x="170" y="84" text-anchor="middle" dominant-baseline="central" font-family="Sora" font-weight="700" font-size="12" fill="var(--mint-deep)">controller-manager · scheduler</text>
+      <text x="170" y="112" text-anchor="middle" font-family="Inter" font-size="11" fill="var(--ink-soft)">Static Pods</text>
+
+      <rect x="38" y="126" width="264" height="38" rx="10" fill="var(--mint)" opacity="0.5"/>
+      <text x="170" y="145" text-anchor="middle" dominant-baseline="central" font-family="Sora" font-weight="700" font-size="12" fill="var(--mint-deep)">kube-proxy · CNI-Agent</text>
+      <text x="170" y="178" text-anchor="middle" font-family="Inter" font-size="11" fill="var(--ink-soft)">DaemonSet-Pods</text>
+
+      <rect x="38" y="192" width="264" height="34" rx="10" fill="var(--peach)"/>
+      <text x="170" y="209" text-anchor="middle" dominant-baseline="central" font-family="Sora" font-weight="700" font-size="12" fill="var(--peach-deep)">containerd / CRI-O</text>
+
+      <rect x="38" y="234" width="264" height="34" rx="10" fill="var(--peach)"/>
+      <text x="170" y="251" text-anchor="middle" dominant-baseline="central" font-family="Sora" font-weight="700" font-size="12" fill="var(--peach-deep)">kubelet</text>
+
+      <rect x="38" y="276" width="264" height="26" rx="8" fill="var(--paper)" stroke="var(--line)" stroke-width="1"/>
+      <text x="170" y="289" text-anchor="middle" dominant-baseline="central" font-family="Inter" font-size="11" fill="var(--ink-soft)">Linux · systemd</text>
+
+      <text x="360" y="18" font-family="Sora" font-weight="700" font-size="13" fill="var(--ink-soft)">Worker-Node</text>
+      <rect x="360" y="28" width="280" height="286" rx="14" fill="var(--card)" stroke="var(--line)" stroke-width="1.5"/>
+
+      <rect x="378" y="46" width="244" height="66" rx="10" fill="var(--sky)"/>
+      <text x="500" y="70" text-anchor="middle" dominant-baseline="central" font-family="Sora" font-weight="700" font-size="12" fill="var(--sky-deep)">deine Anwendungen</text>
+      <text x="500" y="90" text-anchor="middle" dominant-baseline="central" font-family="Inter" font-size="11" fill="var(--sky-deep)">Deployments, StatefulSets, Jobs</text>
+      <text x="500" y="126" text-anchor="middle" font-family="Inter" font-size="11" fill="var(--ink-soft)">normale Pods</text>
+
+      <rect x="378" y="140" width="244" height="38" rx="10" fill="var(--sky)" opacity="0.5"/>
+      <text x="500" y="159" text-anchor="middle" dominant-baseline="central" font-family="Sora" font-weight="700" font-size="12" fill="var(--sky-deep)">kube-proxy · CNI-Agent</text>
+      <text x="500" y="186" text-anchor="middle" font-family="Inter" font-size="11" fill="var(--ink-soft)">DaemonSet-Pods</text>
+
+      <rect x="378" y="200" width="244" height="34" rx="10" fill="var(--peach)"/>
+      <text x="500" y="217" text-anchor="middle" dominant-baseline="central" font-family="Sora" font-weight="700" font-size="12" fill="var(--peach-deep)">containerd / CRI-O</text>
+
+      <rect x="378" y="242" width="244" height="34" rx="10" fill="var(--peach)"/>
+      <text x="500" y="259" text-anchor="middle" dominant-baseline="central" font-family="Sora" font-weight="700" font-size="12" fill="var(--peach-deep)">kubelet</text>
+
+      <rect x="378" y="284" width="244" height="26" rx="8" fill="var(--paper)" stroke="var(--line)" stroke-width="1"/>
+      <text x="500" y="297" text-anchor="middle" dominant-baseline="central" font-family="Inter" font-size="11" fill="var(--ink-soft)">Linux · systemd</text>
+    </svg>
+    <div style="display:flex;gap:18px;flex-wrap:wrap;justify-content:center;margin-top:6px;font-size:.84rem;color:var(--ink-soft)">
+      <span><span class="tag tag-sys">systemd</span> von Linux gestartet</span>
+      <span><span class="tag tag-pod">Pod</span> von Kubernetes verwaltet</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Was auffällt</h3>
+    <ul class="clean">
+      <li><b>Die unteren drei Schichten sind identisch.</b> Linux, kubelet und Container-Runtime gibt es auf jeder Node, egal welche Rolle sie hat.</li>
+      <li><b>Nur die oberste Schicht unterscheidet sich.</b> Control Plane trägt die Steuerung, Worker tragen die Anwendungen.</li>
+      <li><b>kube-proxy und der Netzwerk-Agent laufen überall.</b> Auch Control-Plane-Nodes brauchen Netzwerk.</li>
+    </ul>
+  </div>
+
+  <div class="note"><b>In kleinen Clustern ist die Trennung aufgehoben.</b> Bei einem Compact-Cluster oder einer lokalen Testumgebung tragen dieselben drei Maschinen beide Rollen. Die Komponenten bleiben dieselben, sie liegen nur alle auf einem Stapel.</div>
+</section>
+
+<!-- ================= 3 CONTROL PLANE ================= -->
+<section id="control-plane" class="lav">
+  <div class="sec-head"><div class="badge">3</div><h2>Control Plane: das Gehirn</h2></div>
+  <p class="sec-sub">Vier Komponenten. Sie entscheiden, was im Cluster passieren soll – führen selbst aber keine Anwendungen aus.</p>
+
+  <div class="card">
+    <h3>Die vier Komponenten</h3>
+    <ol class="steps">
+      <li><div><b>etcd</b> <span class="tag tag-pod">Static Pod</span><small>Die Datenbank. Der einzige Ort, an dem der Cluster-Zustand wirklich steht. Alles andere lässt sich wiederherstellen, etcd nicht – deshalb ist es das, was gesichert werden muss.</small></div></li>
+      <li><div><b>kube-apiserver</b> <span class="tag tag-pod">Static Pod</span><small>Die einzige Tür zu etcd. Prüft Anmeldung, Berechtigung und Gültigkeit jeder Anfrage. Jede andere Komponente redet mit ihm – keine redet direkt mit etcd.</small></div></li>
+      <li><div><b>kube-controller-manager</b> <span class="tag tag-pod">Static Pod</span><small>Der Soll-Ist-Abgleicher. Gewünscht sind 3 Replicas, es laufen 2 – also erzeugt er eine nach. Das in Dauerschleife, für dutzende Objekttypen.</small></div></li>
+      <li><div><b>kube-scheduler</b> <span class="tag tag-pod">Static Pod</span><small>Der Platzanweiser. Sieht Pods, denen noch keine Node zugewiesen ist, und entscheidet anhand von Ressourcen und Regeln, wohin sie sollen. Danach ist er fertig – gestartet wird der Pod vom kubelet.</small></div></li>
+    </ol>
+  </div>
+
+  <div class="mnemo"><b>etcd ist das Archiv, der apiserver die Empfangstheke davor.</b> Niemand geht selbst ins Archiv. Der controller-manager ist der Sachbearbeiter, der ständig Soll gegen Ist vergleicht, und der scheduler der Disponent, der neuen Aufträgen eine Werkstatt zuweist.</div>
+
+  <div class="note"><b>Warum ausgerechnet Static Pods?</b> Diese vier müssen laufen, bevor der apiserver verfügbar ist – sonst könnte sich der apiserver nicht selbst starten. Static Pods sind Pods, deren Manifest als Datei auf der Node liegt: das kubelet startet sie direkt von der Platte, ohne jemanden zu fragen. Bei ausgelagerten Control Planes sieht das anders aus, dort laufen sie als normale Deployments in einem anderen Cluster.</div>
+</section>
+
+<!-- ================= 4 WORKER ================= -->
+<section id="worker" class="peach">
+  <div class="sec-head"><div class="badge">4</div><h2>Worker: die Hände</h2></div>
+  <p class="sec-sub">Hier laufen die Anwendungen. Drei Komponenten sorgen dafür, dass das funktioniert – zwei davon startet Linux, eine Kubernetes.</p>
+
+  <div class="card">
+    <h3>Die drei Komponenten</h3>
+    <ol class="steps">
+      <li><div><b>kubelet</b> <span class="tag tag-sys">systemd</span><small>Der Agent auf der Node. Fragt beim apiserver nach, welche Pods hier laufen sollen, weist die Runtime an sie zu starten, meldet den Zustand zurück und startet neu, was ausfällt.</small></div></li>
+      <li><div><b>containerd oder CRI-O</b> <span class="tag tag-sys">systemd</span><small>Die Container-Runtime. Lädt Images herunter und startet daraus die tatsächlichen Prozesse. Das kubelet redet mit ihr über eine standardisierte Schnittstelle – deshalb sind beide austauschbar.</small></div></li>
+      <li><div><b>kube-proxy</b> <span class="tag tag-pod">DaemonSet</span><small>Sorgt dafür, dass Service-Adressen funktionieren: Anfragen an eine Service-IP landen bei einem passenden Pod. Läuft als Pod, weil es erst gebraucht wird, wenn der apiserver bereits da ist.</small></div></li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h3>Warum das kubelet kein Pod sein kann</h3>
+    <p>Das kubelet ist die Komponente, die Container auf einer Node startet. Liefe es selbst als Container, müsste es sich selbst starten. Deshalb ist es ein gewöhnlicher Systemdienst mit einer Unit-Datei, wie sshd auch.</p>
+    <div class="mnemo"><b>Das kubelet ist der Hausmeister mit dem Schlüssel.</b> Er kann nicht warten, bis ihn jemand hereinlässt – er ist derjenige, der aufschließt.</div>
+  </div>
+
+  <div class="note"><b>Ein DaemonSet</b> ist ein Bauplan, der sagt: „von diesem Pod genau eine Kopie auf jeder Node". Genau richtig für Dinge, die überall lokal gebraucht werden – Netzwerk, Log-Sammler, Monitoring-Agents.</div>
+</section>
+
+<!-- ================= 5 TABELLE ================= -->
+<section id="tabelle" class="butter">
+  <div class="sec-head"><div class="badge">5</div><h2>Gesamtübersicht</h2></div>
+  <p class="sec-sub">Alle Komponenten auf einen Blick – mit den zwei Fragen, um die es geht.</p>
+
+  <div class="card">
+    <div class="scroll-x">
+      <table>
+        <thead><tr><th>Komponente</th><th>Wo</th><th>Was es ist</th><th>Aufgabe</th></tr></thead>
+        <tbody>
+          <tr><td><b>etcd</b></td><td>Control Plane</td><td><span class="tag tag-pod">Static Pod</span></td><td>speichert den gesamten Cluster-Zustand</td></tr>
+          <tr><td><b>kube-apiserver</b></td><td>Control Plane</td><td><span class="tag tag-pod">Static Pod</span></td><td>einzige Tür zu etcd, prüft jede Anfrage</td></tr>
+          <tr><td><b>kube-controller-manager</b></td><td>Control Plane</td><td><span class="tag tag-pod">Static Pod</span></td><td>gleicht Soll- und Ist-Zustand ab</td></tr>
+          <tr><td><b>kube-scheduler</b></td><td>Control Plane</td><td><span class="tag tag-pod">Static Pod</span></td><td>weist neuen Pods eine Node zu</td></tr>
+          <tr><td><b>kubelet</b></td><td>jede Node</td><td><span class="tag tag-sys">systemd</span></td><td>startet und überwacht Pods auf seiner Node</td></tr>
+          <tr><td><b>containerd / CRI-O</b></td><td>jede Node</td><td><span class="tag tag-sys">systemd</span></td><td>startet die eigentlichen Container-Prozesse</td></tr>
+          <tr><td><b>kube-proxy</b></td><td>jede Node</td><td><span class="tag tag-pod">DaemonSet</span></td><td>leitet Service-Adressen an Pods weiter</td></tr>
+          <tr><td><b>CNI-Agent</b></td><td>jede Node</td><td><span class="tag tag-pod">DaemonSet</span></td><td>richtet das Pod-Netzwerk ein</td></tr>
+          <tr><td><b>deine Anwendungen</b></td><td>Worker</td><td><span class="tag tag-pod">Pod</span></td><td>der eigentliche Zweck des Clusters</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Die Regel dahinter</h3>
+    <div class="grid2">
+      <div>
+        <p><span class="tag tag-sys">systemd</span></p>
+        <p style="margin-top:8px;font-size:.92rem">Alles, was da sein muss, <b>bevor</b> Kubernetes funktioniert. kubelet und Runtime können nicht darauf warten, von Kubernetes gestartet zu werden – sie sind die Voraussetzung dafür.</p>
+      </div>
+      <div>
+        <p><span class="tag tag-pod">Pod</span></p>
+        <p style="margin-top:8px;font-size:.92rem">Alles, was <b>danach</b> kommt. Static Pods sind der Sonderfall dazwischen: schon Pods, aber ohne apiserver gestartet – deshalb liegen ihre Manifeste als Datei auf der Node.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="warn"><b>Nicht verwechseln:</b> <code>kubectl</code> taucht in keiner Zeile auf. Es ist ein reines Client-Programm auf dem eigenen Rechner und läuft nirgends im Cluster.</div>
+</section>
+
+<!-- ================= 6 NACHSEHEN ================= -->
+<section id="nachsehen" class="rose">
+  <div class="sec-head"><div class="badge">6</div><h2>Selbst nachsehen</h2></div>
+  <p class="sec-sub">Die schnellste Art, das Gelesene zu verankern: es im eigenen Cluster bestätigen. Alle Befehle sind lesend und ungefährlich.</p>
+
+  <details>
+    <summary>Welche Nodes gibt es und welche Rolle haben sie?</summary>
+    <div class="inner">
+      <pre><code>kubectl get nodes -o wide</code></pre>
+      <p>Die Spalte <code>ROLES</code> zeigt <code>control-plane</code> bei Steuerungs-Nodes. Bei kleinen Clustern kann eine Node beide Rollen tragen.</p>
+    </div>
+  </details>
+
+  <details>
+    <summary>Die Control-Plane-Komponenten als Pods sehen</summary>
+    <div class="inner">
+      <pre><code>kubectl -n kube-system get pods -o wide</code></pre>
+      <p>Dort tauchen <code>etcd-…</code>, <code>kube-apiserver-…</code>, <code>kube-controller-manager-…</code> und <code>kube-scheduler-…</code> auf – jeweils mit dem Node-Namen als Anhängsel. Das ist das Kennzeichen von Static Pods.</p>
+    </div>
+  </details>
+
+  <details>
+    <summary>Die systemd-Seite auf einer Node prüfen</summary>
+    <div class="inner">
+      <p>Dafür braucht es eine Shell auf der Node selbst:</p>
+      <pre><code>systemctl status kubelet
+systemctl status containerd
+
+<span class="c"># Logs mitlesen</span>
+journalctl -u kubelet -f</code></pre>
+      <p>Bei RKE2 heißen die Dienste <code>rke2-server</code> beziehungsweise <code>rke2-agent</code> – dort läuft das kubelet als deren Kindprozess.</p>
+    </div>
+  </details>
+
+  <details>
+    <summary>Die Manifeste der Static Pods ansehen</summary>
+    <div class="inner">
+      <pre><code>ls -l /etc/kubernetes/manifests/</code></pre>
+      <p>Bei RKE2 liegt das Verzeichnis unter <code>/var/lib/rancher/rke2/agent/pod-manifests</code>.</p>
+      <div class="warn"><b>Nur ansehen, nicht ändern.</b> Eine gelöschte Datei stoppt die Komponente sofort. Bei OpenShift werden die Manifeste von Operatoren verwaltet und Änderungen automatisch überschrieben.</div>
+    </div>
+  </details>
+
+  <details>
+    <summary>Die DaemonSets sehen, die überall laufen</summary>
+    <div class="inner">
+      <pre><code>kubectl -n kube-system get daemonsets</code></pre>
+      <p>Die Spalte <code>DESIRED</code> entspricht der Anzahl der Nodes – das ist die Definition eines DaemonSets.</p>
+    </div>
+  </details>
+
+  <div class="card">
+    <h3>Was hängenbleiben sollte</h3>
+    <ul class="clean">
+      <li><b>Ein Container ist ein Prozess</b> mit Scheuklappen und Fesseln, kein kleines Betriebssystem.</li>
+      <li><b>Ein Pod ist die Hülle</b> um einen oder mehrere Container: eine IP, ein Netzwerk, gemeinsame Volumes.</li>
+      <li><b>Control Plane entscheidet, Worker führen aus</b> – und jede Node ist darunter ein normaler Linux-Server.</li>
+      <li><b>systemd startet, was vor Kubernetes da sein muss</b>: kubelet und Container-Runtime.</li>
+      <li><b>Alles andere ist ein Pod</b> – die Control Plane als Static Pod von der Platte, der Rest über den apiserver.</li>
+    </ul>
+  </div>
+</section>
+
+</main>
+
+<footer>Einstieg in den Aufbau eines Kubernetes-Clusters: Rollenverteilung zwischen Control Plane und Worker sowie die Abgrenzung zwischen systemd-Diensten und Pods. Details wie Pfade und Dienstnamen unterscheiden sich je nach Distribution.</footer>
+
+</body>
+</html>
