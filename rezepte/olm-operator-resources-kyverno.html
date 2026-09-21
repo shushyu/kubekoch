@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OLM-Operatoren: Resources pro Container anpassen – am Beispiel Veeam Kasten mit Kyverno</title>
+<meta name="rezept-kategorie"    content="cluster-ops">
+<meta name="rezept-beschreibung" content="Warum Subscription-Resources für alle Container im Operator-Pod gelten, wie man pro Container über die CSV anpasst und wie eine Kyverno-Policy den Wert über Operator-Upgrades hinweg hält.">
+<meta name="rezept-stand"        content="OpenShift 4.18 · OLM v0 · 09/2026">
+<meta name="rezept-suche"        content="olm operator lifecycle manager csv clusterserviceversion subscription installplan catalogsource operatorgroup resources requests cpu kube-rbac-proxy manager veeam kasten k10 kyverno clusterpolicy mutate foreach patchesjson6902 argocd operatorhub">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#33394a;
+  --ink-soft:#5c6376;
+  --paper:#fbfaf7;
+  --card:#ffffff;
+  --line:#e9e6df;
+  --code-bg:#31364a;
+  --code-ink:#e8eaf2;
+  --mint:#d9f2e4;      --mint-deep:#2f8f6b;
+  --sky:#dcebf9;       --sky-deep:#2d6fa8;
+  --lav:#e7e2f7;       --lav-deep:#6b5bb5;
+  --peach:#fbe6d7;     --peach-deep:#c2703d;
+  --butter:#faf0cf;    --butter-deep:#a5842a;
+  --rose:#f9e0e6;      --rose-deep:#b34f6d;
+  --aqua:#d7eff0;      --aqua-deep:#2b8288;
+  --r-lg:26px; --r-md:18px; --r-sm:12px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;scroll-padding-top:90px}
+body{font-family:'Inter',sans-serif;background:var(--paper);color:var(--ink);line-height:1.65;font-size:16px}
+h1,h2,h3,h4{font-family:'Sora',sans-serif;line-height:1.2}
+
+/* ---------- Kopf ---------- */
+header{max-width:1060px;margin:0 auto;padding:56px 24px 8px}
+.kicker{display:inline-block;background:var(--lav);color:var(--lav-deep);font-weight:600;font-size:.8rem;letter-spacing:.08em;text-transform:uppercase;padding:6px 14px;border-radius:999px;margin-bottom:18px}
+header h1{font-size:clamp(1.9rem,4.5vw,3rem);font-weight:800;letter-spacing:-.02em}
+header h1 span{color:var(--mint-deep)}
+.lede{color:var(--ink-soft);max-width:640px;margin-top:14px;font-size:1.05rem}
+
+/* ---------- Route ---------- */
+.route{max-width:1060px;margin:34px auto 10px;padding:0 24px;display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.route a{display:flex;flex-direction:column;gap:8px;text-decoration:none;color:var(--ink);background:var(--card);border:1.5px solid var(--line);border-radius:var(--r-md);padding:16px 14px;transition:transform .15s ease,box-shadow .15s ease}
+.route a:hover,.route a:focus-visible{transform:translateY(-3px);box-shadow:0 8px 22px rgba(60,60,90,.10);outline:none}
+.route .dot{width:34px;height:34px;border-radius:12px;display:grid;place-items:center;font-family:'Sora';font-weight:700;font-size:.9rem}
+.route .t{font-weight:600;font-size:.86rem;line-height:1.3}
+.route .s{font-size:.74rem;color:var(--ink-soft)}
+.route a:nth-child(1) .dot{background:var(--aqua);color:var(--aqua-deep)}
+.route a:nth-child(2) .dot{background:var(--mint);color:var(--mint-deep)}
+.route a:nth-child(3) .dot{background:var(--sky);color:var(--sky-deep)}
+.route a:nth-child(4) .dot{background:var(--lav);color:var(--lav-deep)}
+.route a:nth-child(5) .dot{background:var(--peach);color:var(--peach-deep)}
+.route a:nth-child(6) .dot{background:var(--butter);color:var(--butter-deep)}
+.route a:nth-child(7) .dot{background:var(--rose);color:var(--rose-deep)}
+.route a:nth-child(8) .dot{background:var(--mint);color:var(--mint-deep)}
+.route a:nth-child(9) .dot{background:var(--sky);color:var(--sky-deep)}
+
+/* ---------- Sticky-Nav ---------- */
+nav{position:sticky;top:0;z-index:50;background:rgba(251,250,247,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);margin-top:26px}
+nav .wrap{max-width:1060px;margin:0 auto;padding:10px 24px;display:flex;gap:8px;overflow-x:auto}
+nav a{white-space:nowrap;text-decoration:none;font-size:.82rem;font-weight:600;color:var(--ink-soft);padding:7px 14px;border-radius:999px;border:1px solid transparent}
+nav a:hover{background:var(--card);border-color:var(--line);color:var(--ink)}
+
+/* ---------- Sektionen ---------- */
+main{max-width:1060px;margin:0 auto;padding:20px 24px 90px}
+section{margin-top:64px}
+.sec-head{display:flex;align-items:center;gap:16px;margin-bottom:8px}
+.badge{width:52px;height:52px;border-radius:16px;display:grid;place-items:center;font-family:'Sora';font-weight:800;font-size:1.25rem;flex-shrink:0}
+section h2{font-size:clamp(1.4rem,3vw,1.9rem);font-weight:700}
+.sec-sub{color:var(--ink-soft);margin-bottom:22px;max-width:720px}
+.aqua .badge{background:var(--aqua);color:var(--aqua-deep)}
+.mint .badge{background:var(--mint);color:var(--mint-deep)}
+.sky .badge{background:var(--sky);color:var(--sky-deep)}
+.lav .badge{background:var(--lav);color:var(--lav-deep)}
+.peach .badge{background:var(--peach);color:var(--peach-deep)}
+.butter .badge{background:var(--butter);color:var(--butter-deep)}
+.rose .badge{background:var(--rose);color:var(--rose-deep)}
+
+/* ---------- Karten & Schritte ---------- */
+.card{background:var(--card);border:1.5px solid var(--line);border-radius:var(--r-lg);padding:26px 28px;margin-bottom:20px}
+.card h3{font-size:1.08rem;margin-bottom:14px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+ol.steps{list-style:none;counter-reset:s;display:flex;flex-direction:column;gap:14px}
+ol.steps li{counter-increment:s;display:grid;grid-template-columns:34px 1fr;gap:14px;align-items:start}
+ol.steps li::before{content:counter(s);width:30px;height:30px;border-radius:10px;display:grid;place-items:center;font-family:'Sora';font-weight:700;font-size:.85rem;margin-top:2px}
+.aqua ol.steps li::before{background:var(--aqua);color:var(--aqua-deep)}
+.mint ol.steps li::before{background:var(--mint);color:var(--mint-deep)}
+.sky ol.steps li::before{background:var(--sky);color:var(--sky-deep)}
+.lav ol.steps li::before{background:var(--lav);color:var(--lav-deep)}
+.peach ol.steps li::before{background:var(--peach);color:var(--peach-deep)}
+.butter ol.steps li::before{background:var(--butter);color:var(--butter-deep)}
+.rose ol.steps li::before{background:var(--rose);color:var(--rose-deep)}
+.steps b{font-weight:600}
+.steps small{display:block;color:var(--ink-soft);font-size:.86rem;margin-top:2px}
+
+ul.clean{list-style:none;display:flex;flex-direction:column;gap:10px}
+ul.clean li{padding-left:24px;position:relative}
+ul.clean li::before{content:"";position:absolute;left:4px;top:.62em;width:9px;height:9px;border-radius:3px;background:var(--line)}
+.aqua ul.clean li::before{background:var(--aqua-deep)}
+.mint ul.clean li::before{background:var(--mint-deep)}
+.sky ul.clean li::before{background:var(--sky-deep)}
+.lav ul.clean li::before{background:var(--lav-deep)}
+.peach ul.clean li::before{background:var(--peach-deep)}
+.butter ul.clean li::before{background:var(--butter-deep)}
+.rose ul.clean li::before{background:var(--rose-deep)}
+
+/* ---------- Code ---------- */
+pre{background:var(--code-bg);color:var(--code-ink);border-radius:var(--r-sm);padding:16px 18px;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:.82rem;line-height:1.6;margin:10px 0}
+code{font-family:'JetBrains Mono',monospace;font-size:.85em;background:#efede7;border-radius:6px;padding:2px 6px}
+pre code{background:none;padding:0;font-size:1em}
+pre .c{color:#9aa3c0}
+
+/* ---------- Hinweisboxen ---------- */
+.note,.warn,.mnemo{border-radius:var(--r-md);padding:14px 18px;margin:14px 0;font-size:.92rem}
+.note{background:var(--sky)}
+.warn{background:var(--rose)}
+.mnemo{background:var(--butter)}
+.note b,.warn b,.mnemo b{font-weight:700}
+.mnemo::before{content:"🧠 Merkbild · ";font-weight:700}
+.warn::before{content:"⚠️ ";font-weight:700}
+
+/* ---------- Tabellen ---------- */
+table{width:100%;border-collapse:separate;border-spacing:0;font-size:.88rem;margin:10px 0}
+th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-family:'Sora';font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft)}
+tr:last-child td{border-bottom:none}
+thead th:first-child{border-top-left-radius:var(--r-sm)}
+thead th:last-child{border-top-right-radius:var(--r-sm)}
+thead{background:var(--paper)}
+
+/* ---------- Details ---------- */
+details{border:1.5px solid var(--line);border-radius:var(--r-md);margin:12px 0;background:var(--card)}
+details summary{cursor:pointer;padding:14px 18px;font-weight:600;font-size:.94rem;list-style:none;display:flex;align-items:center;gap:10px}
+details summary::before{content:"+";font-family:'Sora';font-weight:700;width:24px;height:24px;border-radius:8px;background:var(--paper);display:grid;place-items:center;flex-shrink:0}
+details[open] summary::before{content:"–"}
+details .inner{padding:0 18px 18px}
+summary::-webkit-details-marker{display:none}
+
+footer{max-width:1060px;margin:0 auto;padding:30px 24px 60px;color:var(--ink-soft);font-size:.82rem;border-top:1px solid var(--line)}
+footer a{color:var(--ink-soft)}
+
+@media(max-width:820px){
+  .route{grid-template-columns:repeat(2,1fr)}
+  .grid2{grid-template-columns:1fr}
+}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.route a{transition:none}}
+</style>
+</head>
+<body>
+
+<header>
+  <span class="kicker">OpenShift 4.18+ · OLM v0 · Veeam Kasten · Kyverno</span>
+  <h1>OLM-Operatoren:<br>Resources <span>pro Container</span> anpassen</h1>
+  <p class="lede">Die Subscription kann Resources überschreiben – aber nur für <b>alle</b> Container im Operator-Pod gleichzeitig. Wer nur einen Container ändern will, muss an die CSV. Neun Abschnitte vom OLM-Grundaufbau bis zur Kyverno-Policy, die den Wert auch über Upgrades hinweg hält.</p>
+</header>
+
+<div class="route">
+  <a href="#problem"><span class="dot">0</span><span class="t">Das Problem</span><span class="s">800m, 10m, beide 400m</span></a>
+  <a href="#olm"><span class="dot">1</span><span class="t">OLM im Überblick</span><span class="s">Objekte und Ablauf</span></a>
+  <a href="#csv"><span class="dot">2</span><span class="t">Die CSV</span><span class="s">Original und Kopie</span></a>
+  <a href="#subscription"><span class="dot">3</span><span class="t">Subscription</span><span class="s">Warum sie nicht reicht</span></a>
+  <a href="#patch"><span class="dot">4</span><span class="t">CSV patchen</span><span class="s">Einmalige Lösung</span></a>
+  <a href="#kasten"><span class="dot">5</span><span class="t">Operator vs. Services</span><span class="s">CSV oder K10-CR</span></a>
+  <a href="#kyverno"><span class="dot">6</span><span class="t">Kyverno-Policy</span><span class="s">Dauerhafte Lösung</span></a>
+  <a href="#alternativen"><span class="dot">7</span><span class="t">Alternativen</span><span class="s">Fünf Varianten im Vergleich</span></a>
+  <a href="#kurzfassung"><span class="dot">8</span><span class="t">Kurzfassung</span><span class="s">Fünf Sätze</span></a>
+</div>
+
+<nav><div class="wrap">
+  <a href="#problem">0 · Problem</a>
+  <a href="#olm">1 · OLM</a>
+  <a href="#csv">2 · CSV</a>
+  <a href="#subscription">3 · Subscription</a>
+  <a href="#patch">4 · CSV patchen</a>
+  <a href="#kasten">5 · Operator vs. Services</a>
+  <a href="#kyverno">6 · Kyverno</a>
+  <a href="#alternativen">7 · Alternativen</a>
+  <a href="#kurzfassung">8 · Kurzfassung</a>
+</div></nav>
+
+<main>
+
+<!-- ================= 0 PROBLEM ================= -->
+<section id="problem" class="aqua">
+  <div class="sec-head"><div class="badge">0</div><h2>Das Problem: ein Wert für zwei Container</h2></div>
+  <p class="sec-sub">Ein über den OperatorHub installierter Operator läuft als Pod, oft mit zwei Containern: <code>manager</code> für die eigentliche Operator-Logik und <code>kube-rbac-proxy</code> als Sidecar, der den Metrics-Endpunkt schützt.</p>
+
+  <div class="card">
+    <h3>Der konkrete Fall</h3>
+    <ul class="clean">
+      <li>Pod <code>k10-kasten-operator-…-controller-manager-…</code> hat zwei Container</li>
+      <li>Container <code>manager</code> fordert <b>800m CPU</b> an, der Sidecar nur <b>10m</b></li>
+      <li>Ziel: nur <code>manager</code> auf <b>400m</b> senken</li>
+      <li>Setzt man den Wert in der Subscription (Web-Console → Operator → Subscription → Resources), landen <b>beide</b> Container bei 400m</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>Wer steuert was</h3>
+    <svg viewBox="0 0 680 410" width="100%" style="max-width:660px;display:block;margin:8px auto" role="img" aria-labelledby="olmT olmD">
+      <title id="olmT">OLM-Objekte und ihr Einfluss auf die Container des Operator-Pods</title>
+      <desc id="olmD">Subscription, InstallPlan, CSV und Deployment bilden eine Kette bis zum Operator-Pod. Resources aus der Subscription wirken auf alle Container, ein CSV-Patch nur auf einen. Der manager-Container verwaltet über die K10-CR die Kasten-Services. Bei einem Operator-Upgrade entsteht eine neue CSV und ein manueller Patch geht verloren.</desc>
+      <defs>
+        <marker id="olm-arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M2 1L8 5L2 9" fill="none" stroke="var(--ink-soft)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </marker>
+        <marker id="olm-arr-g" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M2 1L8 5L2 9" fill="none" stroke="var(--mint-deep)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </marker>
+        <marker id="olm-arr-r" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M2 1L8 5L2 9" fill="none" stroke="var(--rose-deep)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </marker>
+      </defs>
+
+      <!-- Kette oben -->
+      <g stroke="var(--ink-soft)" stroke-width="1.3" fill="none" marker-end="url(#olm-arr)">
+        <line x1="152" y1="53" x2="186" y2="53"/>
+        <line x1="322" y1="53" x2="356" y2="53"/>
+        <line x1="492" y1="53" x2="526" y2="53"/>
+        <line x1="595" y1="76" x2="595" y2="136"/>
+        <line x1="395" y1="224" x2="395" y2="296"/>
+        <line x1="310" y1="322" x2="264" y2="322"/>
+      </g>
+
+      <rect x="20" y="30" width="130" height="46" rx="12" fill="var(--rose)" stroke="var(--rose-deep)" stroke-width="1.5"/>
+      <text x="85" y="53" text-anchor="middle" dominant-baseline="central" font-family="Sora" font-weight="700" font-size="13" fill="var(--rose-deep)">Subscription</text>
+
+      <rect x="190" y="30" width="130" height="46" rx="12" fill="var(--card)" stroke="var(--line)" stroke-width="1.5"/>
+      <text x="255" y="53" text-anchor="middle" dominant-baseline="central" font-family="Sora" font-weight="700" font-size="13" fill="var(--ink)">InstallPlan</text>
+
+      <rect x="360" y="30" width="130" height="46" rx="12" fill="var(--card)" stroke="var(--line)" stroke-width="1.5"/>
+      <text x="425" y="53" text-anchor="middle" dominant-baseline="central" font-family="Sora" font-weight="700" font-size="13" fill="var(--ink)">CSV</text>
+
+      <rect x="530" y="30" width="130" height="46" rx="12" fill="var(--card)" stroke="var(--line)" stroke-width="1.5"/>
+      <text x="595" y="53" text-anchor="middle" dominant-baseline="central" font-family="Sora" font-weight="700" font-size="13" fill="var(--ink)">Deployment</text>
+
+      <!-- Subscription wirkt auf alle -->
+      <path d="M85 76 L85 190 L296 190" fill="none" stroke="var(--rose-deep)" stroke-width="1.3" stroke-dasharray="5 4" marker-end="url(#olm-arr-r)"/>
+      <text x="95" y="110" font-family="Inter" font-size="11" fill="var(--rose-deep)">resources gilt für</text>
+      <text x="95" y="125" font-family="Inter" font-size="11" fill="var(--rose-deep)">alle Container</text>
+
+      <!-- Operator-Pod -->
+      <rect x="300" y="140" width="360" height="100" rx="14" fill="none" stroke="var(--ink-soft)" stroke-width="1.2" stroke-dasharray="5 4"/>
+      <text x="316" y="158" font-family="Inter" font-size="11" fill="var(--ink-soft)">Operator-Pod</text>
+
+      <rect x="316" y="170" width="158" height="54" rx="10" fill="var(--mint)" stroke="var(--mint-deep)" stroke-width="1.5"/>
+      <text x="395" y="189" text-anchor="middle" dominant-baseline="central" font-family="Sora" font-weight="700" font-size="12" fill="var(--mint-deep)">manager</text>
+      <text x="395" y="208" text-anchor="middle" dominant-baseline="central" font-family="JetBrains Mono" font-size="11" fill="var(--mint-deep)">800m → 400m</text>
+
+      <rect x="486" y="170" width="158" height="54" rx="10" fill="var(--card)" stroke="var(--line)" stroke-width="1.5"/>
+      <text x="565" y="189" text-anchor="middle" dominant-baseline="central" font-family="Sora" font-weight="700" font-size="12" fill="var(--ink)">kube-rbac-proxy</text>
+      <text x="565" y="208" text-anchor="middle" dominant-baseline="central" font-family="JetBrains Mono" font-size="11" fill="var(--ink-soft)">10m bleibt</text>
+
+      <!-- CSV-Patch pro Container -->
+      <path d="M425 76 L425 110 L380 110 L380 166" fill="none" stroke="var(--mint-deep)" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#olm-arr-g)"/>
+      <text x="436" y="104" font-family="Inter" font-size="11" fill="var(--mint-deep)">Patch pro Container</text>
+
+      <!-- Unten links: K10 CR und Services -->
+      <rect x="310" y="298" width="170" height="48" rx="12" fill="var(--card)" stroke="var(--line)" stroke-width="1.5"/>
+      <text x="395" y="316" text-anchor="middle" dominant-baseline="central" font-family="Sora" font-weight="700" font-size="12" fill="var(--ink)">K10 CR</text>
+      <text x="395" y="334" text-anchor="middle" dominant-baseline="central" font-family="Inter" font-size="11" fill="var(--ink-soft)">spec = Helm-Values</text>
+
+      <rect x="40" y="298" width="220" height="48" rx="12" fill="var(--card)" stroke="var(--line)" stroke-width="1.5"/>
+      <text x="150" y="316" text-anchor="middle" dominant-baseline="central" font-family="Sora" font-weight="700" font-size="12" fill="var(--ink)">Kasten-Services</text>
+      <text x="150" y="334" text-anchor="middle" dominant-baseline="central" font-family="Inter" font-size="11" fill="var(--ink-soft)">catalog-svc, jobs-svc …</text>
+
+      <text x="404" y="266" font-family="Inter" font-size="11" fill="var(--ink-soft)">verwaltet</text>
+
+      <!-- Unten rechts: Upgrade -->
+      <rect x="500" y="290" width="160" height="64" rx="12" fill="none" stroke="var(--butter-deep)" stroke-width="1.3" stroke-dasharray="5 4"/>
+      <text x="580" y="309" text-anchor="middle" dominant-baseline="central" font-family="Sora" font-weight="700" font-size="12" fill="var(--butter-deep)">Operator-Upgrade</text>
+      <text x="580" y="327" text-anchor="middle" dominant-baseline="central" font-family="Inter" font-size="11" fill="var(--butter-deep)">neue CSV,</text>
+      <text x="580" y="342" text-anchor="middle" dominant-baseline="central" font-family="Inter" font-size="11" fill="var(--butter-deep)">Patch geht verloren</text>
+
+      <!-- Legende -->
+      <rect x="140" y="378" width="14" height="14" rx="3" fill="var(--rose)" stroke="var(--rose-deep)" stroke-width="1.5"/>
+      <text x="162" y="389" font-family="Inter" font-size="12" fill="var(--ink-soft)">wirkt auf alle Container</text>
+      <rect x="380" y="378" width="14" height="14" rx="3" fill="var(--mint)" stroke="var(--mint-deep)" stroke-width="1.5"/>
+      <text x="402" y="389" font-family="Inter" font-size="12" fill="var(--ink-soft)">wirkt pro Container</text>
+    </svg>
+  </div>
+</section>
+
+<!-- ================= 1 OLM ================= -->
+<section id="olm" class="mint">
+  <div class="sec-head"><div class="badge">1</div><h2>OLM im Überblick</h2></div>
+  <p class="sec-sub">Der Operator Lifecycle Manager installiert, aktualisiert und überwacht Operatoren. Er besteht aus zwei Controllern – und fünf Objekten, die man auseinanderhalten muss.</p>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>Catalog Operator</h3>
+      <p>Löst Abhängigkeiten auf, erzeugt InstallPlans und beobachtet Kataloge auf neue Versionen.</p>
+    </div>
+    <div class="card">
+      <h3>OLM Operator</h3>
+      <p>Beobachtet CSVs und führt deren Install-Strategie aus: legt Deployments, RBAC und alles Weitere an.</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Die beteiligten Objekte</h3>
+    <table>
+      <thead><tr><th>Objekt</th><th>Kurzname</th><th>Aufgabe</th><th>Bild</th></tr></thead>
+      <tbody>
+        <tr><td><b>CatalogSource</b></td><td><code>catsrc</code></td><td>Katalog mit verfügbaren Operator-Paketen und Versionen</td><td>Versandkatalog</td></tr>
+        <tr><td><b>Subscription</b></td><td><code>sub</code></td><td>„Paket X aus Channel Y, Updates automatisch oder manuell“</td><td>Abo</td></tr>
+        <tr><td><b>InstallPlan</b></td><td><code>ip</code></td><td>Berechnete Liste der Ressourcen für eine Installation oder ein Update</td><td>Lieferschein</td></tr>
+        <tr><td><b>ClusterServiceVersion</b></td><td><code>csv</code></td><td>Beschreibung einer konkreten Operator-Version: Deployment-Spec, RBAC, CRDs, Metadaten</td><td>Bauplan</td></tr>
+        <tr><td><b>OperatorGroup</b></td><td><code>og</code></td><td>Legt fest, welche Namespaces der Operator beobachtet</td><td>Zuständigkeitsbereich</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>Ablauf einer Installation</h3>
+    <ol class="steps">
+      <li><div><b>Subscription anlegen</b><small>Per Web-Console oder YAML.</small></div></li>
+      <li><div><b>InstallPlan entsteht</b><small>Der Catalog Operator findet in der CatalogSource die passende Version.</small></div></li>
+      <li><div><b>Freigabe</b><small>Bei <code>installPlanApproval: Automatic</code> sofort, bei <code>Manual</code> erst nach Bestätigung.</small></div></li>
+      <li><div><b>CRDs, RBAC und CSV werden angelegt</b><small>Durch den InstallPlan.</small></div></li>
+      <li><div><b>Deployment entsteht</b><small>Der OLM Operator liest die CSV und erzeugt daraus das Deployment des Operators.</small></div></li>
+      <li><div><b>Operator-Pod startet</b><small>Aus dem Deployment.</small></div></li>
+    </ol>
+  </div>
+
+  <details>
+    <summary>Nützliche Befehle</summary>
+    <div class="inner">
+      <pre><code>oc get sub,ip,csv -n &lt;namespace&gt;
+oc get csv -n &lt;namespace&gt; -o wide
+oc describe sub &lt;name&gt; -n &lt;namespace&gt;</code></pre>
+    </div>
+  </details>
+</section>
+
+<!-- ================= 2 CSV ================= -->
+<section id="csv" class="sky">
+  <div class="sec-head"><div class="badge">2</div><h2>Die CSV: Original, nicht Kopie</h2></div>
+  <p class="sec-sub">Die ClusterServiceVersion ist das zentrale Objekt. Sie beschreibt genau eine Version eines Operators, z.&nbsp;B. <code>k10-kasten-operator-….vX.Y.Z</code> – inklusive der vollständigen Deployment-Spezifikation.</p>
+
+  <div class="card">
+    <h3>Wichtige Felder</h3>
+    <table>
+      <thead><tr><th>Feld</th><th>Inhalt</th></tr></thead>
+      <tbody>
+        <tr><td><code>spec.install.spec.deployments[]</code></td><td>Vollständige Deployment-Spezifikation des Operators, inklusive Container, Images und <b>Resources</b></td></tr>
+        <tr><td><code>spec.install.spec.permissions</code><br><code>…/clusterPermissions</code></td><td>Role- und ClusterRole-Regeln</td></tr>
+        <tr><td><code>spec.customresourcedefinitions.owned</code></td><td>CRDs, die der Operator verwaltet</td></tr>
+        <tr><td><code>spec.version</code>, <code>spec.replaces</code></td><td>Versionskette für Upgrades</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>Wer gewinnt?</h3>
+    <p>OLM gleicht das Deployment ständig mit der CSV ab.</p>
+    <table>
+      <thead><tr><th>Änderung an</th><th>Ergebnis</th></tr></thead>
+      <tbody>
+        <tr><td><b>Deployment</b></td><td>wird von OLM zurückgesetzt – steht nicht in der CSV</td></tr>
+        <tr><td><b>CSV</b></td><td>wird sofort ins Deployment ausgerollt</td></tr>
+        <tr><td><b>Operator-Upgrade</b></td><td>OLM legt eine <b>neue CSV mit neuem Namen</b> an; die alte samt allen manuellen Änderungen verschwindet</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="mnemo"><b>Das Deployment ist die Kopie, die CSV das Original.</b> Wer nur die Kopie ändert, verliert.</div>
+
+  <details>
+    <summary>Container und CPU-Requests einer CSV anzeigen</summary>
+    <div class="inner">
+      <pre><code>CSV=$(oc get csv -n kasten-io -o name | grep k10-kasten-operator-)
+
+oc get $CSV -n kasten-io -o jsonpath='{range .spec.install.spec.deployments[*]}{.name}{"\n"}{range .spec.template.spec.containers[*]}  {.name}: {.resources.requests.cpu}{"\n"}{end}{end}'</code></pre>
+      <p>Liefert pro Deployment die Container in ihrer Reihenfolge – daraus ergibt sich der Index für den Patch in Abschnitt 4.</p>
+    </div>
+  </details>
+</section>
+
+<!-- ================= 3 SUBSCRIPTION ================= -->
+<section id="subscription" class="lav">
+  <div class="sec-head"><div class="badge">3</div><h2>Warum die Subscription nicht reicht</h2></div>
+  <p class="sec-sub">Die Subscription bietet unter <code>spec.config</code> Overrides für das Operator-Deployment. Sie liegen über der CSV und überstehen damit auch Upgrades – haben aber keinen Container-Selektor.</p>
+
+  <div class="card">
+    <h3>Verfügbare Overrides in <code>spec.config</code></h3>
+    <ul class="clean">
+      <li><code>env</code>, <code>envFrom</code></li>
+      <li><code>volumes</code>, <code>volumeMounts</code></li>
+      <li><code>resources</code></li>
+      <li><code>nodeSelector</code>, <code>tolerations</code>, <code>affinity</code></li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>Der Haken</h3>
+    <p>Laut Red-Hat-Dokumentation gelten die Werte aus <code>spec.config.resources</code> <b>für alle Container</b> im Pod, den OLM erzeugt.</p>
+    <pre><code>apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: &lt;subscription-name&gt;
+  namespace: kasten-io
+spec:
+  channel: stable
+  name: &lt;package-name&gt;
+  source: &lt;catalog-source&gt;
+  sourceNamespace: openshift-marketplace
+  config:
+    resources:
+      requests:
+        cpu: 400m      <span class="c"># gilt für manager UND kube-rbac-proxy</span></code></pre>
+  </div>
+
+  <div class="warn"><b>Die Einsparung verpufft:</b> Der Sidecar springt von 10m auf 400m. In Summe sind danach 800m reserviert statt der angestrebten 410m – gegenüber vorher (810m) praktisch nichts gewonnen. Bei Operatoren mit mehreren kleinen Sidecars steigt die Summe sogar über den Ausgangswert.</div>
+</section>
+
+<!-- ================= 4 PATCH ================= -->
+<section id="patch" class="peach">
+  <div class="sec-head"><div class="badge">4</div><h2>Einmalige Lösung: CSV patchen</h2></div>
+  <p class="sec-sub">Pro Container lässt sich der Wert nur in der CSV ändern. Das wirkt sofort – hält aber nur bis zum nächsten Operator-Upgrade.</p>
+
+  <details>
+    <summary>Schritt 1 · Subscription-Override entfernen</summary>
+    <div class="inner">
+      <p>Sonst überschreibt die Subscription den Patch wieder für alle Container.</p>
+      <pre><code>oc patch sub &lt;subscription-name&gt; -n kasten-io --type=json \
+  -p '[{"op":"remove","path":"/spec/config/resources"}]'</code></pre>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 2 · Index des Containers ermitteln</summary>
+    <div class="inner">
+      <p>Mit dem Befehl aus Abschnitt 2. Der JSON-Patch adressiert Container über ihre Position in der Liste, nicht über ihren Namen.</p>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 3 · Nur diesen Container patchen</summary>
+    <div class="inner">
+      <p>Beispiel: Deployment 0, Container 1.</p>
+      <pre><code>oc patch $CSV -n kasten-io --type=json -p '[
+  {"op":"replace",
+   "path":"/spec/install/spec/deployments/0/spec/template/spec/containers/1/resources/requests/cpu",
+   "value":"400m"}
+]'</code></pre>
+      <p><code>replace</code> durch <code>add</code> ersetzen, falls noch kein <code>requests.cpu</code> gesetzt ist. Liegt ein CPU-Limit unter 400m, dieses ebenfalls anpassen.</p>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 4 · Ergebnis am Pod prüfen</summary>
+    <div class="inner">
+      <pre><code>oc get pod -n kasten-io -l control-plane=controller-manager \
+  -o jsonpath='{range .items[0].spec.containers[*]}{.name}: {.resources.requests.cpu}{"\n"}{end}'</code></pre>
+    </div>
+  </details>
+
+  <div class="warn"><b>Einschränkung:</b> Beim nächsten Operator-Upgrade entsteht eine neue CSV mit den Standardwerten. Der Patch ist dann weg – ohne Meldung.</div>
+</section>
+
+<!-- ================= 5 KASTEN ================= -->
+<section id="kasten" class="butter">
+  <div class="sec-head"><div class="badge">5</div><h2>Abgrenzung: Operator-Pod vs. Kasten-Services</h2></div>
+  <p class="sec-sub">Veeam Kasten besteht aus zwei Ebenen, die leicht verwechselt werden. Für die Anwendung selbst gibt es einen sauberen, dokumentierten Weg – für den Operator-Pod nicht.</p>
+
+  <div class="card">
+    <table>
+      <thead><tr><th>Ebene</th><th>Beispiele</th><th>Verwaltet von</th><th>Resources anpassen über</th></tr></thead>
+      <tbody>
+        <tr><td><b>Operator</b></td><td><code>k10-kasten-operator-…-controller-manager</code></td><td>OLM (CSV)</td><td>CSV-Patch bzw. Kyverno</td></tr>
+        <tr><td><b>Kasten-Anwendung</b></td><td><code>catalog-svc</code>, <code>jobs-svc</code>, <code>executor-svc</code>, Prometheus, Worker-Pods</td><td>Kasten-Operator anhand der K10-CR</td><td>Helm-Values in der K10-CR</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>Resources der Kasten-Anwendung</h3>
+    <p>Veeam dokumentiert die Anpassung pro Deployment und Container über Helm-Values in der K10-CR:</p>
+    <pre><code>resources:
+  catalog-svc:
+    catalog-svc:
+      requests:
+        cpu: 300m
+        memory: 1.5Gi</code></pre>
+    <details><summary>Weitere Stellschrauben laut Kasten-Doku</summary><div class="inner">
+      <table>
+        <thead><tr><th>Wert</th><th>Wirkt auf</th></tr></thead>
+        <tbody>
+          <tr><td><code>global.resources</code></td><td>globaler Fallback mit niedrigster Priorität</td></tr>
+          <tr><td><code>prometheus.server.resources</code></td><td>Prometheus-Pod</td></tr>
+          <tr><td><code>genericVolumeSnapshot.resources</code></td><td>alle temporären Worker-Pods</td></tr>
+          <tr><td><code>ActionPodSpec</code> / <code>ActionPodSpecBinding</code></td><td>Worker-Pods granular pro Pod-Typ, Namespace oder Policy – erfordert <code>workerPodCRDs.enabled=true</code></td></tr>
+          <tr><td><code>workerPodMetricSidecar.resources</code></td><td>Metrics-Sidecar der Worker-Pods</td></tr>
+        </tbody>
+      </table>
+    </div></details>
+  </div>
+
+  <div class="note"><b>Diese Werte überstehen Upgrades</b>, weil sie in der K10-CR liegen. Für den Operator-Pod selbst greifen sie <b>nicht</b>.</div>
+</section>
+
+<!-- ================= 6 KYVERNO ================= -->
+<section id="kyverno" class="rose">
+  <div class="sec-head"><div class="badge">6</div><h2>Dauerhafte Lösung: Kyverno-Mutate-Policy</h2></div>
+  <p class="sec-sub">Kyverno läuft als Admission-Webhook. Legt OLM eine neue CSV an oder ändert eine bestehende, setzt Kyverno den gewünschten Wert, <b>bevor</b> das Objekt gespeichert wird. Es gibt kein Zeitfenster mit dem alten Wert.</p>
+
+  <div class="card">
+    <h3>Warum nicht einfach ArgoCD?</h3>
+    <p>ArgoCD verwaltet Objekte über ihren Namen. Die CSV heißt nach jedem Upgrade anders (<code>…vX.Y.1</code> → <code>…vX.Y.2</code>). Ein Patch in Git trifft die neue CSV nicht, Self-Heal hilft hier also nicht. ArgoCD verwaltet stattdessen die Kyverno-Policy – und die bleibt bei Operator-Upgrades unverändert.</p>
+  </div>
+
+  <div class="mnemo"><b>ArgoCD ist ein Wachmann mit Namensliste. Kyverno ist ein Türsteher</b>, der jeden kontrolliert, der hereinkommt – egal wie er heißt.</div>
+
+  <div class="card">
+    <h3>Die Policy</h3>
+    <pre><code>apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: k10-operator-manager-cpu
+  annotations:
+    policies.kyverno.io/title: Kasten-Operator manager CPU-Request
+    policies.kyverno.io/description: &gt;-
+      Setzt den CPU-Request des Containers "manager" im Kasten-Operator
+      auf 400m, unabhängig von der CSV-Version.
+spec:
+  rules:
+  - name: manager-cpu-400m
+    match:
+      any:
+      - resources:
+          kinds: ["operators.coreos.com/v1alpha1/ClusterServiceVersion"]
+          namespaces: ["kasten-io"]
+          names: ["k10-kasten-operator-*"]
+          operations: ["CREATE", "UPDATE"]
+    mutate:
+      foreach:
+      - list: "request.object.spec.install.spec.deployments"
+        foreach:
+        - list: "element.spec.template.spec.containers"
+          preconditions:
+            all:
+            - key: "{{ element.name }}"
+              operator: Equals
+              value: manager
+          patchesJson6902: |-
+            - op: add
+              path: /spec/install/spec/deployments/{{elementIndex0}}/spec/template/spec/containers/{{elementIndex1}}/resources/requests/cpu
+              value: 400m</code></pre>
+  </div>
+
+  <div class="card">
+    <h3>Was die Policy tut</h3>
+    <table>
+      <thead><tr><th>Teil</th><th>Wirkung</th></tr></thead>
+      <tbody>
+        <tr><td><code>match</code></td><td>Nur CSVs des Kasten-Operators in <code>kasten-io</code>. Der Wildcard-Name trifft jede Version.</td></tr>
+        <tr><td>äußeres <code>foreach</code></td><td>Läuft über alle Deployments der CSV.</td></tr>
+        <tr><td>inneres <code>foreach</code></td><td>Läuft über alle Container des jeweiligen Deployments.</td></tr>
+        <tr><td><code>preconditions</code></td><td>Filtert auf den Container <code>manager</code> – seine Position in der Liste ist egal.</td></tr>
+        <tr><td><code>elementIndex0</code> / <code>elementIndex1</code></td><td>Indizes der äußeren und inneren Schleife für den JSON-Patch-Pfad.</td></tr>
+        <tr><td><code>op: add</code></td><td>Setzt den Wert, ob er schon existiert oder nicht – vorausgesetzt, <code>resources.requests</code> ist als Objekt vorhanden.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3 style="margin:26px 0 6px;font-size:1.15rem">Einführung Schritt für Schritt</h3>
+
+  <details>
+    <summary>Schritt 1 · Containernamen prüfen</summary>
+    <div class="inner">
+      <p>Mit dem Befehl aus Abschnitt 2. Heißt der Container anders, <code>value: manager</code> in der Policy anpassen.</p>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 2 · Subscription-Override entfernen</summary>
+    <div class="inner">
+      <p><code>spec.config.resources</code> aus der Subscription löschen – sonst liegt der Wert für alle Container wieder darüber (Befehl in Abschnitt 4, Schritt 1).</p>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 3 · Policy per ArgoCD ausrollen</summary>
+    <div class="inner">
+      <p>Zum Beispiel im Repo unter <code>policies/kyverno/</code>.</p>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 4 · Bestehende CSV einmal anstoßen</summary>
+    <div class="inner">
+      <p>Admission-Webhooks greifen nur bei Änderungen. Die bereits vorhandene CSV muss deshalb einmal angefasst werden:</p>
+      <pre><code>oc annotate $CSV -n kasten-io kyverno-touch="$(date +%s)" --overwrite</code></pre>
+    </div>
+  </details>
+
+  <details>
+    <summary>Schritt 5 · Ergebnis prüfen</summary>
+    <div class="inner">
+      <pre><code><span class="c"># In der CSV</span>
+oc get $CSV -n kasten-io -o jsonpath='{range .spec.install.spec.deployments[*].spec.template.spec.containers[*]}{.name}: {.resources.requests.cpu}{"\n"}{end}'
+
+<span class="c"># Am laufenden Pod</span>
+oc get pod -n kasten-io -l control-plane=controller-manager \
+  -o jsonpath='{range .items[0].spec.containers[*]}{.name}: {.resources.requests.cpu}{"\n"}{end}'
+
+<span class="c"># Kyverno-Events</span>
+oc get events -n kasten-io --field-selector reason=PolicyApplied</code></pre>
+    </div>
+  </details>
+
+  <div class="card">
+    <h3>Hinweise</h3>
+    <ul class="clean">
+      <li><b>Copied CSVs:</b> Bei Install-Mode <code>AllNamespaces</code> kopiert OLM die CSV in jeden Namespace. Die Einschränkung auf <code>namespaces: ["kasten-io"]</code> verhindert, dass Kyverno diese Kopien mutiert.</li>
+      <li><b>Status-Updates:</b> OLM aktualisiert den CSV-Status häufig. Das läuft über die <code>/status</code>-Subresource und löst die Policy nicht aus.</li>
+      <li><b>Limits:</b> Soll auch das Limit angepasst werden, einen zweiten Patch-Eintrag für <code>/resources/limits/cpu</code> ergänzen.</li>
+      <li><b>Support:</b> Kyverno ist nicht Teil der Red-Hat-Subscription. Nested <code>foreach</code> mit <code>elementIndex0/1</code> setzt eine aktuelle Kyverno-Version voraus – die Policy zuerst auf einem Testcluster prüfen.</li>
+    </ul>
+  </div>
+
+  <div class="warn"><b>Stiller Fehler bei Webhook-Ausfall:</b> Ist Kyverno nicht erreichbar und steht die Webhook-<code>failurePolicy</code> auf <code>Ignore</code>, legt OLM die CSV ohne Mutation an. Kein Fehler, keine Warnung – der Operator läuft einfach wieder mit 800m. Nach jedem Upgrade die Werte kontrollieren.</div>
+</section>
+
+<!-- ================= 7 ALTERNATIVEN ================= -->
+<section id="alternativen" class="mint">
+  <div class="sec-head"><div class="badge">7</div><h2>Alternativen im Vergleich</h2></div>
+  <p class="sec-sub">Kyverno ist nicht die einzige Option. Welche passt, hängt davon ab, ob eine Zusatzkomponente akzeptabel ist und wie oft der Operator aktualisiert wird.</p>
+
+  <div class="card">
+    <table>
+      <thead><tr><th>Variante</th><th>Überlebt Upgrade</th><th>Zeitfenster mit altem Wert</th><th>Zusatzkomponente</th><th>Aufwand</th></tr></thead>
+      <tbody>
+        <tr><td><b>Subscription <code>config.resources</code></b></td><td>ja</td><td>nein</td><td>keine</td><td>gering, aber nur für alle Container</td></tr>
+        <tr><td><b>CSV manuell patchen</b></td><td>nein</td><td>ja, bis manuell gepatcht</td><td>keine</td><td>bei jedem Upgrade</td></tr>
+        <tr><td><b>CSV patchen + <code>installPlanApproval: Manual</code> + Runbook</b></td><td>nein (bewusst nachgezogen)</td><td>kurz</td><td>keine</td><td>pro Upgrade ein Schritt</td></tr>
+        <tr><td><b>CronJob, der die aktuelle CSV sucht und patcht</b></td><td>ja</td><td>ja, bis zum nächsten Lauf</td><td>keine</td><td>einmalig, RBAC für CSV nötig</td></tr>
+        <tr><td><b>Kyverno-Mutate-Policy</b></td><td>ja</td><td>nein</td><td>Kyverno</td><td>einmalig</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <details>
+    <summary>CronJob-Variante als Skizze</summary>
+    <div class="inner">
+      <p>Sucht die aktuelle CSV, ermittelt den Index von <code>manager</code> und patcht gezielt diesen Container:</p>
+      <pre><code>CSV=$(oc get csv -n kasten-io -o name | grep k10-kasten-operator-)
+IDX=$(oc get $CSV -n kasten-io -o json \
+  | jq '.spec.install.spec.deployments[0].spec.template.spec.containers | map(.name) | index("manager")')
+oc patch $CSV -n kasten-io --type=json \
+  -p "[{\"op\":\"add\",\"path\":\"/spec/install/spec/deployments/0/spec/template/spec/containers/$IDX/resources/requests/cpu\",\"value\":\"400m\"}]"</code></pre>
+      <p>Benötigt einen ServiceAccount mit <code>get</code>, <code>list</code>, <code>patch</code> auf <code>clusterserviceversions.operators.coreos.com</code> im Namespace <code>kasten-io</code>.</p>
+    </div>
+  </details>
+</section>
+
+<!-- ================= 8 KURZFASSUNG ================= -->
+<section id="kurzfassung" class="sky">
+  <div class="sec-head"><div class="badge">8</div><h2>Kurzfassung</h2></div>
+  <p class="sec-sub">Das Wichtigste in fünf Sätzen.</p>
+
+  <div class="card">
+    <ol class="steps">
+      <li><div><b>Das Deployment eines OLM-Operators ist nur eine Kopie.</b><small>Das Original ist die CSV.</small></div></li>
+      <li><div><b>Subscription-Overrides überstehen Upgrades</b><small>– gelten aber für alle Container im Pod.</small></div></li>
+      <li><div><b>CSV-Patches wirken pro Container</b><small>– gehen aber beim Upgrade verloren.</small></div></li>
+      <li><div><b>Kasten-Services werden über die K10-CR konfiguriert</b><small>Pro Container, upgradefest – betrifft aber nicht den Operator-Pod.</small></div></li>
+      <li><div><b>Kyverno mutiert jede neue CSV beim Anlegen</b><small>Werte pro Container bleiben dauerhaft gesetzt, ohne Zeitfenster und GitOps-tauglich.</small></div></li>
+    </ol>
+  </div>
+</section>
+
+</main>
+
+<footer>Quellen:
+<a href="https://docs.redhat.com/en/documentation/openshift_container_platform/4.18/html/operators/administrator-tasks#olm-adding-operators-to-a-cluster">Red Hat OpenShift 4.18 – Operators, Administrator tasks</a> ·
+<a href="https://github.com/operator-framework/operator-lifecycle-manager/blob/master/doc/design/subscription-config.md">OLM – Subscription Config</a> ·
+<a href="https://docs.openshift.com/container-platform/4.5/operators/understanding_olm/olm-understanding-olm.html">Understanding OLM</a> ·
+<a href="https://docs.openshift.com/rosa/operators/understanding/olm/olm-arch.html">OLM-Architektur</a> ·
+<a href="https://cert-manager.io/v1.16-docs/installation/operator-lifecycle-manager/">cert-manager – OLM-Installation</a> ·
+<a href="https://docs.kasten.io/latest/operating/footprint/">Veeam Kasten – Resource Requirements</a> ·
+<a href="https://kyverno.io/docs/writing-policies/mutate/">Kyverno – Mutate Rules</a>.
+Stand: OpenShift 4.18+, OLM v0, Veeam Kasten 8.x/9.x, Kyverno ≥ 1.11. Vor Produktionseinsatz auf einem Testcluster prüfen.</footer>
+
+</body>
+</html>
