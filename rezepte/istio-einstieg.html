@@ -1,0 +1,1263 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Istio für Einsteiger – Konzepte, Einrichtung und Praxisbeispiele</title>
+<meta name="rezept-kategorie"    content="netzwerk">
+<meta name="rezept-beschreibung" content="Service Mesh mit Istio von Grund auf: Architektur, Sidecar- und Ambient-Modus, zentrale Ressourcen, Installation auf Kubernetes und OpenShift, typische Praxisfälle und Stolperfallen.">
+<meta name="rezept-stand"        content="Istio 1.31 · OSSM 3.x · 09/2026">
+<meta name="rezept-suche"        content="istio service mesh istiod envoy sidecar ambient ztunnel waypoint hbone mtls peerauthentication authorizationpolicy virtualservice destinationrule gateway api httproute serviceentry telemetry kiali spiffe sail operator ossm bookinfo canary fault injection circuit breaking istioctl analyze proxy-status response flags">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#33394a;
+  --ink-soft:#5c6376;
+  --paper:#fbfaf7;
+  --card:#ffffff;
+  --line:#e9e6df;
+  --code-bg:#31364a;
+  --code-ink:#e8eaf2;
+  --mint:#d9f2e4;      --mint-deep:#2f8f6b;
+  --sky:#dcebf9;       --sky-deep:#2d6fa8;
+  --lav:#e7e2f7;       --lav-deep:#6b5bb5;
+  --peach:#fbe6d7;     --peach-deep:#c2703d;
+  --butter:#faf0cf;    --butter-deep:#a5842a;
+  --rose:#f9e0e6;      --rose-deep:#b34f6d;
+  --aqua:#d7eff0;      --aqua-deep:#2b8288;
+  --r-lg:26px; --r-md:18px; --r-sm:12px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;scroll-padding-top:90px}
+body{font-family:'Inter',sans-serif;background:var(--paper);color:var(--ink);line-height:1.65;font-size:16px}
+h1,h2,h3,h4{font-family:'Sora',sans-serif;line-height:1.2}
+
+/* ---------- Kopf ---------- */
+header{max-width:1060px;margin:0 auto;padding:56px 24px 8px}
+.kicker{display:inline-block;background:var(--lav);color:var(--lav-deep);font-weight:600;font-size:.8rem;letter-spacing:.08em;text-transform:uppercase;padding:6px 14px;border-radius:999px;margin-bottom:18px}
+header h1{font-size:clamp(1.9rem,4.5vw,3rem);font-weight:800;letter-spacing:-.02em}
+header h1 span{color:var(--mint-deep)}
+.lede{color:var(--ink-soft);max-width:640px;margin-top:14px;font-size:1.05rem}
+
+/* ---------- Route ---------- */
+.route{max-width:1060px;margin:34px auto 10px;padding:0 24px;display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
+.route a{display:flex;flex-direction:column;gap:8px;text-decoration:none;color:var(--ink);background:var(--card);border:1.5px solid var(--line);border-radius:var(--r-md);padding:16px 14px;transition:transform .15s ease,box-shadow .15s ease}
+.route a:hover,.route a:focus-visible{transform:translateY(-3px);box-shadow:0 8px 22px rgba(60,60,90,.10);outline:none}
+.route .dot{width:34px;height:34px;border-radius:12px;display:grid;place-items:center;font-family:'Sora';font-weight:700;font-size:.9rem}
+.route .t{font-weight:600;font-size:.86rem;line-height:1.3}
+.route .s{font-size:.74rem;color:var(--ink-soft)}
+.route a:nth-child(1) .dot{background:var(--aqua);color:var(--aqua-deep)}
+.route a:nth-child(2) .dot{background:var(--mint);color:var(--mint-deep)}
+.route a:nth-child(3) .dot{background:var(--sky);color:var(--sky-deep)}
+.route a:nth-child(4) .dot{background:var(--lav);color:var(--lav-deep)}
+.route a:nth-child(5) .dot{background:var(--peach);color:var(--peach-deep)}
+.route a:nth-child(6) .dot{background:var(--butter);color:var(--butter-deep)}
+.route a:nth-child(7) .dot{background:var(--rose);color:var(--rose-deep)}
+.route a:nth-child(8) .dot{background:var(--mint);color:var(--mint-deep)}
+.route a:nth-child(9) .dot{background:var(--sky);color:var(--sky-deep)}
+.route a:nth-child(10) .dot{background:var(--lav);color:var(--lav-deep)}
+
+/* ---------- Sticky-Nav ---------- */
+nav{position:sticky;top:0;z-index:50;background:rgba(251,250,247,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);margin-top:26px}
+nav .wrap{max-width:1060px;margin:0 auto;padding:10px 24px;display:flex;gap:8px;overflow-x:auto}
+nav a{white-space:nowrap;text-decoration:none;font-size:.82rem;font-weight:600;color:var(--ink-soft);padding:7px 14px;border-radius:999px;border:1px solid transparent}
+nav a:hover{background:var(--card);border-color:var(--line);color:var(--ink)}
+
+/* ---------- Sektionen ---------- */
+main{max-width:1060px;margin:0 auto;padding:20px 24px 90px}
+section{margin-top:64px}
+.sec-head{display:flex;align-items:center;gap:16px;margin-bottom:8px}
+.badge{width:52px;height:52px;border-radius:16px;display:grid;place-items:center;font-family:'Sora';font-weight:800;font-size:1.25rem;flex-shrink:0}
+section h2{font-size:clamp(1.4rem,3vw,1.9rem);font-weight:700}
+.sec-sub{color:var(--ink-soft);margin-bottom:22px;max-width:720px}
+.aqua .badge{background:var(--aqua);color:var(--aqua-deep)}
+.mint .badge{background:var(--mint);color:var(--mint-deep)}
+.sky .badge{background:var(--sky);color:var(--sky-deep)}
+.lav .badge{background:var(--lav);color:var(--lav-deep)}
+.peach .badge{background:var(--peach);color:var(--peach-deep)}
+.butter .badge{background:var(--butter);color:var(--butter-deep)}
+.rose .badge{background:var(--rose);color:var(--rose-deep)}
+
+/* ---------- Karten & Schritte ---------- */
+.card{background:var(--card);border:1.5px solid var(--line);border-radius:var(--r-lg);padding:26px 28px;margin-bottom:20px}
+.card h3{font-size:1.08rem;margin-bottom:14px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+ol.steps{list-style:none;counter-reset:s;display:flex;flex-direction:column;gap:14px}
+ol.steps li{counter-increment:s;display:grid;grid-template-columns:34px 1fr;gap:14px;align-items:start}
+ol.steps li::before{content:counter(s);width:30px;height:30px;border-radius:10px;display:grid;place-items:center;font-family:'Sora';font-weight:700;font-size:.85rem;margin-top:2px}
+.aqua ol.steps li::before{background:var(--aqua);color:var(--aqua-deep)}
+.mint ol.steps li::before{background:var(--mint);color:var(--mint-deep)}
+.sky ol.steps li::before{background:var(--sky);color:var(--sky-deep)}
+.lav ol.steps li::before{background:var(--lav);color:var(--lav-deep)}
+.peach ol.steps li::before{background:var(--peach);color:var(--peach-deep)}
+.butter ol.steps li::before{background:var(--butter);color:var(--butter-deep)}
+.rose ol.steps li::before{background:var(--rose);color:var(--rose-deep)}
+.steps b{font-weight:600}
+.steps small{display:block;color:var(--ink-soft);font-size:.86rem;margin-top:2px}
+
+ul.clean{list-style:none;display:flex;flex-direction:column;gap:10px}
+ul.clean li{padding-left:24px;position:relative}
+ul.clean li::before{content:"";position:absolute;left:4px;top:.62em;width:9px;height:9px;border-radius:3px;background:var(--line)}
+.aqua ul.clean li::before{background:var(--aqua-deep)}
+.mint ul.clean li::before{background:var(--mint-deep)}
+.sky ul.clean li::before{background:var(--sky-deep)}
+.lav ul.clean li::before{background:var(--lav-deep)}
+.peach ul.clean li::before{background:var(--peach-deep)}
+.butter ul.clean li::before{background:var(--butter-deep)}
+.rose ul.clean li::before{background:var(--rose-deep)}
+
+/* ---------- Code ---------- */
+pre{background:var(--code-bg);color:var(--code-ink);border-radius:var(--r-sm);padding:16px 18px;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:.82rem;line-height:1.6;margin:10px 0}
+code{font-family:'JetBrains Mono',monospace;font-size:.85em;background:#efede7;border-radius:6px;padding:2px 6px}
+pre code{background:none;padding:0;font-size:1em}
+pre .c{color:#9aa3c0}
+
+/* ---------- Hinweisboxen ---------- */
+.note,.warn,.mnemo{border-radius:var(--r-md);padding:14px 18px;margin:14px 0;font-size:.92rem}
+.note{background:var(--sky)}
+.warn{background:var(--rose)}
+.mnemo{background:var(--butter)}
+.note b,.warn b,.mnemo b{font-weight:700}
+.mnemo::before{content:"🧠 Merkbild · ";font-weight:700}
+.warn::before{content:"⚠️ ";font-weight:700}
+
+/* ---------- Tabellen ---------- */
+table{width:100%;border-collapse:separate;border-spacing:0;font-size:.88rem;margin:10px 0}
+th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-family:'Sora';font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft)}
+tr:last-child td{border-bottom:none}
+thead th:first-child{border-top-left-radius:var(--r-sm)}
+thead th:last-child{border-top-right-radius:var(--r-sm)}
+thead{background:var(--paper)}
+.scroll-x{overflow-x:auto}
+.scroll-x table{min-width:620px}
+
+/* ---------- Details ---------- */
+details{border:1.5px solid var(--line);border-radius:var(--r-md);margin:12px 0;background:var(--card)}
+details summary{cursor:pointer;padding:14px 18px;font-weight:600;font-size:.94rem;list-style:none;display:flex;align-items:center;gap:10px}
+details summary::before{content:"+";font-family:'Sora';font-weight:700;width:24px;height:24px;border-radius:8px;background:var(--paper);display:grid;place-items:center;flex-shrink:0}
+details[open] summary::before{content:"–"}
+details .inner{padding:0 18px 18px}
+summary::-webkit-details-marker{display:none}
+
+footer{max-width:1060px;margin:0 auto;padding:30px 24px 60px;color:var(--ink-soft);font-size:.82rem;border-top:1px solid var(--line)}
+footer a{color:var(--ink-soft)}
+
+@media(max-width:820px){
+  .route{grid-template-columns:repeat(2,1fr)}
+  .grid2{grid-template-columns:1fr}
+}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.route a{transition:none}}
+</style>
+</head>
+<body>
+
+<header>
+  <span class="kicker">Istio 1.31 · OpenShift Service Mesh 3.x · Service Mesh</span>
+  <h1>Istio für Einsteiger:<br>Konzepte, Einrichtung, <span>Praxis</span></h1>
+  <p class="lede">Ein Service Mesh zieht Verschlüsselung, Identität, Zugriffsregeln und Traffic-Steuerung <b>aus der Anwendung heraus in die Infrastruktur</b>. Zehn Abschnitte von der Architektur über Installation auf Kubernetes und OpenShift bis zu zehn Praxisbeispielen zum Nachbauen.</p>
+</header>
+
+<div class="route">
+  <a href="#warum"><span class="dot">0</span><span class="t">Warum ein Mesh</span><span class="s">Das Problem dahinter</span></a>
+  <a href="#architektur"><span class="dot">1</span><span class="t">Architektur</span><span class="s">istiod, Envoy, SPIFFE</span></a>
+  <a href="#modi"><span class="dot">2</span><span class="t">Sidecar vs. Ambient</span><span class="s">Zwei Betriebsarten</span></a>
+  <a href="#ressourcen"><span class="dot">3</span><span class="t">Ressourcen</span><span class="s">Wohin, Wie, Wer darf</span></a>
+  <a href="#installation"><span class="dot">4</span><span class="t">Installation</span><span class="s">Lab und OpenShift</span></a>
+  <a href="#bookinfo"><span class="dot">5</span><span class="t">Bookinfo</span><span class="s">Erste Schritte</span></a>
+  <a href="#praxis"><span class="dot">6</span><span class="t">Praxisbeispiele</span><span class="s">Zehn Fälle</span></a>
+  <a href="#ambient"><span class="dot">7</span><span class="t">Ambient-Modus</span><span class="s">Was sich ändert</span></a>
+  <a href="#beachten"><span class="dot">8</span><span class="t">Stolperfallen</span><span class="s">Ports, Jobs, Upgrades</span></a>
+  <a href="#debugging"><span class="dot">9</span><span class="t">Debugging</span><span class="s">istioctl, Response-Flags</span></a>
+</div>
+
+<nav><div class="wrap">
+  <a href="#warum">0 · Warum</a>
+  <a href="#architektur">1 · Architektur</a>
+  <a href="#modi">2 · Sidecar vs. Ambient</a>
+  <a href="#ressourcen">3 · Ressourcen</a>
+  <a href="#installation">4 · Installation</a>
+  <a href="#bookinfo">5 · Bookinfo</a>
+  <a href="#praxis">6 · Praxis</a>
+  <a href="#ambient">7 · Ambient</a>
+  <a href="#beachten">8 · Stolperfallen</a>
+  <a href="#debugging">9 · Debugging</a>
+</div></nav>
+
+<main>
+
+<!-- ================= 0 WARUM ================= -->
+<section id="warum" class="aqua">
+  <div class="sec-head"><div class="badge">0</div><h2>Welches Problem löst ein Service Mesh?</h2></div>
+  <p class="sec-sub">Sobald eine Anwendung aus vielen Services besteht, braucht jeder Service dieselben Grundfunktionen. Ohne Mesh baut jedes Team sie selbst ein – in jeder Programmiersprache, jeweils etwas anders.</p>
+
+  <div class="card">
+    <h3>Was jeder Service braucht</h3>
+    <ul class="clean">
+      <li><b>Verschlüsselung</b> zwischen den Services (mTLS)</li>
+      <li><b>Identität:</b> wer ruft mich eigentlich auf?</li>
+      <li><b>Zugriffsregeln:</b> wer darf wen aufrufen, mit welcher Methode?</li>
+      <li><b>Robustheit:</b> Timeouts, Retries, Circuit Breaking</li>
+      <li><b>Traffic-Steuerung:</b> Canary-Releases, A/B-Tests, Routing nach Header</li>
+      <li><b>Sichtbarkeit:</b> Metriken, Access-Logs, Tracing für jeden Aufruf</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>Das Bild: eine Firma mit Assistenz</h3>
+    <p>Jeder Mitarbeiter (Service) hat eine persönliche Assistenz (Proxy). Der Mitarbeiter sagt nur: „Verbinde mich mit der Buchhaltung.“ Die Assistenz erledigt den Rest:</p>
+    <ul class="clean">
+      <li>Sie ruft verschlüsselt an.</li>
+      <li>Sie zeigt einen Dienstausweis vor.</li>
+      <li>Sie versucht es bei „besetzt“ erneut.</li>
+      <li>Sie legt nach 5 Sekunden auf, wenn niemand antwortet.</li>
+      <li>Sie protokolliert jeden Anruf.</li>
+      <li>Sie stellt eingehende Anrufe nur durch, wenn der Anrufer auf der Liste steht.</li>
+    </ul>
+    <p style="margin-top:12px">Die <b>Zentrale</b> (istiod) verteilt an alle Assistenzen das Telefonbuch, die Regeln und die Dienstausweise. Sie telefoniert selbst nie mit.</p>
+  </div>
+
+  <div class="mnemo"><b>Die Assistenz ist der Proxy (Data Plane), die Zentrale ist istiod (Control Plane).</b> Dieses Bild trägt durch den ganzen Artikel.</div>
+
+  <div class="note"><b>Voraussetzungen:</b> Kubernetes-Grundlagen (Pods, Services, Deployments, Labels). Hilfreich ist ein Grundverständnis der Netzwerk-Layer, vor allem der Unterschied zwischen L4 (Verbindung, Port) und L7 (HTTP-Inhalt).</div>
+</section>
+
+<!-- ================= 1 ARCHITEKTUR ================= -->
+<section id="architektur" class="mint">
+  <div class="sec-head"><div class="badge">1</div><h2>Architektur: Control Plane und Data Plane</h2></div>
+  <p class="sec-sub">Zwei Ebenen, streng getrennt: istiod verteilt Konfiguration und Zertifikate, die Proxies führen den Datenverkehr. Konfiguration und Daten laufen nie über denselben Weg.</p>
+
+  <div class="card">
+    <h3>Der Aufbau im Sidecar-Modus</h3>
+    <svg viewBox="0 0 720 395" width="100%" style="max-width:700px;display:block;margin:6px auto" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Istio-Architektur im Sidecar-Modus: istiod verteilt Konfiguration an die Envoy-Proxies, der Datenverkehr läuft von App über Envoy per mTLS zu Envoy und App" font-family="Inter, sans-serif">
+      <rect x="250" y="20" width="220" height="60" rx="10" fill="var(--lav)" stroke="var(--lav-deep)"/>
+      <text x="360" y="45" font-family="Sora,sans-serif" font-size="15" font-weight="600" text-anchor="middle" fill="var(--lav-deep)">istiod</text>
+      <text x="360" y="65" font-size="12" text-anchor="middle" fill="var(--lav-deep)">Control Plane: Regeln, Zertifikate</text>
+      <line x1="330" y1="80" x2="248" y2="178" stroke="var(--lav-deep)" stroke-width="1.5" stroke-dasharray="5 4"/>
+      <line x1="390" y1="80" x2="472" y2="178" stroke="var(--lav-deep)" stroke-width="1.5" stroke-dasharray="5 4"/>
+      <text x="360" y="112" font-size="12" text-anchor="middle" fill="var(--lav-deep)">xDS</text>
+      <rect x="40" y="140" width="280" height="170" rx="10" fill="none" stroke="var(--ink-soft)" stroke-dasharray="4 3"/>
+      <text x="56" y="162" font-size="13" fill="var(--ink-soft)">Pod A · productpage</text>
+      <rect x="60" y="180" width="110" height="60" rx="8" fill="var(--line)" fill-opacity="0.6" stroke="var(--ink-soft)"/>
+      <text x="115" y="215" font-size="14" text-anchor="middle" fill="var(--ink)">App</text>
+      <rect x="190" y="180" width="110" height="60" rx="8" fill="var(--peach)" stroke="var(--peach-deep)"/>
+      <text x="245" y="207" font-size="14" text-anchor="middle" fill="var(--peach-deep)">Envoy</text>
+      <text x="245" y="225" font-size="11" text-anchor="middle" fill="var(--peach-deep)">Sidecar</text>
+      <rect x="400" y="140" width="280" height="170" rx="10" fill="none" stroke="var(--ink-soft)" stroke-dasharray="4 3"/>
+      <text x="416" y="162" font-size="13" fill="var(--ink-soft)">Pod B · reviews</text>
+      <rect x="420" y="180" width="110" height="60" rx="8" fill="var(--peach)" stroke="var(--peach-deep)"/>
+      <text x="475" y="207" font-size="14" text-anchor="middle" fill="var(--peach-deep)">Envoy</text>
+      <text x="475" y="225" font-size="11" text-anchor="middle" fill="var(--peach-deep)">Sidecar</text>
+      <rect x="550" y="180" width="110" height="60" rx="8" fill="var(--line)" fill-opacity="0.6" stroke="var(--ink-soft)"/>
+      <text x="605" y="215" font-size="14" text-anchor="middle" fill="var(--ink)">App</text>
+      <line x1="170" y1="210" x2="186" y2="210" stroke="var(--ink)" stroke-width="2"/>
+      <polygon points="190,210 182,205 182,215" fill="var(--ink)"/>
+      <line x1="300" y1="210" x2="414" y2="210" stroke="var(--mint-deep)" stroke-width="3"/>
+      <polygon points="420,210 410,204 410,216" fill="var(--mint-deep)"/>
+      <text x="360" y="200" font-size="12" text-anchor="middle" fill="var(--mint-deep)">mTLS</text>
+      <line x1="530" y1="210" x2="546" y2="210" stroke="var(--ink)" stroke-width="2"/>
+      <polygon points="550,210 542,205 542,215" fill="var(--ink)"/>
+      <text x="80" y="270" font-size="11" fill="var(--ink-soft)">Klartext an reviews:9080 –</text>
+      <text x="80" y="286" font-size="11" fill="var(--ink-soft)">wird zum Envoy umgeleitet</text>
+      <text x="440" y="270" font-size="11" fill="var(--ink-soft)">Envoy prüft Identität + Policy,</text>
+      <text x="440" y="286" font-size="11" fill="var(--ink-soft)">reicht Klartext an die App</text>
+      <text x="360" y="345" font-size="12" text-anchor="middle" fill="var(--ink-soft)">Durchgezogen: Datenverkehr (Data Plane) · Gestrichelt: Konfiguration (Control Plane)</text>
+      <text x="360" y="370" font-size="12" text-anchor="middle" fill="var(--ink-soft)">Die App merkt nichts – sie spricht weiter Klartext mit ihrem Ziel.</text>
+    </svg>
+  </div>
+
+  <div class="card">
+    <h3>Control Plane: istiod</h3>
+    <p>Ein einzelnes Deployment im Namespace <code>istio-system</code> mit drei Aufgaben:</p>
+    <ol class="steps">
+      <li><div><b>Konfiguration übersetzen</b><small>Liest Kubernetes-Objekte (Services, Endpoints) und Istio-Ressourcen und übersetzt sie in Envoy-Konfiguration.</small></div></li>
+      <li><div><b>Konfiguration verteilen</b><small>Schickt sie per <b>xDS</b> (gRPC-Stream) an alle Proxies. Änderungen kommen in Sekunden an, ohne Neustart.</small></div></li>
+      <li><div><b>Zertifikate ausstellen</b><small>Arbeitet als Zertifizierungsstelle: Jeder Workload bekommt ein kurzlebiges X.509-Zertifikat mit seiner Identität und erneuert es automatisch.</small></div></li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h3>Data Plane: Envoy (oder ztunnel)</h3>
+    <p>Der <b>Envoy-Proxy</b> ist ein L7-Proxy und sitzt im Sidecar-Modus als zusätzlicher Container (<code>istio-proxy</code>) in jedem Pod. Ein- und ausgehender Traffic wird per iptables- bzw. nftables-Regeln durch ihn umgeleitet. Die Regeln setzt entweder ein Init-Container (<code>istio-init</code>) oder das <b>Istio-CNI-Plugin</b>.</p>
+    <div class="note"><b>Unter OpenShift ist das CNI-Plugin Pflicht</b>, weil Pods dort keine <code>NET_ADMIN</code>-Rechte bekommen.</div>
+  </div>
+
+  <div class="card">
+    <h3>Identität: SPIFFE</h3>
+    <p>Jeder Workload bekommt eine Identität, die an seinen <b>ServiceAccount</b> gebunden ist:</p>
+    <pre><code>spiffe://cluster.local/ns/bookinfo/sa/bookinfo-productpage</code></pre>
+    <p>Diese Identität steckt im Zertifikat und wird bei jedem mTLS-Handshake geprüft. Autorisierungsregeln beziehen sich darauf, nicht auf IP-Adressen – Pod-IPs ändern sich ständig, die Identität bleibt.</p>
+  </div>
+
+  <div class="mnemo"><b>Der ServiceAccount ist der Ausweis.</b> Wer allen Pods denselben ServiceAccount gibt, kann sie nicht mehr unterscheiden.</div>
+</section>
+
+<!-- ================= 2 MODI ================= -->
+<section id="modi" class="sky">
+  <div class="sec-head"><div class="badge">2</div><h2>Sidecar-Modus gegen Ambient-Modus</h2></div>
+  <p class="sec-sub">Istio hat zwei Betriebsarten für die Data Plane. Der Unterschied entscheidet über Ressourcenverbrauch, Einführungsaufwand und darüber, ob Pods neu starten müssen.</p>
+
+  <div class="card">
+    <h3>Beide Modi nebeneinander</h3>
+    <svg viewBox="0 0 720 385" width="100%" style="max-width:700px;display:block;margin:6px auto" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Vergleich Sidecar-Modus mit Envoy in jedem Pod und Ambient-Modus mit ztunnel pro Node und optionalem Waypoint" font-family="Inter, sans-serif">
+      <text x="185" y="40" font-family="Sora,sans-serif" font-size="15" font-weight="600" text-anchor="middle" fill="var(--ink)">Sidecar-Modus</text>
+      <rect x="20" y="60" width="330" height="210" rx="10" fill="none" stroke="var(--ink-soft)" stroke-dasharray="4 3"/>
+      <text x="32" y="78" font-size="11" fill="var(--ink-soft)">Node</text>
+      <rect x="50" y="88" width="120" height="40" rx="6" fill="var(--line)" fill-opacity="0.6" stroke="var(--ink-soft)"/>
+      <text x="110" y="113" font-size="13" text-anchor="middle" fill="var(--ink)">App</text>
+      <rect x="190" y="88" width="130" height="40" rx="6" fill="var(--peach)" stroke="var(--peach-deep)"/>
+      <text x="255" y="113" font-size="13" text-anchor="middle" fill="var(--peach-deep)">Envoy L4+L7</text>
+      <rect x="50" y="148" width="120" height="40" rx="6" fill="var(--line)" fill-opacity="0.6" stroke="var(--ink-soft)"/>
+      <text x="110" y="173" font-size="13" text-anchor="middle" fill="var(--ink)">App</text>
+      <rect x="190" y="148" width="130" height="40" rx="6" fill="var(--peach)" stroke="var(--peach-deep)"/>
+      <text x="255" y="173" font-size="13" text-anchor="middle" fill="var(--peach-deep)">Envoy L4+L7</text>
+      <rect x="50" y="208" width="120" height="40" rx="6" fill="var(--line)" fill-opacity="0.6" stroke="var(--ink-soft)"/>
+      <text x="110" y="233" font-size="13" text-anchor="middle" fill="var(--ink)">App</text>
+      <rect x="190" y="208" width="130" height="40" rx="6" fill="var(--peach)" stroke="var(--peach-deep)"/>
+      <text x="255" y="233" font-size="13" text-anchor="middle" fill="var(--peach-deep)">Envoy L4+L7</text>
+      <text x="185" y="305" font-size="12" text-anchor="middle" fill="var(--ink-soft)">Ein Envoy pro Pod, L7 immer aktiv</text>
+      <text x="185" y="325" font-size="12" text-anchor="middle" fill="var(--ink-soft)">Einschalten = Pods neu starten</text>
+      <text x="535" y="40" font-family="Sora,sans-serif" font-size="15" font-weight="600" text-anchor="middle" fill="var(--ink)">Ambient-Modus</text>
+      <rect x="370" y="60" width="330" height="210" rx="10" fill="none" stroke="var(--ink-soft)" stroke-dasharray="4 3"/>
+      <text x="382" y="78" font-size="11" fill="var(--ink-soft)">Node</text>
+      <rect x="395" y="88" width="130" height="40" rx="6" fill="var(--line)" fill-opacity="0.6" stroke="var(--ink-soft)"/>
+      <text x="460" y="113" font-size="13" text-anchor="middle" fill="var(--ink)">App</text>
+      <rect x="395" y="148" width="130" height="40" rx="6" fill="var(--line)" fill-opacity="0.6" stroke="var(--ink-soft)"/>
+      <text x="460" y="173" font-size="13" text-anchor="middle" fill="var(--ink)">App</text>
+      <rect x="395" y="208" width="130" height="40" rx="6" fill="var(--line)" fill-opacity="0.6" stroke="var(--ink-soft)"/>
+      <text x="460" y="233" font-size="13" text-anchor="middle" fill="var(--ink)">App</text>
+      <line x1="525" y1="108" x2="550" y2="108" stroke="var(--ink-soft)" stroke-width="1.5"/>
+      <line x1="525" y1="168" x2="550" y2="168" stroke="var(--ink-soft)" stroke-width="1.5"/>
+      <line x1="525" y1="228" x2="550" y2="228" stroke="var(--ink-soft)" stroke-width="1.5"/>
+      <rect x="550" y="88" width="130" height="160" rx="8" fill="var(--lav)" stroke="var(--lav-deep)"/>
+      <text x="615" y="160" font-family="Sora,sans-serif" font-size="14" font-weight="600" text-anchor="middle" fill="var(--lav-deep)">ztunnel</text>
+      <text x="615" y="180" font-size="12" text-anchor="middle" fill="var(--lav-deep)">L4 · mTLS</text>
+      <line x1="615" y1="248" x2="615" y2="292" stroke="var(--peach-deep)" stroke-width="1.5" stroke-dasharray="4 3"/>
+      <rect x="520" y="292" width="170" height="46" rx="8" fill="var(--peach)" stroke="var(--peach-deep)"/>
+      <text x="605" y="312" font-size="13" text-anchor="middle" fill="var(--peach-deep)">Waypoint (optional)</text>
+      <text x="605" y="329" font-size="11" text-anchor="middle" fill="var(--peach-deep)">L7 · pro Namespace</text>
+      <text x="440" y="305" font-size="12" text-anchor="middle" fill="var(--ink-soft)">Pods bleiben</text>
+      <text x="440" y="325" font-size="12" text-anchor="middle" fill="var(--ink-soft)">unverändert</text>
+      <text x="360" y="372" font-size="12" text-anchor="middle" fill="var(--ink-soft)">Violett = L4 (Verbindung) · Orange = L7 (HTTP-Inhalt)</text>
+    </svg>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>Sidecar-Modus (klassisch)</h3>
+      <p>Jeder Pod bekommt einen eigenen Envoy. Alle Funktionen sind immer verfügbar, auf Kosten von CPU und RAM pro Pod. Zum Einschalten müssen die Pods neu starten, damit der Sidecar injiziert wird.</p>
+    </div>
+    <div class="card">
+      <h3>Ambient-Modus (ohne Sidecar)</h3>
+      <p><b>ztunnel</b> läuft als DaemonSet einmal pro Node, in Rust geschrieben, und arbeitet nur auf <b>L4</b>: mTLS, Identität, einfache Zugriffsregeln, Metriken pro Verbindung. Zwischen den ztunnels läuft der Traffic über das Tunnelprotokoll <b>HBONE</b> auf Port 15008.</p>
+      <p style="margin-top:10px">Ein <b>Waypoint</b> ist ein Envoy-Proxy als eigenes Deployment, typischerweise einer pro Namespace. Er wird nur eingerichtet, wenn <b>L7</b>-Funktionen gebraucht werden.</p>
+    </div>
+  </div>
+
+  <div class="mnemo"><b>Statt einer Assistenz pro Mitarbeiter gibt es eine Telefonzentrale pro Etage</b> (ztunnel) – sie verbindet verschlüsselt und prüft Ausweise, hört aber nicht zu. Wer mehr braucht, bekommt ein <b>Sekretariat pro Abteilung</b> (Waypoint), das den Inhalt versteht.</div>
+
+  <div class="card">
+    <div class="scroll-x">
+      <table>
+        <thead><tr><th></th><th>Sidecar</th><th>Ambient</th></tr></thead>
+        <tbody>
+          <tr><td><b>Proxy</b></td><td>Envoy in jedem Pod</td><td>ztunnel pro Node + optional Waypoint</td></tr>
+          <tr><td><b>Einschalten</b></td><td>Namespace labeln + Pods neu starten</td><td>Namespace labeln, kein Neustart</td></tr>
+          <tr><td><b>Ressourcen</b></td><td>pro Pod (Default-Request 100m CPU / 128Mi)</td><td>pro Node + pro Waypoint</td></tr>
+          <tr><td><b>L7-Funktionen</b></td><td>immer</td><td>nur mit Waypoint</td></tr>
+          <tr><td><b>Reife</b></td><td>seit Jahren Standard</td><td>in Istio GA, in OpenShift Service Mesh seit 3.2 GA</td></tr>
+          <tr><td><b>Typischer Einstieg</b></td><td>volle L7-Kontrolle für alle Services</td><td>„erst mal mTLS überall“, L7 gezielt nachrüsten</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="note"><b>Empfehlung:</b> Für Neuanfänge ist Ambient attraktiv – mTLS ohne Pod-Neustart und mit wenig Overhead. Zum <b>Lernen der Konzepte</b> ist der Sidecar-Modus besser geeignet: Alle Beispiele im Netz funktionieren, und jeder Pod zeigt direkt, was passiert. Beide Modi nicht innerhalb eng gekoppelter Anwendungen mischen. Die Beispiele hier nutzen den Sidecar-Modus; Abschnitt 7 zeigt die Unterschiede.</div>
+</section>
+
+<!-- ================= 3 RESSOURCEN ================= -->
+<section id="ressourcen" class="lav">
+  <div class="sec-head"><div class="badge">3</div><h2>Die wichtigsten Ressourcen</h2></div>
+  <p class="sec-sub">Istio hat viele CRDs. Für den Einstieg reichen diese – sortiert nach der Frage, die jede beantwortet.</p>
+
+  <div class="card">
+    <h3>Traffic-Steuerung: die Kette</h3>
+    <pre><code>Client
+  │
+  ▼
+Gateway              Eingang: welche Hosts und Ports?
+  │
+  ▼
+VirtualService       WOHIN: Regeln nach Pfad, Header, Gewicht
+oder HTTPRoute
+  │
+  ▼
+DestinationRule      WIE: Subsets, Loadbalancing, Circuit Breaker
+  │
+  ├──▸ reviews v1
+  └──▸ reviews v3</code></pre>
+    <table>
+      <thead><tr><th>Ressource</th><th>Frage, die sie beantwortet</th><th>Bild</th></tr></thead>
+      <tbody>
+        <tr><td><b>Gateway</b></td><td>Welcher Traffic darf von außen herein (Host, Port, TLS)?</td><td>Empfang am Firmeneingang</td></tr>
+        <tr><td><b>VirtualService</b></td><td>Wohin geht ein Request? (Pfad, Header, Gewichte, Timeouts, Retries)</td><td>Navi</td></tr>
+        <tr><td><b>DestinationRule</b></td><td>Wie wird das Ziel angesprochen? (Subsets, LB-Algorithmus, Verbindungslimits, Outlier Detection)</td><td>Hausordnung am Ziel</td></tr>
+        <tr><td><b>ServiceEntry</b></td><td>Welche externen Ziele kennt das Mesh?</td><td>Telefonbuch für externe Nummern</td></tr>
+        <tr><td><b>Sidecar</b></td><td>Welche Ziele muss ein Proxy überhaupt kennen?</td><td>Reduziert die Konfiguration pro Proxy</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="mnemo"><b>VirtualService = Wohin. DestinationRule = Wie.</b> Die DestinationRule definiert die Versionen (Subsets), der VirtualService verteilt darauf.</div>
+
+  <details>
+    <summary>Gateway API: der neue Standard</summary>
+    <div class="inner">
+      <p>Istio unterstützt neben den eigenen APIs die <b>Kubernetes Gateway API</b> und empfiehlt sie für neue Setups. Im Ambient-Modus ist sie der bevorzugte Weg.</p>
+      <table>
+        <thead><tr><th>Istio-API</th><th>Gateway-API-Entsprechung</th></tr></thead>
+        <tbody>
+          <tr><td><code>Gateway</code> (networking.istio.io)</td><td><code>Gateway</code> (gateway.networking.k8s.io) – Istio startet dafür automatisch ein Gateway-Deployment</td></tr>
+          <tr><td><code>VirtualService</code></td><td><code>HTTPRoute</code>, <code>GRPCRoute</code>, <code>TLSRoute</code>, <code>TCPRoute</code></td></tr>
+          <tr><td>Subsets in <code>DestinationRule</code></td><td>eigene Services pro Version als <code>backendRefs</code></td></tr>
+          <tr><td><code>DestinationRule</code> (Traffic-Policy)</td><td>bleibt als Istio-Ressource bestehen</td></tr>
+        </tbody>
+      </table>
+      <p style="margin-top:10px">In bestehenden Clustern trifft man noch überwiegend VirtualService und DestinationRule. Die Beispiele unten zeigen beide Varianten.</p>
+    </div>
+  </details>
+
+  <div class="card">
+    <h3>Sicherheit</h3>
+    <table>
+      <thead><tr><th>Ressource</th><th>Frage</th><th>Bild</th></tr></thead>
+      <tbody>
+        <tr><td><b>PeerAuthentication</b></td><td>Muss sich der Aufrufer per mTLS ausweisen?</td><td>Dienstausweis-Pflicht</td></tr>
+        <tr><td><b>RequestAuthentication</b></td><td>Ist das mitgeschickte JWT gültig?</td><td>Besucherticket prüfen</td></tr>
+        <tr><td><b>AuthorizationPolicy</b></td><td>Darf dieser Aufrufer das tun?</td><td>Gästeliste pro Raum</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="warn"><b>RequestAuthentication allein blockiert nichts.</b> Sie lehnt nur ungültige Tokens ab. Requests ganz ohne Token kommen durch, solange keine AuthorizationPolicy ein Token verlangt.</div>
+
+  <div class="note"><b>Beobachtung:</b> Die Ressource <b>Telemetry</b> stellt Access-Logs, Metriken und Tracing pro Mesh, Namespace oder Workload ein.</div>
+</section>
+
+<!-- ================= 4 INSTALLATION ================= -->
+<section id="installation" class="peach">
+  <div class="sec-head"><div class="badge">4</div><h2>Installation</h2></div>
+  <p class="sec-sub">Im Lab genügt <code>istioctl</code>. Unter OpenShift läuft alles über den Sail Operator – <code>istioctl install</code> und Helm werden dort nicht unterstützt.</p>
+
+  <details>
+    <summary>Testcluster mit istioctl (kind, k3s, minikube, RKE2)</summary>
+    <div class="inner">
+      <pre><code><span class="c"># istioctl und Beispieldateien herunterladen</span>
+curl -L https://istio.io/downloadIstio | sh -
+cd istio-1.31.1
+export PATH=$PWD/bin:$PATH
+
+<span class="c"># Cluster prüfen</span>
+istioctl x precheck
+
+<span class="c"># Gateway-API-CRDs installieren, falls nicht vorhanden</span>
+kubectl get crd gateways.gateway.networking.k8s.io &amp;&gt; /dev/null || \
+  kubectl kustomize "github.com/kubernetes-sigs/gateway-api/config/crd?ref=&lt;version&gt;" | kubectl apply -f -
+
+<span class="c"># Istio installieren: Demo-Profil ohne vorinstallierte Gateways</span>
+istioctl install -f samples/bookinfo/demo-profile-no-gateways.yaml -y
+
+kubectl get pods -n istio-system</code></pre>
+      <div class="note"><b>Nur fürs Lernen:</b> Das Demo-Profil hat unter anderem 100 % Trace-Sampling. Für Produktion <code>default</code> oder <code>minimal</code> verwenden und gezielt anpassen.</div>
+    </div>
+  </details>
+
+  <details>
+    <summary>Namespace in das Mesh aufnehmen (Sidecar-Modus)</summary>
+    <div class="inner">
+      <pre><code>kubectl create namespace bookinfo
+kubectl label namespace bookinfo istio-injection=enabled</code></pre>
+      <p>Das Label wirkt nur auf <b>neu erstellte</b> Pods. Ein Mutating Webhook von istiod fügt den <code>istio-proxy</code>-Container beim Erstellen hinzu. Bestehende Pods brauchen einen Neustart:</p>
+      <pre><code>kubectl rollout restart deployment -n bookinfo</code></pre>
+    </div>
+  </details>
+
+  <details>
+    <summary>OpenShift Service Mesh 3 über den Sail Operator</summary>
+    <div class="inner">
+      <p>OSSM 3 ist Istio, verwaltet durch den <b>Sail Operator</b>. Die Installation läuft ausschließlich über den Operator; einzelne istioctl-Befehle zur Analyse sind unterstützt.</p>
+      <p style="margin-top:10px"><b>1.</b> Operator „Red Hat OpenShift Service Mesh 3“ aus dem OperatorHub installieren.<br><b>2.</b> Namespaces anlegen und die Control Plane erstellen:</p>
+      <pre><code>oc create namespace istio-system
+oc create namespace istio-cni
+oc label namespace istio-system istio-discovery=enabled</code></pre>
+      <pre><code>apiVersion: sailoperator.io/v1
+kind: Istio
+metadata:
+  name: default
+spec:
+  namespace: istio-system
+  updateStrategy:
+    type: InPlace
+  values:
+    meshConfig:
+      discoverySelectors:
+        - matchLabels:
+            istio-discovery: enabled
+---
+apiVersion: sailoperator.io/v1
+kind: IstioCNI
+metadata:
+  name: default
+spec:
+  namespace: istio-cni</code></pre>
+      <p><b>3.</b> Anwendungs-Namespaces aufnehmen:</p>
+      <pre><code>oc create namespace bookinfo
+oc label namespace bookinfo istio-discovery=enabled istio-injection=enabled</code></pre>
+    </div>
+  </details>
+
+  <div class="card">
+    <h3>Was unter OpenShift anders ist</h3>
+    <ul class="clean">
+      <li><b>discoverySelectors:</b> istiod beobachtet nur Namespaces mit passendem Label. Das begrenzt Last und Speicher in großen Clustern – <code>istio-system</code> muss selbst das Label tragen.</li>
+      <li><b>Ohne <code>spec.version</code></b> installiert der Operator die neueste unterstützte Istio-Version. Für reproduzierbare Setups die Version fest setzen.</li>
+      <li><b>Gateways</b> werden nicht mitinstalliert – entweder über die Gateway API oder per Gateway-Injection als eigenes Deployment. Nach außen führt eine OpenShift-Route oder ein LoadBalancer-Service darauf.</li>
+      <li><b>Kiali, Metriken und Tracing</b> sind separat: Kiali über den Kiali-Operator, Metriken über User Workload Monitoring, Tracing über Tempo und OpenTelemetry.</li>
+      <li><b>Upgrades</b> mit <code>updateStrategy: RevisionBased</code> laufen als Canary: neue Control Plane parallel, Namespaces nach und nach umziehen.</li>
+      <li><b>Ambient-Modus:</b> Istio mit <code>profile: ambient</code> plus eine <code>ZTunnel</code>-Ressource. Seit OSSM 3.2 GA.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ================= 5 BOOKINFO ================= -->
+<section id="bookinfo" class="butter">
+  <div class="sec-head"><div class="badge">5</div><h2>Erste Schritte: Bookinfo</h2></div>
+  <p class="sec-sub">Die Beispielanwendung von Istio: <code>productpage</code> (Web-UI) ruft <code>details</code> und <code>reviews</code> auf, <code>reviews</code> ruft <code>ratings</code> auf. <code>reviews</code> gibt es in drei Versionen – v1 ohne Sterne, v2 mit schwarzen, v3 mit roten.</p>
+
+  <div class="card">
+    <h3>Die Services und ihre Aufrufe</h3>
+    <svg viewBox="0 0 860 300" width="100%" style="max-width:840px;display:block;margin:6px auto" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Bookinfo-Aufrufgraph: Browser über Gateway zu productpage, von dort zu details und den drei reviews-Versionen, von reviews v2 und v3 weiter zu ratings" font-family="Inter, sans-serif">
+      <defs><marker id="bi-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="var(--ink-soft)"/></marker></defs>
+
+      <rect x="14" y="126" width="104" height="44" rx="10" fill="var(--card)" stroke="var(--line)" stroke-width="1.5"/>
+      <text x="66" y="153" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="12.5" fill="var(--ink)">Browser</text>
+      <line x1="122" y1="148" x2="156" y2="148" stroke="var(--ink-soft)" stroke-width="1.5" marker-end="url(#bi-a)"/>
+
+      <rect x="162" y="126" width="104" height="44" rx="10" fill="var(--lav)" stroke="var(--lav-deep)" stroke-width="1.5"/>
+      <text x="214" y="153" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="12.5" fill="var(--lav-deep)">Gateway</text>
+      <line x1="270" y1="148" x2="304" y2="148" stroke="var(--ink-soft)" stroke-width="1.5" marker-end="url(#bi-a)"/>
+
+      <rect x="310" y="120" width="124" height="56" rx="10" fill="var(--mint)" stroke="var(--mint-deep)" stroke-width="1.6"/>
+      <text x="372" y="153" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="12.5" fill="var(--mint-deep)">productpage</text>
+
+      <path d="M438 138 C470 138, 470 52, 502 52" fill="none" stroke="var(--ink-soft)" stroke-width="1.4" marker-end="url(#bi-a)"/>
+      <rect x="508" y="30" width="124" height="44" rx="10" fill="var(--card)" stroke="var(--line)" stroke-width="1.5"/>
+      <text x="570" y="57" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="12.5" fill="var(--ink)">details</text>
+
+      <path d="M438 146 C470 146, 470 116, 502 116" fill="none" stroke="var(--ink-soft)" stroke-width="1.4" marker-end="url(#bi-a)"/>
+      <rect x="508" y="94" width="124" height="44" rx="10" fill="var(--card)" stroke="var(--line)" stroke-width="1.5"/>
+      <text x="570" y="113" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="12" fill="var(--ink)">reviews v1</text>
+      <text x="570" y="129" text-anchor="middle" font-size="10.5" fill="var(--ink-soft)">keine Sterne</text>
+
+      <path d="M438 154 C470 154, 470 180, 502 180" fill="none" stroke="var(--ink-soft)" stroke-width="1.4" marker-end="url(#bi-a)"/>
+      <rect x="508" y="158" width="124" height="44" rx="10" fill="var(--card)" stroke="var(--line)" stroke-width="1.5"/>
+      <text x="570" y="177" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="12" fill="var(--ink)">reviews v2</text>
+      <text x="570" y="193" text-anchor="middle" font-size="10.5" fill="var(--ink-soft)">schwarze Sterne</text>
+
+      <path d="M438 162 C470 162, 470 244, 502 244" fill="none" stroke="var(--ink-soft)" stroke-width="1.4" marker-end="url(#bi-a)"/>
+      <rect x="508" y="222" width="124" height="44" rx="10" fill="var(--card)" stroke="var(--line)" stroke-width="1.5"/>
+      <text x="570" y="241" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="12" fill="var(--ink)">reviews v3</text>
+      <text x="570" y="257" text-anchor="middle" font-size="10.5" fill="var(--ink-soft)">rote Sterne</text>
+
+      <path d="M636 180 C680 180, 690 208, 726 208" fill="none" stroke="var(--ink-soft)" stroke-width="1.4" marker-end="url(#bi-a)"/>
+      <path d="M636 244 C680 244, 690 224, 726 224" fill="none" stroke="var(--ink-soft)" stroke-width="1.4" marker-end="url(#bi-a)"/>
+      <rect x="732" y="194" width="114" height="44" rx="10" fill="var(--card)" stroke="var(--line)" stroke-width="1.5"/>
+      <text x="789" y="221" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="12.5" fill="var(--ink)">ratings</text>
+
+      <text x="430" y="292" text-anchor="middle" font-size="11.5" fill="var(--ink-soft)">Ohne Regeln verteilt der Kubernetes-Service gleichmäßig auf alle drei reviews-Versionen.</text>
+    </svg>
+  </div>
+
+  <details>
+    <summary>Anwendung deployen und Proxy-Status prüfen</summary>
+    <div class="inner">
+      <pre><code>kubectl apply -n bookinfo -f samples/bookinfo/platform/kube/bookinfo.yaml
+kubectl apply -n bookinfo -f samples/bookinfo/platform/kube/bookinfo-versions.yaml
+kubectl get pods -n bookinfo</code></pre>
+      <p>Jeder Pod zeigt zwei Container: die App und <code>istio-proxy</code>. Ob alle Proxies ihre Konfiguration bekommen haben:</p>
+      <pre><code>istioctl proxy-status</code></pre>
+      <p><code>SYNCED</code> in allen Spalten heißt: Der Proxy hat den aktuellen Stand von istiod.</p>
+    </div>
+  </details>
+
+  <details>
+    <summary>Eingang von außen</summary>
+    <div class="inner">
+      <pre><code>kubectl apply -n bookinfo -f samples/bookinfo/gateway-api/bookinfo-gateway.yaml
+kubectl wait -n bookinfo --for=condition=programmed gtw bookinfo-gateway</code></pre>
+      <p>Istio erzeugt automatisch Deployment und Service <code>bookinfo-gateway-istio</code>. Ohne LoadBalancer im Lab:</p>
+      <pre><code>kubectl port-forward -n bookinfo svc/bookinfo-gateway-istio 8080:80
+<span class="c"># Browser: http://localhost:8080/productpage</span></code></pre>
+      <p>Beim mehrfachen Neuladen wechseln die Sterne zwischen keinen, schwarzen und roten.</p>
+    </div>
+  </details>
+
+  <div class="card">
+    <h3>Konfiguration prüfen</h3>
+    <pre><code>istioctl analyze -n bookinfo</code></pre>
+    <p><code>analyze</code> findet typische Fehler: VirtualService zeigt auf ein nicht existierendes Subset, fehlendes Injection-Label, Konflikte zwischen Regeln.</p>
+  </div>
+
+  <div class="mnemo"><b><code>istioctl analyze</code> nach jeder Änderung</b> – das ist die billigste Fehlersuche, die es gibt.</div>
+</section>
+
+<!-- ================= 6 PRAXIS ================= -->
+<section id="praxis" class="rose">
+  <div class="sec-head"><div class="badge">6</div><h2>Praxisbeispiele</h2></div>
+  <p class="sec-sub">Zehn Fälle zum Nachbauen, alle im Sidecar-Modus mit Bookinfo. Jeder Block ist für sich anwendbar.</p>
+
+  <details>
+    <summary>6.1 · mTLS erzwingen</summary>
+    <div class="inner">
+      <p>Istio startet im Modus <b>PERMISSIVE</b>: Proxies nehmen mTLS <b>und</b> Klartext an. Das erlaubt eine schrittweise Migration. Zwischen zwei Proxies wird trotzdem automatisch mTLS verwendet.</p>
+      <table>
+        <thead><tr><th>Modus</th><th>Verhalten</th></tr></thead>
+        <tbody>
+          <tr><td><code>PERMISSIVE</code></td><td>mTLS und Klartext (Default)</td></tr>
+          <tr><td><code>STRICT</code></td><td>nur mTLS, Klartext wird abgelehnt</td></tr>
+          <tr><td><code>DISABLE</code></td><td>kein mTLS</td></tr>
+        </tbody>
+      </table>
+      <pre><code>apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: bookinfo
+spec:
+  mtls:
+    mode: STRICT</code></pre>
+      <p>Mesh-weit: dieselbe Ressource im Namespace <code>istio-system</code> anlegen. <b>Test</b> – ein Pod ohne Sidecar erreicht die Services nicht mehr:</p>
+      <pre><code>kubectl create namespace legacy   <span class="c"># ohne Injection-Label</span>
+kubectl apply -n legacy -f samples/curl/curl.yaml
+kubectl exec -n legacy deploy/curl -- curl -s -o /dev/null -w "%{http_code}\n" \
+  http://productpage.bookinfo:9080/productpage
+<span class="c"># Ergebnis: 000 bzw. "connection reset" statt 200</span></code></pre>
+      <div class="warn"><b>Stiller Ausfall:</b> Erst in Kiali oder in den Metriken prüfen, ob noch Klartext-Verbindungen existieren, dann auf STRICT umstellen. Sonst fallen Clients ohne Sidecar still aus – etwa Monitoring-Scraper oder Jobs aus anderen Namespaces.</div>
+    </div>
+  </details>
+
+  <details>
+    <summary>6.2 · Alle Nutzer auf eine Version festlegen</summary>
+    <div class="inner">
+      <p>Erst die Versionen als Subsets definieren (<b>Wie</b>), dann den Traffic lenken (<b>Wohin</b>):</p>
+      <pre><code>apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: reviews
+  namespace: bookinfo
+spec:
+  host: reviews
+  subsets:
+    - name: v1
+      labels:
+        version: v1
+    - name: v2
+      labels:
+        version: v2
+    - name: v3
+      labels:
+        version: v3
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: reviews
+  namespace: bookinfo
+spec:
+  hosts:
+    - reviews
+  http:
+    - route:
+        - destination:
+            host: reviews
+            subset: v1</code></pre>
+      <p>Die Seite zeigt jetzt dauerhaft keine Sterne. Die Subsets greifen über Pod-Labels – <code>version: v1</code> muss also als Label auf den Pods existieren.</p>
+    </div>
+  </details>
+
+  <details>
+    <summary>6.3 · Canary-Release: 90/10</summary>
+    <div class="inner">
+      <pre><code>apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: reviews
+  namespace: bookinfo
+spec:
+  hosts:
+    - reviews
+  http:
+    - route:
+        - destination:
+            host: reviews
+            subset: v1
+          weight: 90
+        - destination:
+            host: reviews
+            subset: v3
+          weight: 10</code></pre>
+      <p>Dasselbe mit der Gateway API – statt Subsets ein eigener Service pro Version, den <code>bookinfo-versions.yaml</code> bereits angelegt hat:</p>
+      <pre><code>apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: reviews
+  namespace: bookinfo
+spec:
+  parentRefs:
+    - group: ""
+      kind: Service
+      name: reviews
+      port: 9080
+  rules:
+    - backendRefs:
+        - name: reviews-v1
+          port: 9080
+          weight: 90
+        - name: reviews-v3
+          port: 9080
+          weight: 10</code></pre>
+      <div class="note"><b>Der Unterschied zu zwei Deployments hinter einem Service:</b> Dort bestimmt das Verhältnis der Replicas die Verteilung. Mit Istio ist sie <b>unabhängig von der Replica-Anzahl</b> – 10 % bleiben 10 %, egal ob v3 eine oder zehn Replicas hat.</div>
+      <p>Hochdrehen: 90/10 → 50/50 → 0/100, jeweils Fehlerraten und Latenz beobachten. Nicht gleichzeitig VirtualService und HTTPRoute für denselben Service verwenden.</p>
+    </div>
+  </details>
+
+  <details>
+    <summary>6.4 · Routing nach Header: Testnutzer sehen die neue Version</summary>
+    <div class="inner">
+      <p>Nur ein bestimmter Nutzer sieht v2, alle anderen bleiben auf v1. Bookinfo setzt nach dem Login den Header <code>end-user</code>.</p>
+      <pre><code>apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: reviews
+  namespace: bookinfo
+spec:
+  hosts:
+    - reviews
+  http:
+    - match:
+        - headers:
+            end-user:
+              exact: jason
+      route:
+        - destination:
+            host: reviews
+            subset: v2
+    - route:
+        - destination:
+            host: reviews
+            subset: v1</code></pre>
+      <div class="warn"><b>Die Reihenfolge zählt:</b> Regeln werden von oben nach unten ausgewertet, die erste passende gewinnt. Die allgemeine Regel ohne <code>match</code> gehört deshalb ans Ende.</div>
+      <p>Damit das funktioniert, muss die Anwendung den Header an ihre eigenen ausgehenden Aufrufe weiterreichen. Istio kann nur routen, was im Request steht. Dasselbe gilt für Tracing-Header: Ohne Weitergabe in der App zerfallen Traces in Einzelteile.</p>
+    </div>
+  </details>
+
+  <details>
+    <summary>6.5 · Timeouts und Retries</summary>
+    <div class="inner">
+      <pre><code>apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: ratings
+  namespace: bookinfo
+spec:
+  hosts:
+    - ratings
+  http:
+    - route:
+        - destination:
+            host: ratings
+      timeout: 3s
+      retries:
+        attempts: 2
+        perTryTimeout: 1s
+        retryOn: 5xx,connect-failure,reset</code></pre>
+      <ul class="clean">
+        <li><code>timeout</code> ist die Gesamtzeit inklusive aller Retries.</li>
+        <li>Retries nur für <b>idempotente</b> Operationen. Ein wiederholtes <code>POST /bestellung</code> kann zwei Bestellungen erzeugen.</li>
+        <li>Istio führt standardmäßig bereits Retries durch. Bei Retries in der App <b>und</b> im Mesh multiplizieren sich die Versuche.</li>
+      </ul>
+    </div>
+  </details>
+
+  <details>
+    <summary>6.6 · Fault Injection: Fehler absichtlich einbauen</summary>
+    <div class="inner">
+      <p>Wie verhält sich die Anwendung, wenn ein abhängiger Service langsam ist oder Fehler liefert? Testbar ohne Codeänderung:</p>
+      <pre><code>apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: ratings
+  namespace: bookinfo
+spec:
+  hosts:
+    - ratings
+  http:
+    - fault:
+        delay:
+          percentage:
+            value: 50
+          fixedDelay: 5s
+        abort:
+          percentage:
+            value: 10
+          httpStatus: 503
+      route:
+        - destination:
+            host: ratings</code></pre>
+      <p>50 % der Requests werden um 5 Sekunden verzögert, 10 % bekommen ein 503. Fragen, die der Test beantwortet: Zeigt <code>productpage</code> eine saubere Fehlermeldung oder hängt die Seite? Passen die Timeouts der aufrufenden Services zueinander?</p>
+      <div class="warn"><b>Nach dem Test die Regel wieder entfernen.</b></div>
+    </div>
+  </details>
+
+  <details>
+    <summary>6.7 · Circuit Breaking und Outlier Detection</summary>
+    <div class="inner">
+      <ul class="clean">
+        <li><b>connectionPool</b> begrenzt, wie viele Verbindungen und wartende Requests ein Ziel bekommt. Ist es voll, wird sofort abgelehnt, statt einen überlasteten Service weiter zu fluten.</li>
+        <li><b>outlierDetection</b> wirft einzelne Pods temporär aus dem Loadbalancing, wenn sie wiederholt Fehler liefern.</li>
+      </ul>
+      <pre><code>apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: reviews
+  namespace: bookinfo
+spec:
+  host: reviews
+  trafficPolicy:
+    connectionPool:
+      tcp:
+        maxConnections: 100
+      http:
+        http1MaxPendingRequests: 50
+        maxRequestsPerConnection: 10
+    outlierDetection:
+      consecutive5xxErrors: 5
+      interval: 10s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+  subsets:
+    - name: v1
+      labels:
+        version: v1
+    - name: v3
+      labels:
+        version: v3</code></pre>
+      <div class="mnemo"><b>Sicherung im Stromkreis.</b> Bei Überlast fliegt sie, bevor das ganze Haus abbrennt. Ein Pod, der ständig Fehler wirft, wird für 30 Sekunden vom Netz genommen.</div>
+      <p><code>maxEjectionPercent</code> verhindert, dass alle Pods gleichzeitig ausgeschlossen werden. Abgelehnte Requests erscheinen im Access-Log mit dem Flag <code>UO</code>. Zum Ausprobieren eignet sich fortio aus <code>samples/httpbin/sample-client/fortio-deploy.yaml</code>.</p>
+    </div>
+  </details>
+
+  <details>
+    <summary>6.8 · Zugriff regeln mit AuthorizationPolicy</summary>
+    <div class="inner">
+      <p>Die Auswertung läuft in fester Reihenfolge:</p>
+      <svg viewBox="0 0 860 300" width="100%" style="max-width:840px;display:block;margin:10px auto" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Auswertungsreihenfolge von AuthorizationPolicies: zuerst CUSTOM, dann DENY, dann die Frage ob ALLOW-Policies existieren und ob eine passt" font-family="Inter, sans-serif">
+        <defs><marker id="az-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="var(--ink-soft)"/></marker></defs>
+
+        <rect x="14" y="128" width="130" height="40" rx="10" fill="var(--card)" stroke="var(--line)" stroke-width="1.5"/>
+        <text x="79" y="153" text-anchor="middle" font-size="12" fill="var(--ink)">Request kommt an</text>
+        <line x1="148" y1="148" x2="176" y2="148" stroke="var(--ink-soft)" stroke-width="1.4" marker-end="url(#az-a)"/>
+
+        <rect x="182" y="126" width="120" height="44" rx="22" fill="var(--sky)" stroke="var(--sky-deep)" stroke-width="1.5"/>
+        <text x="242" y="144" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="11.5" fill="var(--sky-deep)">CUSTOM</text>
+        <text x="242" y="160" text-anchor="middle" font-size="10.5" fill="var(--sky-deep)">lehnt ab?</text>
+        <path d="M242 122 V96 H268" fill="none" stroke="var(--ink-soft)" stroke-width="1.4" marker-end="url(#az-a)"/>
+        <text x="250" y="112" font-size="10" fill="var(--ink-soft)">ja</text>
+        <line x1="306" y1="148" x2="334" y2="148" stroke="var(--ink-soft)" stroke-width="1.4" marker-end="url(#az-a)"/>
+        <text x="312" y="142" font-size="10" fill="var(--ink-soft)">nein</text>
+
+        <rect x="340" y="126" width="120" height="44" rx="22" fill="var(--sky)" stroke="var(--sky-deep)" stroke-width="1.5"/>
+        <text x="400" y="144" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="11.5" fill="var(--sky-deep)">DENY</text>
+        <text x="400" y="160" text-anchor="middle" font-size="10.5" fill="var(--sky-deep)">passt?</text>
+        <path d="M400 122 V96 H426" fill="none" stroke="var(--ink-soft)" stroke-width="1.4" marker-end="url(#az-a)"/>
+        <text x="408" y="112" font-size="10" fill="var(--ink-soft)">ja</text>
+        <line x1="464" y1="148" x2="492" y2="148" stroke="var(--ink-soft)" stroke-width="1.4" marker-end="url(#az-a)"/>
+        <text x="470" y="142" font-size="10" fill="var(--ink-soft)">nein</text>
+
+        <rect x="498" y="120" width="140" height="56" rx="26" fill="var(--sky)" stroke="var(--sky-deep)" stroke-width="1.5"/>
+        <text x="568" y="140" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="11.5" fill="var(--sky-deep)">ALLOW-Policies</text>
+        <text x="568" y="157" text-anchor="middle" font-size="10.5" fill="var(--sky-deep)">für den Workload</text>
+        <text x="568" y="171" text-anchor="middle" font-size="10.5" fill="var(--sky-deep)">vorhanden?</text>
+        <path d="M568 116 V214 H600" fill="none" stroke="var(--ink-soft)" stroke-width="0" />
+        <path d="M568 176 V226 H600" fill="none" stroke="var(--ink-soft)" stroke-width="1.4" marker-end="url(#az-a)"/>
+        <text x="576" y="206" font-size="10" fill="var(--ink-soft)">nein</text>
+        <line x1="642" y1="148" x2="670" y2="148" stroke="var(--ink-soft)" stroke-width="1.4" marker-end="url(#az-a)"/>
+        <text x="648" y="142" font-size="10" fill="var(--ink-soft)">ja</text>
+
+        <rect x="676" y="126" width="120" height="44" rx="22" fill="var(--sky)" stroke="var(--sky-deep)" stroke-width="1.5"/>
+        <text x="736" y="152" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="11.5" fill="var(--sky-deep)">Passt eine?</text>
+        <path d="M736 122 V96 H762" fill="none" stroke="var(--ink-soft)" stroke-width="1.4" marker-end="url(#az-a)"/>
+        <text x="744" y="112" font-size="10" fill="var(--ink-soft)">ja</text>
+        <path d="M736 174 V226 H762" fill="none" stroke="var(--ink-soft)" stroke-width="1.4" marker-end="url(#az-a)"/>
+        <text x="744" y="206" font-size="10" fill="var(--ink-soft)">nein</text>
+
+        <rect x="268" y="74" width="92" height="40" rx="10" fill="var(--rose)" stroke="var(--rose-deep)" stroke-width="1.5"/>
+        <text x="314" y="99" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="11.5" fill="var(--rose-deep)">abgelehnt</text>
+        <rect x="426" y="74" width="92" height="40" rx="10" fill="var(--rose)" stroke="var(--rose-deep)" stroke-width="1.5"/>
+        <text x="472" y="99" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="11.5" fill="var(--rose-deep)">abgelehnt</text>
+        <rect x="762" y="74" width="92" height="40" rx="10" fill="var(--mint)" stroke="var(--mint-deep)" stroke-width="1.5"/>
+        <text x="808" y="99" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="11.5" fill="var(--mint-deep)">erlaubt</text>
+        <rect x="600" y="206" width="92" height="40" rx="10" fill="var(--mint)" stroke="var(--mint-deep)" stroke-width="1.5"/>
+        <text x="646" y="231" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="11.5" fill="var(--mint-deep)">erlaubt</text>
+        <rect x="762" y="206" width="92" height="40" rx="10" fill="var(--rose)" stroke="var(--rose-deep)" stroke-width="1.5"/>
+        <text x="808" y="231" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="11.5" fill="var(--rose-deep)">abgelehnt</text>
+
+        <text x="430" y="284" text-anchor="middle" font-size="11.5" fill="var(--ink-soft)">Ohne Policies ist alles erlaubt – die erste ALLOW-Policy dreht das um.</text>
+      </svg>
+      <div class="warn"><b>Die wichtigste Falle:</b> Ohne Policies ist alles erlaubt. <b>Die erste ALLOW-Policy für einen Workload dreht das um</b> – ab dann ist alles verboten, was nicht explizit erlaubt ist.</div>
+      <p>Sauberes Vorgehen: erst alles verbieten, dann gezielt erlauben.</p>
+      <pre><code><span class="c"># 1. Alles im Namespace verbieten</span>
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-nothing
+  namespace: bookinfo
+spec: {}
+---
+<span class="c"># 2. Das Gateway darf productpage aufrufen</span>
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: productpage-from-gateway
+  namespace: bookinfo
+spec:
+  selector:
+    matchLabels:
+      app: productpage
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/bookinfo/sa/bookinfo-gateway-istio
+      to:
+        - operation:
+            methods: ["GET"]
+---
+<span class="c"># 3. productpage darf reviews lesen, sonst niemand</span>
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: reviews-from-productpage
+  namespace: bookinfo
+spec:
+  selector:
+    matchLabels:
+      app: reviews
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/bookinfo/sa/bookinfo-productpage
+      to:
+        - operation:
+            methods: ["GET"]</code></pre>
+      <p>Dasselbe Muster für <code>details</code> (von productpage) und <code>ratings</code> (von reviews) ergänzen. Welche Identität ein Aufrufer hat, zeigt <code>istioctl x describe pod &lt;pod&gt; -n bookinfo</code>. Der Name des Gateway-ServiceAccounts hängt vom Gateway-Namen ab: <code>kubectl get sa -n bookinfo</code>. Abgelehnte Requests liefern <b>HTTP 403</b> mit <code>RBAC: access denied</code>.</p>
+      <div class="note"><b>Unterschied zur NetworkPolicy:</b> Die kennt nur IP und Port (L3/L4). Eine AuthorizationPolicy kennt <b>Identität, HTTP-Methode, Pfad und Header</b> (L7) und funktioniert unabhängig von IP-Adressen. Kombinierbar: NetworkPolicy als grobe Außenmauer, AuthorizationPolicy als Türschloss.</div>
+    </div>
+  </details>
+
+  <details>
+    <summary>6.9 · Ausgehenden Traffic kontrollieren</summary>
+    <div class="inner">
+      <p>Standardmäßig dürfen Pods im Mesh jedes externe Ziel erreichen (<code>ALLOW_ANY</code>). Strenger ist <code>REGISTRY_ONLY</code>: Nur bekannte Ziele sind erreichbar.</p>
+      <pre><code>istioctl install ... --set meshConfig.outboundTrafficPolicy.mode=REGISTRY_ONLY</code></pre>
+      <p>Unter OSSM 3 kommt die Einstellung in <code>spec.values.meshConfig.outboundTrafficPolicy.mode</code> der <code>Istio</code>-Ressource. Danach jedes erlaubte Ziel per ServiceEntry freigeben:</p>
+      <pre><code>apiVersion: networking.istio.io/v1
+kind: ServiceEntry
+metadata:
+  name: github-api
+  namespace: bookinfo
+spec:
+  hosts:
+    - api.github.com
+  ports:
+    - number: 443
+      name: tls
+      protocol: TLS
+  resolution: DNS
+  location: MESH_EXTERNAL</code></pre>
+      <div class="warn"><b>Keine harte Sicherheitsgrenze:</b> Ohne eigenes Egress-Gateway ist das eine Absicherung gegen versehentliche Verbindungen. Ein kompromittierter Pod könnte den Sidecar umgehen. Für echte Durchsetzung zusätzlich NetworkPolicies bzw. EgressFirewall einsetzen, die nur das Egress-Gateway nach außen lassen.</div>
+    </div>
+  </details>
+
+  <details>
+    <summary>6.10 · Sichtbarkeit: Kiali, Metriken, Access-Logs</summary>
+    <div class="inner">
+      <pre><code>kubectl apply -f samples/addons
+kubectl rollout status deployment/kiali -n istio-system
+istioctl dashboard kiali</code></pre>
+      <p><b>Kiali</b> zeigt den Service-Graphen live: wer mit wem spricht, Fehlerraten, Latenzen, ob mTLS aktiv ist (Schloss-Symbol) und Validierungsfehler in der Istio-Konfiguration. Für Einsteiger das wichtigste Werkzeug, um zu <b>sehen</b>, was die Regeln bewirken.</p>
+      <div class="note"><b>Nicht für Produktion:</b> Die Add-ons aus <code>samples/addons</code> sind Lab-Werkzeuge. Unter OpenShift stattdessen den Kiali-Operator und User Workload Monitoring verwenden.</div>
+      <p>Access-Logs für das ganze Mesh einschalten:</p>
+      <pre><code>apiVersion: telemetry.istio.io/v1
+kind: Telemetry
+metadata:
+  name: mesh-default
+  namespace: istio-system
+spec:
+  accessLogging:
+    - providers:
+        - name: envoy</code></pre>
+      <pre><code>kubectl logs -n bookinfo deploy/productpage-v1 -c istio-proxy --tail=20</code></pre>
+    </div>
+  </details>
+</section>
+
+<!-- ================= 7 AMBIENT ================= -->
+<section id="ambient" class="mint">
+  <div class="sec-head"><div class="badge">7</div><h2>Dasselbe im Ambient-Modus</h2></div>
+  <p class="sec-sub">Was sich ändert, wenn statt Sidecars ein ztunnel pro Node arbeitet – und wo die eine Falle liegt, die fast jeder trifft.</p>
+
+  <div class="card">
+    <h3>Installation und Aufnahme</h3>
+    <pre><code>istioctl install --set profile=ambient --skip-confirmation
+kubectl label namespace bookinfo istio.io/dataplane-mode=ambient</code></pre>
+    <p><b>Kein Pod-Neustart nötig.</b> Die Pods bleiben bei einem Container. Ab sofort läuft ihr Traffic über den ztunnel des Nodes und ist per mTLS verschlüsselt.</p>
+    <pre><code>istioctl ztunnel-config workloads
+<span class="c"># Spalte PROTOCOL zeigt HBONE für Workloads im Mesh</span></code></pre>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>Sofort verfügbar (L4)</h3>
+      <ul class="clean">
+        <li>mTLS zwischen allen Workloads</li>
+        <li>AuthorizationPolicy mit <code>principals</code> und Ports – aber ohne HTTP-Methoden oder Pfade</li>
+        <li>Metriken auf Verbindungsebene</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Für L7 einen Waypoint</h3>
+      <pre><code>istioctl waypoint apply -n bookinfo \
+  --enroll-namespace --wait</code></pre>
+      <p>Danach funktionieren die L7-Beispiele. Routing läuft bevorzugt über <b>HTTPRoute</b>.</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>L7-Policies hängen am Waypoint</h3>
+    <p>Statt über <code>selector</code> werden sie über <code>targetRefs</code> zugeordnet:</p>
+    <pre><code>apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: reviews-get-only
+  namespace: bookinfo
+spec:
+  targetRefs:
+    - kind: Service
+      group: ""
+      name: reviews
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/bookinfo/sa/bookinfo-productpage
+      to:
+        - operation:
+            methods: ["GET"]</code></pre>
+  </div>
+
+  <div class="warn"><b>Häufige Falle:</b> Eine L7-Regel (Methode, Pfad) mit <code>selector</code> statt <code>targetRefs</code> kann der ztunnel nicht auswerten, weil er nur L4 sieht. Die Regel greift dann nicht wie erwartet – <code>istioctl analyze</code> warnt davor.</div>
+</section>
+
+<!-- ================= 8 BEACHTEN ================= -->
+<section id="beachten" class="sky">
+  <div class="sec-head"><div class="badge">8</div><h2>Was zu beachten ist</h2></div>
+  <p class="sec-sub">Sechs Bereiche, in denen ein Mesh Dinge kaputtmacht, die vorher liefen – meist ohne aussagekräftige Fehlermeldung.</p>
+
+  <details>
+    <summary>Ports korrekt benennen</summary>
+    <div class="inner">
+      <p>Istio muss wissen, welches Protokoll auf einem Port läuft. Es erkennt HTTP oft automatisch, explizit ist aber besser: Port-Name mit Präfix (<code>http-</code>, <code>grpc-</code>, <code>tcp-</code>, <code>tls-</code>) oder das Feld <code>appProtocol</code> im Service.</p>
+      <pre><code>ports:
+  - name: http-web
+    port: 8080
+  - name: tcp-mysql
+    port: 3306</code></pre>
+      <div class="warn"><b>Server-first-Protokolle:</b> Bei MySQL und ähnlichen sendet der Server zuerst. Die automatische Erkennung wartet auf die ersten Bytes des Clients und hängt dann. Solche Ports immer als <code>tcp</code> deklarieren.</div>
+    </div>
+  </details>
+
+  <details>
+    <summary>Startreihenfolge und Jobs</summary>
+    <div class="inner">
+      <ul class="clean">
+        <li>Startet die App schneller als der Proxy, schlagen ihre ersten ausgehenden Verbindungen fehl. Abhilfe: <code>holdApplicationUntilProxyStarts: true</code>.</li>
+        <li>Klassische Sidecars beenden sich nicht, wenn der Hauptcontainer fertig ist – dadurch bleiben <b>Jobs und CronJobs</b> hängen. Neuere Istio-Versionen können den Proxy als nativen Kubernetes-Sidecar starten (Init-Container mit <code>restartPolicy: Always</code>), was beide Probleme löst. Stand in der eigenen Version prüfen.</li>
+        <li>Im Ambient-Modus gibt es beide Probleme nicht.</li>
+      </ul>
+    </div>
+  </details>
+
+  <details>
+    <summary>Health-Probes und STRICT mTLS</summary>
+    <div class="inner">
+      <p>Das kubelet hat kein Mesh-Zertifikat. Damit HTTP-Probes bei STRICT mTLS nicht scheitern, schreibt Istio sie standardmäßig um: Sie gehen an den Istio-Agenten im Pod (Port 15020), der sie lokal an die App weiterreicht. Das passiert automatisch – wer es abschaltet, muss die Probes selbst anpassen.</p>
+    </div>
+  </details>
+
+  <details>
+    <summary>NetworkPolicies zusammen mit dem Mesh</summary>
+    <div class="inner">
+      <ul class="clean">
+        <li>Proxies müssen istiod erreichen: Port <b>15012</b> (xDS) im Namespace <code>istio-system</code>.</li>
+        <li>Der API-Server muss den Webhook von istiod erreichen: Port <b>15017</b>.</li>
+        <li>Im Ambient-Modus läuft Traffic zwischen Pods über Port <b>15008</b> (HBONE). NetworkPolicies müssen diesen Port erlauben – die eigentlichen App-Ports sind im Netz nicht mehr sichtbar.</li>
+      </ul>
+    </div>
+  </details>
+
+  <details>
+    <summary>Ressourcen und Skalierung</summary>
+    <div class="inner">
+      <ul class="clean">
+        <li>Jeder Sidecar kostet standardmäßig mindestens 100m CPU und 128Mi RAM als Request. Bei 500 Pods kommt einiges zusammen. Pro Workload anpassbar über <code>sidecar.istio.io/proxyCPU</code> und <code>sidecar.istio.io/proxyMemory</code>.</li>
+        <li>In großen Clustern kennt jeder Proxy standardmäßig <b>alle</b> Services. Die <code>Sidecar</code>-Ressource und <code>discoverySelectors</code> reduzieren das auf das Nötige und sparen viel Speicher.</li>
+      </ul>
+    </div>
+  </details>
+
+  <details>
+    <summary>Upgrades</summary>
+    <div class="inner">
+      <ul class="clean">
+        <li>Control Plane und Proxies dürfen sich um höchstens ein bis zwei Minor-Versionen unterscheiden (Version-Skew in der Istio-Doku).</li>
+        <li>Nach einem Control-Plane-Upgrade im Sidecar-Modus behalten Pods die alte Proxy-Version, bis sie neu starten. Ein Upgrade ist erst abgeschlossen, wenn alle Workloads neu gestartet wurden.</li>
+        <li>Für Produktion <b>Revisions</b> nutzen: neue Control Plane parallel installieren, Namespaces per Label <code>istio.io/rev=&lt;revision&gt;</code> einzeln umziehen, alte Control Plane zum Schluss entfernen.</li>
+        <li>Im Ambient-Modus betrifft ein ztunnel-Upgrade alle Pods auf dem Node. Laufende Verbindungen können abreißen – Nodes vorher drainen.</li>
+      </ul>
+    </div>
+  </details>
+
+  <div class="note"><b>Nicht alles in das Mesh packen:</b> Ein Mesh ist zusätzliche Komplexität – mehr Komponenten, mehr Latenz pro Hop (typisch im niedrigen einstelligen Millisekundenbereich pro Proxy) und mehr Fehlerquellen. Sinnvoll, wenn mehrere der Anforderungen aus Abschnitt 0 zusammenkommen. Wer nur Verschlüsselung will, ist mit Ambient ohne Waypoints gut bedient.</div>
+
+  <div class="card">
+    <h3>Istio veröffentlicht schnell</h3>
+    <p>Etwa alle drei Monate erscheint eine neue Minor-Version, unterstützt werden jeweils nur die letzten zwei bis drei. Ein Cluster, der ein Jahr nicht angefasst wird, ist aus dem Support-Fenster gefallen.</p>
+  </div>
+</section>
+
+<!-- ================= 9 DEBUGGING ================= -->
+<section id="debugging" class="lav">
+  <div class="sec-head"><div class="badge">9</div><h2>Debugging und Spickzettel</h2></div>
+  <p class="sec-sub">Eine feste Reihenfolge und eine Handvoll Befehle decken die meisten Fälle ab. Das Response-Flag im Access-Log ist oft der schnellste Weg zur Ursache.</p>
+
+  <div class="card">
+    <h3>Vorgehen</h3>
+    <ol class="steps">
+      <li><div><b><code>istioctl analyze -n &lt;ns&gt;</code></b><small>Warnungen? Dann zuerst die Konfiguration korrigieren – das erledigt die meisten Fälle.</small></div></li>
+      <li><div><b><code>istioctl proxy-status</code></b><small>Alle <code>SYNCED</code>? Wenn nicht: istiod-Logs prüfen, der Proxy erreicht istiod nicht.</small></div></li>
+      <li><div><b>Access-Log des Proxys lesen</b><small>Status-Code plus Response-Flag – siehe Tabelle unten.</small></div></li>
+      <li><div><b><code>istioctl proxy-config …</code></b><small>Kommt die Regel überhaupt im Proxy an?</small></div></li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h3>Wichtige istioctl-Befehle</h3>
+    <div class="scroll-x">
+      <table>
+        <thead><tr><th>Befehl</th><th>Zeigt</th></tr></thead>
+        <tbody>
+          <tr><td><code>istioctl analyze -n &lt;ns&gt;</code></td><td>Konfigurationsfehler</td></tr>
+          <tr><td><code>istioctl proxy-status</code></td><td>ob jeder Proxy den aktuellen Stand hat</td></tr>
+          <tr><td><code>istioctl x describe pod &lt;pod&gt; -n &lt;ns&gt;</code></td><td>welche Regeln für einen Pod gelten, mTLS-Status</td></tr>
+          <tr><td><code>istioctl proxy-config routes deploy/&lt;name&gt; -n &lt;ns&gt;</code></td><td>Routen, wie Envoy sie sieht</td></tr>
+          <tr><td><code>istioctl proxy-config cluster deploy/&lt;name&gt; -n &lt;ns&gt;</code></td><td>bekannte Ziele (Cluster)</td></tr>
+          <tr><td><code>istioctl proxy-config endpoint deploy/&lt;name&gt; -n &lt;ns&gt;</code></td><td>konkrete Pod-IPs pro Ziel inklusive Health</td></tr>
+          <tr><td><code>istioctl proxy-config secret deploy/&lt;name&gt; -n &lt;ns&gt;</code></td><td>Zertifikate des Proxys</td></tr>
+          <tr><td><code>istioctl ztunnel-config workloads</code></td><td>Ambient: Workloads und Protokoll</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Response-Flags im Access-Log</h3>
+    <table>
+      <thead><tr><th>Flag</th><th>Bedeutung</th><th>Typische Ursache</th></tr></thead>
+      <tbody>
+        <tr><td><code>NR</code></td><td>No Route</td><td>keine Route passt: VirtualService falsch, Host stimmt nicht</td></tr>
+        <tr><td><code>UH</code></td><td>No Healthy Upstream</td><td>keine gesunden Pods: alle ausgeworfen oder keine Endpoints</td></tr>
+        <tr><td><code>UF</code></td><td>Upstream Connection Failure</td><td>mTLS-Konflikt, App lauscht nicht</td></tr>
+        <tr><td><code>UO</code></td><td>Upstream Overflow</td><td>Circuit Breaker hat abgelehnt</td></tr>
+        <tr><td><code>URX</code></td><td>Retry Limit Exceeded</td><td>alle Retries fehlgeschlagen</td></tr>
+        <tr><td><code>UT</code></td><td>Upstream Timeout</td><td>Timeout aus dem VirtualService erreicht</td></tr>
+        <tr><td><code>DC</code></td><td>Downstream Connection Termination</td><td>Client hat die Verbindung abgebrochen</td></tr>
+      </tbody>
+    </table>
+    <div class="note"><b>Häufigster Fall:</b> Ein 503 mit <code>UF</code> direkt nach dem Umstellen auf STRICT deutet fast immer auf einen Client ohne Sidecar hin – oder auf eine DestinationRule, die TLS für dieses Ziel abschaltet.</div>
+  </div>
+
+  <details>
+    <summary>Labels und Ports zum Nachschlagen</summary>
+    <div class="inner">
+      <table>
+        <thead><tr><th>Label</th><th>Wirkung</th></tr></thead>
+        <tbody>
+          <tr><td><code>istio-injection=enabled</code></td><td>Sidecar-Injection für den Namespace (nach Pod-Neustart)</td></tr>
+          <tr><td><code>istio.io/rev=&lt;revision&gt;</code></td><td>Sidecar einer bestimmten Control-Plane-Revision</td></tr>
+          <tr><td><code>istio.io/dataplane-mode=ambient</code></td><td>Namespace oder Pod in den Ambient-Mesh aufnehmen</td></tr>
+          <tr><td><code>istio.io/use-waypoint=&lt;name&gt;</code></td><td>Service oder Namespace nutzt diesen Waypoint</td></tr>
+        </tbody>
+      </table>
+      <table style="margin-top:16px">
+        <thead><tr><th>Port</th><th>Zweck</th></tr></thead>
+        <tbody>
+          <tr><td><b>15001</b></td><td>Envoy: ausgehender Traffic (umgeleitet)</td></tr>
+          <tr><td><b>15006</b></td><td>Envoy: eingehender Traffic (umgeleitet)</td></tr>
+          <tr><td><b>15000</b></td><td>Envoy Admin (nur localhost)</td></tr>
+          <tr><td><b>15008</b></td><td>HBONE-Tunnel (Ambient, mTLS)</td></tr>
+          <tr><td><b>15012</b></td><td>istiod: xDS und Zertifikate</td></tr>
+          <tr><td><b>15017</b></td><td>istiod: Webhook</td></tr>
+          <tr><td><b>15020</b></td><td>Istio-Agent: Metriken, Probe-Umleitung</td></tr>
+          <tr><td><b>15021</b></td><td>Health-Check des Proxys</td></tr>
+          <tr><td><b>15090</b></td><td>Envoy-Metriken für Prometheus</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </details>
+
+  <div class="card">
+    <h3>Die Eselsbrücken auf einen Blick</h3>
+    <ul class="clean">
+      <li>VirtualService = <b>Wohin</b>, DestinationRule = <b>Wie</b>.</li>
+      <li>PeerAuthentication = Ausweispflicht, AuthorizationPolicy = Gästeliste.</li>
+      <li>Der ServiceAccount ist der Ausweis.</li>
+      <li>Die erste ALLOW-Policy macht aus „alles erlaubt“ ein „alles verboten außer“.</li>
+      <li><code>istioctl analyze</code> nach jeder Änderung.</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>Mindestablauf für ein neues Projekt</h3>
+    <ol class="steps">
+      <li><div><b>Namespace labeln</b><small>Injection oder Ambient.</small></div></li>
+      <li><div><b>Prüfen</b><small><code>istioctl analyze</code> und <code>istioctl proxy-status</code>.</small></div></li>
+      <li><div><b>PeerAuthentication auf STRICT</b><small>sobald alle Clients im Mesh sind.</small></div></li>
+      <li><div><b><code>allow-nothing</code> plus gezielte ALLOW-Policies</b></div></li>
+      <li><div><b>Timeouts setzen</b><small>Retries nur für idempotente Aufrufe.</small></div></li>
+      <li><div><b>Kiali und Access-Logs zur Kontrolle</b></div></li>
+    </ol>
+  </div>
+</section>
+
+</main>
+
+<footer>Einstieg in Istio: Architektur, Betriebsarten, zentrale Ressourcen, Installation auf Kubernetes und OpenShift, Praxisbeispiele und Stolperfallen. Stand: Istio 1.31, Red Hat OpenShift Service Mesh 3.x. Istio veröffentlicht etwa alle drei Monate eine neue Minor-Version – Feldnamen und Verhalten vor Produktionseinsatz gegen die Doku der eigenen Version prüfen.</footer>
+
+</body>
+</html>
