@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CNI-Vergleich 2026 – Cilium, Calico, OVN-Kubernetes, Kube-OVN, Antrea, Flannel/Canal</title>
+<meta name="rezept-kategorie"    content="netzwerk">
+<meta name="rezept-beschreibung" content="Cilium, Calico, OVN-Kubernetes, Kube-OVN, Antrea und Flannel/Canal im Profil: Datapath-Familien, Feature-Vergleich, Plattform-Kontext, Entscheidungshilfe und Migrationsfallen.">
+<meta name="rezept-stand"        content="Kubernetes 1.36 · 09/2026">
+<meta name="rezept-suche"        content="cni vergleich cilium calico ovn-kubernetes kube-ovn antrea flannel canal ebpf nftables iptables ovs overlay vxlan geneve bgp mtu kube-proxy ersatz hubble whisker goldmane traceflow udn cudn networkpolicy clusternetworkpolicy adminnetworkpolicy rke2 k3s openshift multus weave migration">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#33394a;
+  --ink-soft:#5c6376;
+  --paper:#fbfaf7;
+  --card:#ffffff;
+  --line:#e9e6df;
+  --code-bg:#31364a;
+  --code-ink:#e8eaf2;
+  --mint:#d9f2e4;      --mint-deep:#2f8f6b;
+  --sky:#dcebf9;       --sky-deep:#2d6fa8;
+  --lav:#e7e2f7;       --lav-deep:#6b5bb5;
+  --peach:#fbe6d7;     --peach-deep:#c2703d;
+  --butter:#faf0cf;    --butter-deep:#a5842a;
+  --rose:#f9e0e6;      --rose-deep:#b34f6d;
+  --aqua:#d7eff0;      --aqua-deep:#2b8288;
+  --r-lg:26px; --r-md:18px; --r-sm:12px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;scroll-padding-top:90px}
+body{font-family:'Inter',sans-serif;background:var(--paper);color:var(--ink);line-height:1.65;font-size:16px}
+h1,h2,h3,h4{font-family:'Sora',sans-serif;line-height:1.2}
+
+/* ---------- Kopf ---------- */
+header{max-width:1060px;margin:0 auto;padding:56px 24px 8px}
+.kicker{display:inline-block;background:var(--lav);color:var(--lav-deep);font-weight:600;font-size:.8rem;letter-spacing:.08em;text-transform:uppercase;padding:6px 14px;border-radius:999px;margin-bottom:18px}
+header h1{font-size:clamp(1.9rem,4.5vw,3rem);font-weight:800;letter-spacing:-.02em}
+header h1 span{color:var(--mint-deep)}
+.lede{color:var(--ink-soft);max-width:640px;margin-top:14px;font-size:1.05rem}
+
+/* ---------- Route ---------- */
+.route{max-width:1060px;margin:34px auto 10px;padding:0 24px;display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.route a{display:flex;flex-direction:column;gap:8px;text-decoration:none;color:var(--ink);background:var(--card);border:1.5px solid var(--line);border-radius:var(--r-md);padding:16px 14px;transition:transform .15s ease,box-shadow .15s ease}
+.route a:hover,.route a:focus-visible{transform:translateY(-3px);box-shadow:0 8px 22px rgba(60,60,90,.10);outline:none}
+.route .dot{width:34px;height:34px;border-radius:12px;display:grid;place-items:center;font-family:'Sora';font-weight:700;font-size:.9rem}
+.route .t{font-weight:600;font-size:.86rem;line-height:1.3}
+.route .s{font-size:.74rem;color:var(--ink-soft)}
+.route a:nth-child(1) .dot{background:var(--aqua);color:var(--aqua-deep)}
+.route a:nth-child(2) .dot{background:var(--mint);color:var(--mint-deep)}
+.route a:nth-child(3) .dot{background:var(--sky);color:var(--sky-deep)}
+.route a:nth-child(4) .dot{background:var(--lav);color:var(--lav-deep)}
+.route a:nth-child(5) .dot{background:var(--peach);color:var(--peach-deep)}
+.route a:nth-child(6) .dot{background:var(--butter);color:var(--butter-deep)}
+.route a:nth-child(7) .dot{background:var(--rose);color:var(--rose-deep)}
+.route a:nth-child(8) .dot{background:var(--mint);color:var(--mint-deep)}
+.route a:nth-child(9) .dot{background:var(--sky);color:var(--sky-deep)}
+
+/* ---------- Sticky-Nav ---------- */
+nav{position:sticky;top:0;z-index:50;background:rgba(251,250,247,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);margin-top:26px}
+nav .wrap{max-width:1060px;margin:0 auto;padding:10px 24px;display:flex;gap:8px;overflow-x:auto}
+nav a{white-space:nowrap;text-decoration:none;font-size:.82rem;font-weight:600;color:var(--ink-soft);padding:7px 14px;border-radius:999px;border:1px solid transparent}
+nav a:hover{background:var(--card);border-color:var(--line);color:var(--ink)}
+
+/* ---------- Sektionen ---------- */
+main{max-width:1060px;margin:0 auto;padding:20px 24px 90px}
+section{margin-top:64px}
+.sec-head{display:flex;align-items:center;gap:16px;margin-bottom:8px}
+.badge{width:52px;height:52px;border-radius:16px;display:grid;place-items:center;font-family:'Sora';font-weight:800;font-size:1.25rem;flex-shrink:0}
+section h2{font-size:clamp(1.4rem,3vw,1.9rem);font-weight:700}
+.sec-sub{color:var(--ink-soft);margin-bottom:22px;max-width:720px}
+.aqua .badge{background:var(--aqua);color:var(--aqua-deep)}
+.mint .badge{background:var(--mint);color:var(--mint-deep)}
+.sky .badge{background:var(--sky);color:var(--sky-deep)}
+.lav .badge{background:var(--lav);color:var(--lav-deep)}
+.peach .badge{background:var(--peach);color:var(--peach-deep)}
+.butter .badge{background:var(--butter);color:var(--butter-deep)}
+.rose .badge{background:var(--rose);color:var(--rose-deep)}
+
+/* ---------- Karten & Schritte ---------- */
+.card{background:var(--card);border:1.5px solid var(--line);border-radius:var(--r-lg);padding:26px 28px;margin-bottom:20px}
+.card h3{font-size:1.08rem;margin-bottom:14px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+ol.steps{list-style:none;counter-reset:s;display:flex;flex-direction:column;gap:14px}
+ol.steps li{counter-increment:s;display:grid;grid-template-columns:34px 1fr;gap:14px;align-items:start}
+ol.steps li::before{content:counter(s);width:30px;height:30px;border-radius:10px;display:grid;place-items:center;font-family:'Sora';font-weight:700;font-size:.85rem;margin-top:2px}
+.aqua ol.steps li::before{background:var(--aqua);color:var(--aqua-deep)}
+.mint ol.steps li::before{background:var(--mint);color:var(--mint-deep)}
+.sky ol.steps li::before{background:var(--sky);color:var(--sky-deep)}
+.lav ol.steps li::before{background:var(--lav);color:var(--lav-deep)}
+.peach ol.steps li::before{background:var(--peach);color:var(--peach-deep)}
+.butter ol.steps li::before{background:var(--butter);color:var(--butter-deep)}
+.rose ol.steps li::before{background:var(--rose);color:var(--rose-deep)}
+.steps b{font-weight:600}
+.steps small{display:block;color:var(--ink-soft);font-size:.86rem;margin-top:2px}
+
+ul.clean{list-style:none;display:flex;flex-direction:column;gap:10px}
+ul.clean li{padding-left:24px;position:relative}
+ul.clean li::before{content:"";position:absolute;left:4px;top:.62em;width:9px;height:9px;border-radius:3px;background:var(--line)}
+.aqua ul.clean li::before{background:var(--aqua-deep)}
+.mint ul.clean li::before{background:var(--mint-deep)}
+.sky ul.clean li::before{background:var(--sky-deep)}
+.lav ul.clean li::before{background:var(--lav-deep)}
+.peach ul.clean li::before{background:var(--peach-deep)}
+.butter ul.clean li::before{background:var(--butter-deep)}
+.rose ul.clean li::before{background:var(--rose-deep)}
+
+/* ---------- Code ---------- */
+pre{background:var(--code-bg);color:var(--code-ink);border-radius:var(--r-sm);padding:16px 18px;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:.82rem;line-height:1.6;margin:10px 0}
+code{font-family:'JetBrains Mono',monospace;font-size:.85em;background:#efede7;border-radius:6px;padding:2px 6px}
+pre code{background:none;padding:0;font-size:1em}
+pre .c{color:#9aa3c0}
+
+/* ---------- Hinweisboxen ---------- */
+.note,.warn,.mnemo{border-radius:var(--r-md);padding:14px 18px;margin:14px 0;font-size:.92rem}
+.note{background:var(--sky)}
+.warn{background:var(--rose)}
+.mnemo{background:var(--butter)}
+.note b,.warn b,.mnemo b{font-weight:700}
+.mnemo::before{content:"🧠 Merkbild · ";font-weight:700}
+.warn::before{content:"⚠️ ";font-weight:700}
+
+/* ---------- Tabellen ---------- */
+table{width:100%;border-collapse:separate;border-spacing:0;font-size:.88rem;margin:10px 0}
+th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-family:'Sora';font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft)}
+tr:last-child td{border-bottom:none}
+thead th:first-child{border-top-left-radius:var(--r-sm)}
+thead th:last-child{border-top-right-radius:var(--r-sm)}
+thead{background:var(--paper)}
+.scroll-x{overflow-x:auto}
+.scroll-x table{min-width:900px}
+.scroll-x table td,.scroll-x table th{white-space:nowrap}
+
+/* ---------- Details ---------- */
+details{border:1.5px solid var(--line);border-radius:var(--r-md);margin:12px 0;background:var(--card)}
+details summary{cursor:pointer;padding:14px 18px;font-weight:600;font-size:.94rem;list-style:none;display:flex;align-items:center;gap:10px}
+details summary::before{content:"+";font-family:'Sora';font-weight:700;width:24px;height:24px;border-radius:8px;background:var(--paper);display:grid;place-items:center;flex-shrink:0}
+details[open] summary::before{content:"–"}
+details .inner{padding:0 18px 18px}
+summary::-webkit-details-marker{display:none}
+
+footer{max-width:1060px;margin:0 auto;padding:30px 24px 60px;color:var(--ink-soft);font-size:.82rem;border-top:1px solid var(--line)}
+footer a{color:var(--ink-soft)}
+
+@media(max-width:820px){
+  .route{grid-template-columns:repeat(2,1fr)}
+  .grid2{grid-template-columns:1fr}
+}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.route a{transition:none}}
+</style>
+</head>
+<body>
+
+<header>
+  <span class="kicker">Kubernetes 1.36 · OpenShift 4.21/4.22 · Stand 09/2026</span>
+  <h1>CNI-Vergleich 2026:<br>Datapath, Features, <span>Einsatzgebiet</span></h1>
+  <p class="lede">Cilium, Calico, OVN-Kubernetes, Kube-OVN, Antrea, Flannel und Canal im Profil. Neun Abschnitte von der Frage, was ein CNI überhaupt tut, über die drei Datapath-Familien bis zur Entscheidungshilfe und den typischen Migrationsfallen.</p>
+</header>
+
+<div class="route">
+  <a href="#kurzfassung"><span class="dot">0</span><span class="t">Kurzfassung</span><span class="s">Jedes CNI in einem Satz</span></a>
+  <a href="#grundlagen"><span class="dot">1</span><span class="t">Was ein CNI tut</span><span class="s">Sechs Aufgaben</span></a>
+  <a href="#datapath"><span class="dot">2</span><span class="t">Datapath-Familien</span><span class="s">nftables, eBPF, OVS</span></a>
+  <a href="#kandidaten"><span class="dot">3</span><span class="t">Die Kandidaten</span><span class="s">Sieben Profile</span></a>
+  <a href="#tabelle"><span class="dot">4</span><span class="t">Vergleichstabelle</span><span class="s">Zwölf Kriterien</span></a>
+  <a href="#plattform"><span class="dot">5</span><span class="t">Plattform-Kontext</span><span class="s">Wer bringt was mit</span></a>
+  <a href="#policies"><span class="dot">6</span><span class="t">Policy-Landschaft</span><span class="s">Standard gegen CRDs</span></a>
+  <a href="#entscheidung"><span class="dot">7</span><span class="t">Entscheidungshilfe</span><span class="s">P-A-K</span></a>
+  <a href="#betrieb"><span class="dot">8</span><span class="t">Betrieb</span><span class="s">Sieben Fallen</span></a>
+</div>
+
+<nav><div class="wrap">
+  <a href="#kurzfassung">0 · Kurzfassung</a>
+  <a href="#grundlagen">1 · Was ein CNI tut</a>
+  <a href="#datapath">2 · Datapath</a>
+  <a href="#kandidaten">3 · Kandidaten</a>
+  <a href="#tabelle">4 · Vergleich</a>
+  <a href="#plattform">5 · Plattform</a>
+  <a href="#policies">6 · Policies</a>
+  <a href="#entscheidung">7 · Entscheidung</a>
+  <a href="#betrieb">8 · Betrieb</a>
+</div></nav>
+
+<main>
+
+<!-- ================= 0 KURZFASSUNG ================= -->
+<section id="kurzfassung" class="aqua">
+  <div class="sec-head"><div class="badge">0</div><h2>Kurzfassung</h2></div>
+  <p class="sec-sub">Sieben Kandidaten, jeder in einem Satz. Wer wenig Zeit hat, liest nur diesen Abschnitt und Abschnitt 7.</p>
+
+  <div class="card">
+    <table>
+      <thead><tr><th>CNI</th><th>In einem Satz</th></tr></thead>
+      <tbody>
+        <tr><td><b>Cilium</b></td><td>eBPF-Komplettpaket: Netzwerk, kube-proxy-Ersatz, L7-Policy, Observability, Gateway API.</td></tr>
+        <tr><td><b>Calico</b></td><td>Der Allrounder mit wählbarem Datapath (nftables, eBPF, …) und nativem BGP.</td></tr>
+        <tr><td><b>OVN-Kubernetes</b></td><td>OVS/OVN-basiert, Default in OpenShift, stark bei Multi-Tenancy (UDN) und BGP/EVPN.</td></tr>
+        <tr><td><b>Kube-OVN</b></td><td>SDN-Denke im Cluster: VPCs, Subnetze, Underlay-VLANs, KubeVirt-freundlich.</td></tr>
+        <tr><td><b>Antrea</b></td><td>OVS-basiert, sauberes Tiered-Policy-Modell, gute Windows-Unterstützung, Broadcom-Umfeld.</td></tr>
+        <tr><td><b>Flannel / Canal</b></td><td>Minimal: Overlay ohne (Flannel) bzw. mit Calico-Policies (Canal). Default in k3s bzw. RKE2.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="note"><b>Faustregel:</b> Die Plattform entscheidet zuerst, die Anforderung danach. Wer OpenShift fährt, fährt OVN-Kubernetes. Wer frei wählt, landet meist bei Cilium oder Calico.</div>
+
+  <div class="card">
+    <h3>Versionsstand dieses Artikels</h3>
+    <p>Kubernetes 1.36 · Cilium 1.20 · Calico 3.32 · OpenShift 4.21/4.22 · Antrea 2.x · RKE2 mit Canal-Default. CNI-Projekte veröffentlichen schnell und entfernen auch in Minor-Releases Features – vor jedem Upgrade die Release Notes lesen.</p>
+  </div>
+</section>
+
+<!-- ================= 1 GRUNDLAGEN ================= -->
+<section id="grundlagen" class="mint">
+  <div class="sec-head"><div class="badge">1</div><h2>Was ein CNI eigentlich tut</h2></div>
+  <p class="sec-sub">Die CNI-Spezifikation selbst ist nur die Steckdose. Alles, worüber man beim Vergleich streitet, ist Zusatzleistung des jeweiligen Projekts.</p>
+
+  <div class="card">
+    <h3>Das Pod-Netz als Postsystem</h3>
+    <table>
+      <thead><tr><th>Aufgabe</th><th>Post-Analogie</th><th>Technik</th></tr></thead>
+      <tbody>
+        <tr><td><b>IPAM</b></td><td>Hausnummern vergeben</td><td>Pod-CIDR pro Node oder Cluster-Pools</td></tr>
+        <tr><td><b>Datapath</b></td><td>Straßen und Sortierzentren</td><td>Routing, Bridge, Overlay (VXLAN/Geneve), eBPF, OVS</td></tr>
+        <tr><td><b>NetworkPolicy</b></td><td>Pförtner mit Zugangsliste</td><td>iptables/nftables-Regeln, eBPF-Maps, OVS-Flows</td></tr>
+        <tr><td><b>Service-Load-Balancing</b></td><td>Weiterleitungsstelle für Sammeladressen</td><td>kube-proxy oder CNI-eigener Ersatz</td></tr>
+        <tr><td><b>Verschlüsselung</b></td><td>Brief im versiegelten Umschlag</td><td>WireGuard, IPsec</td></tr>
+        <tr><td><b>Observability</b></td><td>Sendungsverfolgung</td><td>Flow-Logs, Hubble, Traceflow, ovn-trace</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>Die Spezifikation ist nur die Steckdose</h3>
+    <p>Kubelet bzw. Container-Runtime rufen beim Pod-Start ein Binary mit <code>ADD</code> auf, beim Löschen mit <code>DEL</code>. Mehr schreibt die CNI-Spezifikation nicht vor. Policies, Load-Balancing, BGP, Verschlüsselung – all das ist Eigenleistung des Plugins und der Grund, warum die Projekte so unterschiedlich ausfallen.</p>
+  </div>
+
+  <div class="mnemo"><b>CNI verbindet den Pod. Alles andere verkauft das Plugin extra.</b></div>
+</section>
+
+<!-- ================= 2 DATAPATH ================= -->
+<section id="datapath" class="sky">
+  <div class="sec-head"><div class="badge">2</div><h2>Die drei Datapath-Familien</h2></div>
+  <p class="sec-sub">Der Datapath bestimmt Performance, Debugging-Werkzeuge und Kernel-Anforderungen stärker als jedes Feature-Häkchen. Er ist die eigentliche Entscheidung.</p>
+
+  <details>
+    <summary>iptables / nftables · der Türsteher mit Gästeliste</summary>
+    <div class="inner">
+      <p><b>Bild:</b> Bei iptables liest der Türsteher die Liste von oben nach unten, bei nftables ist sie nach Namen sortiert (Sets und Maps).</p>
+      <ul class="clean">
+        <li>iptables skaliert linear mit der Anzahl Regeln und Services, nftables deutlich besser.</li>
+        <li>kube-proxy hat einen nftables-Modus (GA seit Kubernetes 1.33); <b>IPVS ist deprecated</b> – neue Cluster sollten nicht mehr darauf aufsetzen.</li>
+        <li>Debugging: <code>nft list ruleset</code>, <code>iptables-save</code>, <code>conntrack -L</code> – vertraut, aber bei tausenden Regeln unübersichtlich.</li>
+      </ul>
+    </div>
+  </details>
+
+  <details>
+    <summary>eBPF · der Chip am Eingang</summary>
+    <div class="inner">
+      <p><b>Bild:</b> Ein Chip scannt den Stempel. Hash-Lookup statt Liste – die Kosten bleiben fast konstant, egal wie viele Services existieren.</p>
+      <ul class="clean">
+        <li>Programme hängen an tc, XDP, cgroup-Hooks oder Sockets. Service-Auflösung passiert oft schon beim <code>connect()</code>, nicht erst pro Paket.</li>
+        <li>Voraussetzung: moderner Kernel (Richtwert 5.10+, RHEL-Kernel mit Backports gelten als äquivalent).</li>
+        <li>Debugging: <code>bpftool</code>, Hubble, <code>cilium-dbg</code>, <code>calico-bpf</code> – mächtig, aber neue Werkzeuge lernen.</li>
+      </ul>
+    </div>
+  </details>
+
+  <details>
+    <summary>Open vSwitch / OVN · der programmierbare Rangierbahnhof</summary>
+    <div class="inner">
+      <p><b>Bild:</b> OVS schaltet Weichen anhand von Flow-Tabellen, OVN schreibt den zentralen Fahrplan (logische Switches, Router, ACLs) und übersetzt ihn in Flows pro Node.</p>
+      <ul class="clean">
+        <li>Stark bei SDN-Konzepten: logische Router, VRFs, Tenants, Underlay-Anbindung, Hardware-Offload.</li>
+        <li>Debugging: <code>ovn-trace</code>, <code>ovnkube-trace</code>, <code>ovs-ofctl dump-flows</code> – präzise, aber steile Lernkurve.</li>
+      </ul>
+    </div>
+  </details>
+
+  <div class="card">
+    <h3>Overlay gegen natives Routing</h3>
+    <table>
+      <thead><tr><th>Modus</th><th>Bild</th><th>Overhead</th><th>Wann</th></tr></thead>
+      <tbody>
+        <tr><td><b>Overlay</b> (VXLAN/Geneve/IPIP)</td><td>Brief im Brief</td><td>20–100 Byte pro Paket, MTU sinkt</td><td>Unterlay ist fremd oder nicht steuerbar</td></tr>
+        <tr><td><b>Native Routing / BGP</b></td><td>Echte Adresse im Telefonbuch des Rechenzentrums</td><td>keiner</td><td>Netzwerkteam spielt mit, Pod-IPs sollen von außen erreichbar sein</td></tr>
+      </tbody>
+    </table>
+    <p style="margin-top:12px"><b>MTU-Richtwerte bei 1500er Unterlay:</b> IPIP −20, VXLAN −50, Geneve (OVN-K) −100, WireGuard −60 (IPv4) bzw. −80 (IPv6).</p>
+  </div>
+
+  <div class="warn"><b>Verschlüsselung und Overlay addieren sich.</b> Wer Geneve mit WireGuard kombiniert, verliert 160 Byte – das ist die häufigste Ursache für „kleine Requests gehen, große hängen“.</div>
+</section>
+
+<!-- ================= 3 KANDIDATEN ================= -->
+<section id="kandidaten" class="lav">
+  <div class="sec-head"><div class="badge">3</div><h2>Die Kandidaten im Profil</h2></div>
+  <p class="sec-sub">Jeweils Stand, Stärken, Schwächen und typischer Einsatz. Die Merksätze am Ende jedes Profils sind das, was hängenbleiben soll.</p>
+
+  <details>
+    <summary>Cilium · das eBPF-Komplettpaket</summary>
+    <div class="inner">
+      <p><b>Stand:</b> 1.20 (Juli 2026), unterstützt werden jeweils die drei letzten Minor-Releases (1.18–1.20). CNCF Graduated. Kommerziell: Isovalent (Cisco).</p>
+      <p style="margin-top:12px"><b>Stärken</b></p>
+      <ul class="clean">
+        <li>Vollständiger kube-proxy-Ersatz in eBPF, inklusive Maglev, DSR, Socket-LB.</li>
+        <li><b>Hubble:</b> Flow-Observability bis L7, ohne Sidecar.</li>
+        <li>L7-Policies (HTTP, gRPC, Kafka, DNS/FQDN) über einen Envoy pro Node.</li>
+        <li>Gateway API und Ingress eingebaut; 1.20 ergänzt unter anderem ExternalAuth sowie TCPRoute und UDPRoute.</li>
+        <li>BGP Control Plane, Cluster Mesh (Multi-Cluster), Egress Gateway, WireGuard/IPsec.</li>
+        <li>Schrittweise Migration von anderen CNIs Node für Node möglich.</li>
+      </ul>
+      <p style="margin-top:12px"><b>Schwächen</b></p>
+      <ul class="clean">
+        <li>Viele Schalter, viele Wechselwirkungen. Kube-proxy-Ersatz, Routing-Modus und Encryption müssen zusammenpassen.</li>
+        <li>Kernel-abhängig; exotische oder gehärtete Kernel können Features verhindern.</li>
+        <li>Envoy und BPF-Maps kosten Speicher pro Node.</li>
+        <li>Einige Enterprise-Features (erweiterte Hubble-UI, Timescape) nur in Isovalent Enterprise.</li>
+      </ul>
+      <p style="margin-top:12px"><b>Typischer Einsatz:</b> Greenfield auf Vanilla, RKE2 oder Talos, Managed Clouds (GKE Dataplane V2 und AKS nutzen Cilium unter der Haube), Umgebungen mit hohem Observability- und Zero-Trust-Anspruch.</p>
+      <div class="mnemo"><b>Cilium ist das Schweizer Taschenmesser</b> – man muss wissen, welche Klinge offen ist.</div>
+    </div>
+  </details>
+
+  <details>
+    <summary>Calico · der Baukasten mit austauschbarem Motor</summary>
+    <div class="inner">
+      <p><b>Stand:</b> 3.32 (April 2026, passend zu Kubernetes 1.36). Open Source (Apache 2.0), nicht CNCF. Kommerziell: Calico Enterprise/Cloud.</p>
+      <p style="margin-top:12px"><b>Stärken</b></p>
+      <ul class="clean">
+        <li><b>Wählbarer Datapath:</b> iptables, nftables (GA seit 3.31), eBPF, VPP, Windows HNS – Wechsel per <code>linuxDataplane</code> in der Installation-CR.</li>
+        <li><b>BGP als Kernkompetenz</b> (BIRD): Pod-IPs ohne Overlay ins Rechenzentrum routen.</li>
+        <li>Tiered Policies, GlobalNetworkPolicy, Host-Endpoint-Schutz.</li>
+        <li>Observability-UI <b>Whisker</b> mit Flow-Aggregator <b>Goldmane</b> (seit 3.30).</li>
+        <li>3.32: KubeVirt-Live-Migration mit IP-Persistenz, sidecarlose mTLS via Istio Ambient, eBPF-Maglev.</li>
+        <li>Beste Windows-Unterstützung unter den großen CNIs.</li>
+      </ul>
+      <p style="margin-top:12px"><b>Schwächen und Breaking Changes</b></p>
+      <ul class="clean">
+        <li>AdminNetworkPolicy und BaselineAdminNetworkPolicy sind in 3.32 <b>entfernt</b>; vor dem Upgrade auf ClusterNetworkPolicy migrieren.</li>
+        <li><code>calico-apiserver</code> ist deprecated, Ersatz sind native v3-CRDs.</li>
+        <li>L7-Features im OSS-Teil schmaler als bei Cilium.</li>
+      </ul>
+      <p style="margin-top:12px"><b>Typischer Einsatz:</b> On-Prem mit BGP-Anbindung, gemischte Linux/Windows-Cluster, Teams, die schrittweise von iptables zu nftables oder eBPF wollen.</p>
+      <div class="mnemo"><b>Calico ist der Baukasten:</b> gleiche Policies, austauschbarer Motor.</div>
+    </div>
+  </details>
+
+  <details>
+    <summary>OVN-Kubernetes · das Netz, das OpenShift mitbringt</summary>
+    <div class="inner">
+      <p><b>Stand:</b> Default-CNI in OpenShift (OpenShift SDN ist seit 4.17 entfernt). Upstream-Projekt <code>ovn-kubernetes</code>, Hauptträger Red Hat.</p>
+      <p style="margin-top:12px"><b>Stärken</b></p>
+      <ul class="clean">
+        <li>Geneve-Overlay, Service-LB direkt in OVN – OpenShift kommt ohne kube-proxy aus.</li>
+        <li><b>User-Defined Networks (UDN/CUDN):</b> echte Netzwerk-Isolation pro Namespace, Layer2-/Layer3-/Localnet-Topologien, überlappende CIDRs möglich.</li>
+        <li><b>RouteAdvertisements:</b> Pod-Netz, CUDNs und EgressIPs per BGP (FRR-K8s) ins Provider-Netz annoncieren; OpenShift 4.22 ergänzt BGP-EVPN für primäre CUDNs.</li>
+        <li>EgressIP, EgressFirewall, AdminNetworkPolicy, IPsec, Hardware-Offload.</li>
+        <li>Sehr gut mit OpenShift Virtualization (Layer2-UDN für VM-Live-Migration).</li>
+      </ul>
+      <p style="margin-top:12px"><b>Schwächen</b></p>
+      <ul class="clean">
+        <li>Außerhalb von OpenShift wenig verbreitet, kaum Hersteller-Support.</li>
+        <li>Debugging erfordert OVN-Wissen (logische Switches, Router, ACL-Tiers).</li>
+        <li>Geneve kostet 100 Byte MTU.</li>
+      </ul>
+      <p style="margin-top:12px"><b>Typischer Einsatz:</b> OpenShift – Punkt. Alternativen sind dort nur als zertifizierte Partner-CNIs mit eigenem Support-Vertrag sinnvoll.</p>
+      <div class="mnemo"><b>OVN-K ist das Fundament des Hauses</b> – man tauscht es so selten wie eines.</div>
+    </div>
+  </details>
+
+  <details>
+    <summary>Kube-OVN · die kleine OpenStack-Netzwelt</summary>
+    <div class="inner">
+      <p><b>Stand:</b> CNCF Sandbox. Ebenfalls OVN/OVS, aber mit anderem Ziel als OVN-Kubernetes.</p>
+      <p style="margin-top:12px"><b>Stärken</b></p>
+      <ul class="clean">
+        <li><b>VPC-Modell:</b> Tenants mit eigenen Adressräumen, NAT-Gateways, EIPs, Security Groups.</li>
+        <li>Subnetze pro Namespace, statische IPs, Underlay-/VLAN-Modus ohne Overlay.</li>
+        <li>KubeVirt-Live-Migration ohne Verbindungsabbruch.</li>
+        <li>Kann als <b>Secondary CNI</b> neben Cilium oder Calico laufen (via NAD).</li>
+        <li>DPDK, OVS-Hardware-Offload, Traffic-Mirroring, <code>kubectl ko</code> für Diagnose.</li>
+      </ul>
+      <p style="margin-top:12px"><b>Schwächen</b></p>
+      <ul class="clean">
+        <li>Hohe Komplexität, SDN-Kenntnisse vorausgesetzt.</li>
+        <li>Community und Hauptentwickler stark im chinesischen Raum; in Europa wenig kommerzieller Support.</li>
+      </ul>
+      <p style="margin-top:12px"><b>Typischer Einsatz:</b> Private-Cloud- und IaaS-Plattformen auf Kubernetes, VM-lastige Umgebungen, Underlay-Anbindung an bestehende VLANs.</p>
+      <div class="mnemo"><b>Kube-OVN baut dir eine kleine OpenStack-Netzwelt in den Cluster.</b></div>
+    </div>
+  </details>
+
+  <details>
+    <summary>Antrea · Firewall-Denke auf OVS</summary>
+    <div class="inner">
+      <p><b>Stand:</b> 2.x, CNCF Sandbox. Hauptträger Broadcom (ehemals VMware).</p>
+      <p style="margin-top:12px"><b>Stärken</b></p>
+      <ul class="clean">
+        <li>OVS-Datapath, eigener Proxy (AntreaProxy) als kube-proxy-Ersatz.</li>
+        <li><b>Tiered Policy-Modell</b> (ClusterNetworkPolicy, Prioritäten, Node-Policies) – gut für Security-Teams mit Firewall-Hintergrund.</li>
+        <li><b>Traceflow:</b> Paketpfad inklusive Policy-Entscheidungen simulieren.</li>
+        <li>Gute Windows-Unterstützung, Egress-Gateways, Multi-Cluster, IPsec/WireGuard.</li>
+      </ul>
+      <p style="margin-top:12px"><b>Schwächen</b></p>
+      <ul class="clean">
+        <li>Momentum außerhalb des VMware/Broadcom-Ökosystems gering.</li>
+        <li>Kleinere Community, weniger Drittanbieter-Integrationen.</li>
+      </ul>
+      <p style="margin-top:12px"><b>Typischer Einsatz:</b> vSphere Kubernetes Service und Tanzu-Umfeld, Windows-lastige Cluster.</p>
+      <div class="mnemo"><b>Antrea ist die Firewall-Denke auf OVS</b> – solide, aber zuhause im Broadcom-Haus.</div>
+    </div>
+  </details>
+
+  <details>
+    <summary>Flannel und Canal · das Kabel und das Kabel mit Pförtner</summary>
+    <div class="inner">
+      <p><b>Flannel</b></p>
+      <ul class="clean">
+        <li>Nur Pod-Konnektivität: VXLAN, host-gw oder WireGuard. <b>Keine NetworkPolicies.</b></li>
+        <li>Default in k3s. Klein, schnell verstanden, kaum Betriebsaufwand.</li>
+        <li>Nicht für gehärtete oder Compliance-Umgebungen.</li>
+      </ul>
+      <p style="margin-top:12px"><b>Canal</b></p>
+      <ul class="clean">
+        <li>Flannel für den Transport zwischen Nodes, Calico für Policies auf dem Node.</li>
+        <li><b>Default-CNI in RKE2.</b> Solider Einstieg, NetworkPolicies funktionieren.</li>
+        <li>Grenzen: kein BGP, kein eBPF, keine Windows-Nodes, Observability minimal.</li>
+      </ul>
+      <div class="mnemo"><b>Flannel ist das Kabel, Canal ist das Kabel mit Pförtner.</b></div>
+    </div>
+  </details>
+
+  <details>
+    <summary>Abgekündigt oder Randnotiz</summary>
+    <div class="inner">
+      <ul class="clean">
+        <li><b>Weave Net:</b> seit dem Ende von Weaveworks (2024) praktisch ohne Pflege – migrieren.</li>
+        <li><b>OpenShift SDN:</b> entfernt seit OpenShift 4.17.</li>
+        <li><b>Multus:</b> kein Primär-CNI, sondern Meta-Plugin für zusätzliche Interfaces (SR-IOV, macvlan, VLAN). In RKE2 und OpenShift mitgeliefert.</li>
+      </ul>
+    </div>
+  </details>
+</section>
+
+<!-- ================= 4 TABELLE ================= -->
+<section id="tabelle" class="peach">
+  <div class="sec-head"><div class="badge">4</div><h2>Vergleichstabelle</h2></div>
+  <p class="sec-sub">Zwölf Kriterien über alle sieben Kandidaten. Auf schmalen Bildschirmen seitlich scrollbar.</p>
+
+  <div class="card">
+    <div class="scroll-x">
+      <table>
+        <thead><tr><th>Kriterium</th><th>Cilium</th><th>Calico</th><th>OVN-K</th><th>Kube-OVN</th><th>Antrea</th><th>Canal</th><th>Flannel</th></tr></thead>
+        <tbody>
+          <tr><td><b>Datapath</b></td><td>eBPF</td><td>nftables / iptables / eBPF / VPP</td><td>OVS/OVN</td><td>OVS/OVN</td><td>OVS</td><td>iptables + Linux-Routing</td><td>Linux-Routing</td></tr>
+          <tr><td><b>Overlay</b></td><td>VXLAN, Geneve, native</td><td>IPIP, VXLAN, keins (BGP)</td><td>Geneve</td><td>Geneve, VXLAN, Underlay</td><td>Geneve, VXLAN, GRE</td><td>VXLAN</td><td>VXLAN, host-gw</td></tr>
+          <tr><td><b>kube-proxy-Ersatz</b></td><td>ja, vollständig</td><td>ja (eBPF-Modus)</td><td>ja (OVN-LB)</td><td>ja (OVN-LB)</td><td>ja (AntreaProxy)</td><td>nein</td><td>nein</td></tr>
+          <tr><td><b>Erweiterte Policies</b></td><td>CNP/CCNP, FQDN, L7</td><td>Tiers, GNP, ClusterNetworkPolicy</td><td>ANP, EgressFirewall</td><td>Security Groups, ACL</td><td>Tiers, ACNP</td><td>Calico-Basis</td><td>keine</td></tr>
+          <tr><td><b>L7-Policy</b></td><td>ja (Envoy)</td><td>über Istio Ambient</td><td>nein</td><td>nein</td><td>eingeschränkt</td><td>nein</td><td>nein</td></tr>
+          <tr><td><b>Verschlüsselung</b></td><td>WireGuard, IPsec</td><td>WireGuard</td><td>IPsec</td><td>eingeschränkt</td><td>IPsec, WireGuard</td><td>WireGuard (Flannel)</td><td>WireGuard</td></tr>
+          <tr><td><b>BGP</b></td><td>ja</td><td>ja (Kernfeature)</td><td>ja (FRR-K8s, EVPN)</td><td>ja</td><td>ja</td><td>nein</td><td>nein</td></tr>
+          <tr><td><b>Observability</b></td><td>Hubble</td><td>Whisker / Goldmane</td><td>Network Observability Operator (OCP)</td><td>Metriken, Mirror, kubectl ko</td><td>Traceflow, Flow-Exporter</td><td>minimal</td><td>minimal</td></tr>
+          <tr><td><b>Windows-Nodes</b></td><td>nein (praktisch)</td><td>ja</td><td>ja (Hybrid-Overlay, OCP)</td><td>nein</td><td>ja</td><td>nein</td><td>ja</td></tr>
+          <tr><td><b>KubeVirt / VMs</b></td><td>begrenzt</td><td>ja (3.32 Live-Migration)</td><td>stark (UDN)</td><td>stark</td><td>begrenzt</td><td>nein</td><td>nein</td></tr>
+          <tr><td><b>Governance</b></td><td>CNCF Graduated, Isovalent/Cisco</td><td>Tigera</td><td>Red Hat</td><td>CNCF Sandbox</td><td>CNCF Sandbox, Broadcom</td><td>SUSE (RKE2)</td><td>Community</td></tr>
+          <tr><td><b>Lernkurve</b></td><td>hoch</td><td>mittel</td><td>hoch</td><td>hoch</td><td>mittel</td><td>niedrig</td><td>sehr niedrig</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 5 PLATTFORM ================= -->
+<section id="plattform" class="butter">
+  <div class="sec-head"><div class="badge">5</div><h2>Plattform-Kontext</h2></div>
+  <p class="sec-sub">Die erste Frage ist nicht „welches CNI ist das beste“, sondern „was bringt meine Plattform mit und was unterstützt der Hersteller“.</p>
+
+  <div class="card">
+    <table>
+      <thead><tr><th>Plattform</th><th>Default</th><th>Realistische Alternativen</th></tr></thead>
+      <tbody>
+        <tr><td><b>OpenShift</b></td><td>OVN-Kubernetes</td><td>Cilium/Calico nur als zertifizierte Partner-CNIs</td></tr>
+        <tr><td><b>RKE2</b></td><td>Canal</td><td>Cilium, Calico, Flannel mitgeliefert; <code>cni:</code> in <code>/etc/rancher/rke2/config.yaml</code>; Multus zusätzlich</td></tr>
+        <tr><td><b>k3s</b></td><td>Flannel</td><td>beliebig mit <code>--flannel-backend=none</code></td></tr>
+        <tr><td><b>kubeadm / Talos</b></td><td>keiner</td><td>freie Wahl, meist Cilium oder Calico</td></tr>
+        <tr><td><b>GKE</b></td><td>Dataplane V2 (Cilium)</td><td>–</td></tr>
+        <tr><td><b>AKS</b></td><td>Azure CNI (Option: powered by Cilium)</td><td>–</td></tr>
+        <tr><td><b>EKS</b></td><td>Amazon VPC CNI</td><td>Cilium/Calico im Chaining- oder Overlay-Modus</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="note"><b>RKE2-Hinweis:</b> Nur Calico und Flannel unterstützen dort Windows-Nodes. Wer Cilium mit kube-proxy-Ersatz nutzt, setzt zusätzlich <code>disable-kube-proxy: true</code>.</div>
+</section>
+
+<!-- ================= 6 POLICIES ================= -->
+<section id="policies" class="rose">
+  <div class="sec-head"><div class="badge">6</div><h2>Policy-Landschaft 2026</h2></div>
+  <p class="sec-sub">Der Standard kann wenig, die CNI-eigenen CRDs können viel – und binden an das Plugin. Die Mischung entscheidet darüber, ob ein CNI-Wechsel später machbar bleibt.</p>
+
+  <div class="card">
+    <h3>Drei Ebenen</h3>
+    <ul class="clean">
+      <li><b>NetworkPolicy</b> (<code>networking.k8s.io/v1</code>): kleinster gemeinsamer Nenner – nur L3/L4, nur Namespace-Scope, kein explizites Deny.</li>
+      <li><b>Cluster-weite Policies</b> (<code>network-policy-api</code>): AdminNetworkPolicy und BaselineAdminNetworkPolicy werden upstream zu <b>ClusterNetworkPolicy</b> zusammengeführt. Calico hat ANP/BANP in 3.32 bereits entfernt – bei anderen CNIs den Migrationspfad pro Release prüfen.</li>
+      <li><b>CNI-eigene CRDs</b> (CiliumNetworkPolicy, Calico GlobalNetworkPolicy, Antrea ClusterNetworkPolicy, OVN-K EgressFirewall): bieten mehr, binden aber an das Plugin.</li>
+    </ul>
+  </div>
+
+  <div class="note"><b>Faustregel:</b> Baseline mit Standard-NetworkPolicy und Default-Deny pro Namespace. CNI-eigene CRDs nur für das, was der Standard nicht kann – FQDN, L7, Cluster-Scope. So bleibt ein CNI-Wechsel machbar.</div>
+
+  <div class="warn"><b>Compliance-Bezug:</b> Anforderungen wie BSI APP.4.4 zur Netzsegmentierung setzen durchgesetzte Policies voraus. Flannel allein erfüllt das nicht.</div>
+</section>
+
+<!-- ================= 7 ENTSCHEIDUNG ================= -->
+<section id="entscheidung" class="mint">
+  <div class="sec-head"><div class="badge">7</div><h2>Entscheidungshilfe</h2></div>
+  <p class="sec-sub">Drei Fragen in fester Reihenfolge. Die erste erledigt die meisten Fälle bereits.</p>
+
+  <div class="card">
+    <h3>Der Entscheidungsbaum</h3>
+    <svg viewBox="0 0 880 470" width="100%" style="max-width:860px;display:block;margin:6px auto" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Entscheidungsbaum: Bei vorgegebener Plattform OpenShift fällt die Wahl auf OVN-Kubernetes. Bei freier Wahl entscheidet zuerst, ob NetworkPolicies nötig sind, dann die wichtigste Anforderung zwischen Cilium, Calico, Kube-OVN, Antrea und Canal." font-family="Inter, sans-serif">
+      <defs><marker id="cni-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="var(--ink-soft)"/></marker></defs>
+
+      <rect x="20" y="16" width="250" height="40" rx="20" fill="var(--sky)" stroke="var(--sky-deep)" stroke-width="1.6"/>
+      <text x="145" y="41" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="12.5" fill="var(--sky-deep)">Plattform vorgegeben?</text>
+
+      <path d="M270 36 H330" fill="none" stroke="var(--ink-soft)" stroke-width="1.4" marker-end="url(#cni-a)"/>
+      <text x="278" y="29" font-size="10.5" fill="var(--ink-soft)">OpenShift</text>
+      <rect x="336" y="16" width="200" height="40" rx="10" fill="var(--mint)" stroke="var(--mint-deep)" stroke-width="1.6"/>
+      <text x="436" y="41" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="12.5" fill="var(--mint-deep)">OVN-Kubernetes</text>
+
+      <path d="M145 56 V96" fill="none" stroke="var(--ink-soft)" stroke-width="1.4" marker-end="url(#cni-a)"/>
+      <text x="154" y="80" font-size="10.5" fill="var(--ink-soft)">frei wählbar</text>
+
+      <rect x="20" y="102" width="250" height="40" rx="20" fill="var(--sky)" stroke="var(--sky-deep)" stroke-width="1.6"/>
+      <text x="145" y="127" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="12.5" fill="var(--sky-deep)">NetworkPolicy nötig?</text>
+
+      <path d="M270 122 H330" fill="none" stroke="var(--ink-soft)" stroke-width="1.4" marker-end="url(#cni-a)"/>
+      <text x="278" y="115" font-size="10.5" fill="var(--ink-soft)">nein</text>
+      <rect x="336" y="102" width="200" height="40" rx="10" fill="var(--mint)" stroke="var(--mint-deep)" stroke-width="1.6"/>
+      <text x="436" y="127" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="12.5" fill="var(--mint-deep)">Flannel</text>
+      <text x="548" y="127" font-size="11" fill="var(--ink-soft)">Lab, Edge, Demo</text>
+
+      <path d="M145 142 V186" fill="none" stroke="var(--ink-soft)" stroke-width="1.4" marker-end="url(#cni-a)"/>
+      <text x="154" y="168" font-size="10.5" fill="var(--ink-soft)">ja</text>
+
+      <rect x="20" y="192" width="250" height="46" rx="23" fill="var(--sky)" stroke="var(--sky-deep)" stroke-width="1.6"/>
+      <text x="145" y="211" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="12.5" fill="var(--sky-deep)">Wichtigste Anforderung?</text>
+      <text x="145" y="228" text-anchor="middle" font-size="10.5" fill="var(--sky-deep)">eine auswählen</text>
+
+      <path d="M270 215 H310 V262 H330" fill="none" stroke="var(--ink-soft)" stroke-width="1.4" marker-end="url(#cni-a)"/>
+      <rect x="336" y="242" width="200" height="40" rx="10" fill="var(--mint)" stroke="var(--mint-deep)" stroke-width="1.6"/>
+      <text x="436" y="267" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="12.5" fill="var(--mint-deep)">Cilium</text>
+      <text x="548" y="259" font-size="11" fill="var(--ink-soft)">L7-Policy, Observability,</text>
+      <text x="548" y="274" font-size="11" fill="var(--ink-soft)">kube-proxy-Ersatz, Gateway API</text>
+
+      <path d="M270 215 H310 V312 H330" fill="none" stroke="var(--ink-soft)" stroke-width="1.4" marker-end="url(#cni-a)"/>
+      <rect x="336" y="292" width="200" height="40" rx="10" fill="var(--mint)" stroke="var(--mint-deep)" stroke-width="1.6"/>
+      <text x="436" y="317" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="12.5" fill="var(--mint-deep)">Calico</text>
+      <text x="548" y="309" font-size="11" fill="var(--ink-soft)">BGP ins Rechenzentrum,</text>
+      <text x="548" y="324" font-size="11" fill="var(--ink-soft)">Windows-Nodes, Datapath-Wahl</text>
+
+      <path d="M270 215 H310 V362 H330" fill="none" stroke="var(--ink-soft)" stroke-width="1.4" marker-end="url(#cni-a)"/>
+      <rect x="336" y="342" width="200" height="40" rx="10" fill="var(--mint)" stroke="var(--mint-deep)" stroke-width="1.6"/>
+      <text x="436" y="367" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="12.5" fill="var(--mint-deep)">Kube-OVN</text>
+      <text x="548" y="367" font-size="11" fill="var(--ink-soft)">VMs, VPCs, Underlay-VLAN</text>
+
+      <path d="M270 215 H310 V412 H330" fill="none" stroke="var(--ink-soft)" stroke-width="1.4" marker-end="url(#cni-a)"/>
+      <rect x="336" y="392" width="200" height="40" rx="10" fill="var(--mint)" stroke="var(--mint-deep)" stroke-width="1.6"/>
+      <text x="436" y="417" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="12.5" fill="var(--mint-deep)">Antrea</text>
+      <text x="548" y="417" font-size="11" fill="var(--ink-soft)">Broadcom- / vSphere-Umfeld</text>
+
+      <path d="M270 215 H310 V452 H330" fill="none" stroke="var(--ink-soft)" stroke-width="1.4" marker-end="url(#cni-a)"/>
+      <rect x="336" y="436" width="200" height="30" rx="10" fill="var(--mint)" stroke="var(--mint-deep)" stroke-width="1.6"/>
+      <text x="436" y="456" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="12.5" fill="var(--mint-deep)">Canal</text>
+      <text x="548" y="456" font-size="11" fill="var(--ink-soft)">RKE2-Default genügt</text>
+    </svg>
+  </div>
+
+  <div class="card">
+    <h3>Die drei Fragen in Reihenfolge</h3>
+    <ol class="steps">
+      <li><div><b>Plattform</b><small>Was bringt sie mit, was unterstützt der Hersteller?</small></div></li>
+      <li><div><b>Anforderung</b><small>L7, BGP, VMs, Windows, Compliance?</small></div></li>
+      <li><div><b>Können</b><small>Wer debuggt das nachts um drei? eBPF- und OVN-Wissen sind nicht selbstverständlich.</small></div></li>
+    </ol>
+  </div>
+
+  <div class="mnemo"><b>P-A-K:</b> <b>P</b>lattform, <b>A</b>nforderung, <b>K</b>önnen – in genau dieser Reihenfolge.</div>
+</section>
+
+<!-- ================= 8 BETRIEB ================= -->
+<section id="betrieb" class="sky">
+  <div class="sec-head"><div class="badge">8</div><h2>Betrieb und Migration: typische Fallen</h2></div>
+  <p class="sec-sub">Sieben Fehlerbilder, die im Betrieb und beim Wechsel immer wieder auftreten – die meisten melden sich nicht mit einer klaren Fehlermeldung.</p>
+
+  <div class="card">
+    <table>
+      <thead><tr><th>Falle</th><th>Symptom</th><th>Gegenmaßnahme</th></tr></thead>
+      <tbody>
+        <tr><td><b>MTU falsch</b></td><td>kleine Requests gehen, große hängen (TLS-Handshake, Uploads)</td><td>Overlay- und Encryption-Overhead addieren, Path-MTU testen (<code>ping -M do -s …</code>)</td></tr>
+        <tr><td><b>kube-proxy doppelt</b></td><td>Services flappen, doppelte NAT-Regeln</td><td>Bei kube-proxy-Ersatz kube-proxy wirklich entfernen, Reste mit <code>kube-proxy --cleanup</code> beseitigen</td></tr>
+        <tr><td><b>Kernel zu alt</b></td><td>eBPF-Features fehlen still oder Agent startet nicht</td><td>Kernel-Matrix des CNI vor dem Rollout prüfen</td></tr>
+        <tr><td><b>Big-Bang-CNI-Wechsel</b></td><td>Totalausfall des Pod-Netzes</td><td>Node-weise Migration (Cilium-Migrationsmodus, Calico-Migration) oder neuen Cluster aufbauen</td></tr>
+        <tr><td><b>CNI-eigene CRDs überall</b></td><td>Wechsel wird zum Rewrite</td><td>Standard-NetworkPolicy als Baseline</td></tr>
+        <tr><td><b>Breaking Changes im Minor</b></td><td>Policies greifen nach dem Upgrade nicht mehr</td><td>Release Notes lesen – Beispiel: Calico 3.32 entfernt ANP/BANP</td></tr>
+        <tr><td><b>Air-gapped</b></td><td>Images für Agent, Operator, Envoy, Hubble fehlen</td><td>Vollständige Image-Liste aus dem Helm-Chart ziehen und spiegeln</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="mnemo"><b>Ein CNI-Wechsel ist ein Umzug bei laufendem Betrieb</b> – erst Adressen und Wege klären, dann Möbel tragen.</div>
+</section>
+
+</main>
+
+<footer>Vergleich der gängigen CNI-Plugins, Stand September 2026 (Kubernetes 1.36, Cilium 1.20, Calico 3.32, OpenShift 4.21/4.22, Antrea 2.x, RKE2 mit Canal-Default). Quellen:
+<a href="https://endoflife.date/cilium">Cilium Support-Fenster</a> ·
+<a href="https://cilium.io/blog/categories/release/">Cilium Release-Blog</a> ·
+<a href="https://www.tigera.io/blog/whats-new-in-calico-v3-31-ebpf-nftables-and-more/">Calico 3.31</a> ·
+<a href="https://www.tigera.io/blog/whats-new-in-calico-v3-32/">Calico 3.32</a> ·
+<a href="https://docs.redhat.com/en/documentation/openshift_container_platform/4.21/html/advanced_networking/route-advertisements">OpenShift 4.21 Route Advertisements</a> ·
+<a href="https://docs.redhat.com/en/documentation/openshift_container_platform/4.22/html/advanced_networking/bgp-evpn-for-user-defined-networks">OpenShift 4.22 BGP-EVPN</a> ·
+<a href="https://ovn-kubernetes.io/features/bgp-integration/route-advertisements/">OVN-Kubernetes Route Advertisements</a> ·
+<a href="https://github.com/kubeovn/kube-ovn">Kube-OVN</a> ·
+<a href="https://pkg.go.dev/antrea.io/antrea/v2">Antrea</a> ·
+<a href="https://docs.rke2.io/networking/basic_network_options">RKE2 Network Options</a>.
+CNI-Projekte entwickeln sich schnell – Versionsangaben vor Produktionseinsatz gegen die eigene Umgebung prüfen.</footer>
+
+</body>
+</html>
