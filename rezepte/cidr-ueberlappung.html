@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Überlappende IP-Bereiche – wenn Pod-Netz und Firmennetz dieselben Adressen benutzen</title>
+<meta name="rezept-kategorie"    content="cluster-ops">
+<meta name="rezept-beschreibung" content="Warum sich Pod-CIDR, Service-CIDR und Node-Netz nicht überschneiden dürfen, woran man einen Konflikt erkennt, was sich im laufenden Cluster noch ändern lässt und was nicht.">
+<meta name="rezept-stand"        content="Kubernetes 1.34 · OpenShift 4.22 · 09/2026">
+<meta name="rezept-suche"        content="cidr überlappung pod-cidr service-cidr clusternetwork servicenetwork hostprefix podcidr longest prefix match routing asymmetrisch ip route get egress-ip snat dnat loadbalancer metallb calico ippool multicidrserviceallocator servicecidr ipam rfc1918 docker bridge 172.17 169.254 neubau gitops">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#33394a;
+  --ink-soft:#5c6376;
+  --paper:#fbfaf7;
+  --card:#ffffff;
+  --line:#e9e6df;
+  --code-bg:#31364a;
+  --code-ink:#e8eaf2;
+  --mint:#d9f2e4;      --mint-deep:#2f8f6b;
+  --sky:#dcebf9;       --sky-deep:#2d6fa8;
+  --lav:#e7e2f7;       --lav-deep:#6b5bb5;
+  --peach:#fbe6d7;     --peach-deep:#c2703d;
+  --butter:#faf0cf;    --butter-deep:#a5842a;
+  --rose:#f9e0e6;      --rose-deep:#b34f6d;
+  --aqua:#d7eff0;      --aqua-deep:#2b8288;
+  --r-lg:26px; --r-md:18px; --r-sm:12px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;scroll-padding-top:90px}
+body{font-family:'Inter',sans-serif;background:var(--paper);color:var(--ink);line-height:1.65;font-size:16px}
+h1,h2,h3,h4{font-family:'Sora',sans-serif;line-height:1.2}
+
+/* ---------- Kopf ---------- */
+header{max-width:1060px;margin:0 auto;padding:56px 24px 8px}
+.kicker{display:inline-block;background:var(--lav);color:var(--lav-deep);font-weight:600;font-size:.8rem;letter-spacing:.08em;text-transform:uppercase;padding:6px 14px;border-radius:999px;margin-bottom:18px}
+header h1{font-size:clamp(1.9rem,4.5vw,3rem);font-weight:800;letter-spacing:-.02em}
+header h1 span{color:var(--mint-deep)}
+.lede{color:var(--ink-soft);max-width:640px;margin-top:14px;font-size:1.05rem}
+
+/* ---------- Route ---------- */
+.route{max-width:1060px;margin:34px auto 10px;padding:0 24px;display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.route a{display:flex;flex-direction:column;gap:8px;text-decoration:none;color:var(--ink);background:var(--card);border:1.5px solid var(--line);border-radius:var(--r-md);padding:16px 14px;transition:transform .15s ease,box-shadow .15s ease}
+.route a:hover,.route a:focus-visible{transform:translateY(-3px);box-shadow:0 8px 22px rgba(60,60,90,.10);outline:none}
+.route .dot{width:34px;height:34px;border-radius:12px;display:grid;place-items:center;font-family:'Sora';font-weight:700;font-size:.9rem}
+.route .t{font-weight:600;font-size:.86rem;line-height:1.3}
+.route .s{font-size:.74rem;color:var(--ink-soft)}
+.route a:nth-child(1) .dot{background:var(--aqua);color:var(--aqua-deep)}
+.route a:nth-child(2) .dot{background:var(--mint);color:var(--mint-deep)}
+.route a:nth-child(3) .dot{background:var(--sky);color:var(--sky-deep)}
+.route a:nth-child(4) .dot{background:var(--lav);color:var(--lav-deep)}
+.route a:nth-child(5) .dot{background:var(--peach);color:var(--peach-deep)}
+.route a:nth-child(6) .dot{background:var(--butter);color:var(--butter-deep)}
+.route a:nth-child(7) .dot{background:var(--rose);color:var(--rose-deep)}
+.route a:nth-child(8) .dot{background:var(--mint);color:var(--mint-deep)}
+.route a:nth-child(9) .dot{background:var(--sky);color:var(--sky-deep)}
+
+/* ---------- Sticky-Nav ---------- */
+nav{position:sticky;top:0;z-index:50;background:rgba(251,250,247,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);margin-top:26px}
+nav .wrap{max-width:1060px;margin:0 auto;padding:10px 24px;display:flex;gap:8px;overflow-x:auto}
+nav a{white-space:nowrap;text-decoration:none;font-size:.82rem;font-weight:600;color:var(--ink-soft);padding:7px 14px;border-radius:999px;border:1px solid transparent}
+nav a:hover{background:var(--card);border-color:var(--line);color:var(--ink)}
+
+/* ---------- Sektionen ---------- */
+main{max-width:1060px;margin:0 auto;padding:20px 24px 90px}
+section{margin-top:64px}
+.sec-head{display:flex;align-items:center;gap:16px;margin-bottom:8px}
+.badge{width:52px;height:52px;border-radius:16px;display:grid;place-items:center;font-family:'Sora';font-weight:800;font-size:1.25rem;flex-shrink:0}
+section h2{font-size:clamp(1.4rem,3vw,1.9rem);font-weight:700}
+.sec-sub{color:var(--ink-soft);margin-bottom:22px;max-width:720px}
+.aqua .badge{background:var(--aqua);color:var(--aqua-deep)}
+.mint .badge{background:var(--mint);color:var(--mint-deep)}
+.sky .badge{background:var(--sky);color:var(--sky-deep)}
+.lav .badge{background:var(--lav);color:var(--lav-deep)}
+.peach .badge{background:var(--peach);color:var(--peach-deep)}
+.butter .badge{background:var(--butter);color:var(--butter-deep)}
+.rose .badge{background:var(--rose);color:var(--rose-deep)}
+
+/* ---------- Karten & Schritte ---------- */
+.card{background:var(--card);border:1.5px solid var(--line);border-radius:var(--r-lg);padding:26px 28px;margin-bottom:20px}
+.card h3{font-size:1.08rem;margin-bottom:14px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+ol.steps{list-style:none;counter-reset:s;display:flex;flex-direction:column;gap:14px}
+ol.steps li{counter-increment:s;display:grid;grid-template-columns:34px 1fr;gap:14px;align-items:start}
+ol.steps li::before{content:counter(s);width:30px;height:30px;border-radius:10px;display:grid;place-items:center;font-family:'Sora';font-weight:700;font-size:.85rem;margin-top:2px}
+.aqua ol.steps li::before{background:var(--aqua);color:var(--aqua-deep)}
+.mint ol.steps li::before{background:var(--mint);color:var(--mint-deep)}
+.sky ol.steps li::before{background:var(--sky);color:var(--sky-deep)}
+.lav ol.steps li::before{background:var(--lav);color:var(--lav-deep)}
+.peach ol.steps li::before{background:var(--peach);color:var(--peach-deep)}
+.butter ol.steps li::before{background:var(--butter);color:var(--butter-deep)}
+.rose ol.steps li::before{background:var(--rose);color:var(--rose-deep)}
+.steps b{font-weight:600}
+.steps small{display:block;color:var(--ink-soft);font-size:.86rem;margin-top:2px}
+
+ul.clean{list-style:none;display:flex;flex-direction:column;gap:10px}
+ul.clean li{padding-left:24px;position:relative}
+ul.clean li::before{content:"";position:absolute;left:4px;top:.62em;width:9px;height:9px;border-radius:3px;background:var(--line)}
+.aqua ul.clean li::before{background:var(--aqua-deep)}
+.mint ul.clean li::before{background:var(--mint-deep)}
+.sky ul.clean li::before{background:var(--sky-deep)}
+.lav ul.clean li::before{background:var(--lav-deep)}
+.peach ul.clean li::before{background:var(--peach-deep)}
+.butter ul.clean li::before{background:var(--butter-deep)}
+.rose ul.clean li::before{background:var(--rose-deep)}
+
+/* ---------- Code ---------- */
+pre{background:var(--code-bg);color:var(--code-ink);border-radius:var(--r-sm);padding:16px 18px;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:.82rem;line-height:1.6;margin:10px 0}
+code{font-family:'JetBrains Mono',monospace;font-size:.85em;background:#efede7;border-radius:6px;padding:2px 6px}
+pre code{background:none;padding:0;font-size:1em}
+pre .c{color:#9aa3c0}
+
+/* ---------- Hinweisboxen ---------- */
+.note,.warn,.mnemo{border-radius:var(--r-md);padding:14px 18px;margin:14px 0;font-size:.92rem}
+.note{background:var(--sky)}
+.warn{background:var(--rose)}
+.mnemo{background:var(--butter)}
+.note b,.warn b,.mnemo b{font-weight:700}
+.mnemo::before{content:"🧠 Merkbild · ";font-weight:700}
+.warn::before{content:"⚠️ ";font-weight:700}
+
+/* ---------- Tabellen ---------- */
+table{width:100%;border-collapse:separate;border-spacing:0;font-size:.88rem;margin:10px 0}
+th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-family:'Sora';font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft)}
+tr:last-child td{border-bottom:none}
+thead th:first-child{border-top-left-radius:var(--r-sm)}
+thead th:last-child{border-top-right-radius:var(--r-sm)}
+thead{background:var(--paper)}
+.scroll-x{overflow-x:auto}
+.scroll-x table{min-width:640px}
+
+
+/* ---------- Details ---------- */
+details{border:1.5px solid var(--line);border-radius:var(--r-md);margin:12px 0;background:var(--card)}
+details summary{cursor:pointer;padding:14px 18px;font-weight:600;font-size:.94rem;list-style:none;display:flex;align-items:center;gap:10px}
+details summary::before{content:"+";font-family:'Sora';font-weight:700;width:24px;height:24px;border-radius:8px;background:var(--paper);display:grid;place-items:center;flex-shrink:0}
+details[open] summary::before{content:"–"}
+details .inner{padding:0 18px 18px}
+summary::-webkit-details-marker{display:none}
+
+footer{max-width:1060px;margin:0 auto;padding:30px 24px 60px;color:var(--ink-soft);font-size:.82rem;border-top:1px solid var(--line)}
+footer a{color:var(--ink-soft)}
+
+@media(max-width:820px){
+  .route{grid-template-columns:repeat(2,1fr)}
+  .grid2{grid-template-columns:1fr}
+}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.route a{transition:none}}
+</style>
+</head>
+<body>
+
+<header>
+  <span class="kicker">Kubernetes 1.34 · OpenShift 4.18–4.22 · Calico 3.32</span>
+  <h1>Überlappende IP-Bereiche:<br>wenn Pod-Netz und <span>Firmennetz</span> kollidieren</h1>
+  <p class="lede">Ein Cluster bringt eigene IP-Bereiche mit, die nirgendwo angemeldet werden. Sind sie doppelt vergeben, entstehen Fehler, die wie DNS-, Firewall- oder Anwendungsprobleme aussehen, aber keine sind. Acht Abschnitte zu Ursache, Symptomen, Planung und den Handlungsmöglichkeiten danach.</p>
+</header>
+
+<div class="route">
+  <a href="#adressraeume"><span class="dot">0</span><span class="t">Drei Adressräume</span><span class="s">Pod, Service, Node</span></a>
+  <a href="#lpm"><span class="dot">1</span><span class="t">Warum es bricht</span><span class="s">Longest Prefix Match</span></a>
+  <a href="#symptome"><span class="dot">2</span><span class="t">Symptome</span><span class="s">Genau ein Ziel tot</span></a>
+  <a href="#planung"><span class="dot">3</span><span class="t">Planung</span><span class="s">Vor der Installation</span></a>
+  <a href="#aendern"><span class="dot">4</span><span class="t">Was änderbar ist</span><span class="s">Vergrößern ja, verschieben nein</span></a>
+  <a href="#verstecken"><span class="dot">5</span><span class="t">Verstecken</span><span class="s">SNAT, LoadBalancer, Proxy</span></a>
+  <a href="#neubau"><span class="dot">6</span><span class="t">Neubau</span><span class="s">Der Referenzweg</span></a>
+  <a href="#checkliste"><span class="dot">7</span><span class="t">Checkliste</span><span class="s">Vor jeder Installation</span></a>
+</div>
+
+<nav><div class="wrap">
+  <a href="#adressraeume">0 · Adressräume</a>
+  <a href="#lpm">1 · Warum es bricht</a>
+  <a href="#symptome">2 · Symptome</a>
+  <a href="#planung">3 · Planung</a>
+  <a href="#aendern">4 · Was änderbar ist</a>
+  <a href="#verstecken">5 · Verstecken</a>
+  <a href="#neubau">6 · Neubau</a>
+  <a href="#checkliste">7 · Checkliste</a>
+</div></nav>
+
+<main>
+
+<!-- ================= 0 ADRESSRÄUME ================= -->
+<section id="adressraeume" class="aqua">
+  <div class="sec-head"><div class="badge">0</div><h2>Die drei Adressräume eines Clusters</h2></div>
+  <p class="sec-sub">Jeder Kubernetes-Cluster verwaltet drei voneinander unabhängige Bereiche. Alle drei müssen untereinander und gegenüber jedem Netz, das der Cluster erreichen soll, überschneidungsfrei sein.</p>
+
+  <div class="card">
+    <div class="scroll-x">
+      <table>
+        <thead><tr><th>Bereich</th><th>Wofür</th><th>Typischer Standard</th><th>Sichtbar über</th></tr></thead>
+        <tbody>
+          <tr><td><b>Pod-CIDR</b><br><code>clusterNetwork</code></td><td>Adressen aller Pods, in Blöcke pro Node zerlegt</td><td><code>10.128.0.0/14</code> (OpenShift)<br><code>10.42.0.0/16</code> (k3s/RKE2)<br><code>10.244.0.0/16</code> (Flannel)<br><code>192.168.0.0/16</code> (Calico-Standardmanifest)</td><td><code>node.spec.podCIDR</code></td></tr>
+          <tr><td><b>Service-CIDR</b><br><code>serviceNetwork</code></td><td>ClusterIPs, rein virtuell, existiert nur in Regelwerken</td><td><code>172.30.0.0/16</code> (OpenShift)<br><code>10.96.0.0/12</code> (kubeadm)</td><td><code>kubectl get svc</code>, <code>ServiceCIDR</code>-Objekt</td></tr>
+          <tr><td><b>Node-Netz</b></td><td>echte Adressen der Maschinen</td><td>aus dem Firmennetz vergeben</td><td><code>ip addr</code> auf dem Node</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="note"><b>Gern vergessen:</b> der LoadBalancer-Pool (MetalLB, OpenShift Ingress), Egress-IPs, das Hybrid-Overlay-Netz für Windows-Nodes sowie Adressen, die eine Storage- oder Backup-Appliance mitbringt.</div>
+
+  <div class="mnemo"><b>Der Cluster kennt drei Adressräume, die Organisation kennt nur einen davon</b> – nämlich den, in dem die Nodes stehen.</div>
+</section>
+
+<!-- ================= 1 LPM ================= -->
+<section id="lpm" class="mint">
+  <div class="sec-head"><div class="badge">1</div><h2>Warum eine Überlappung bricht: Longest Prefix Match</h2></div>
+  <p class="sec-sub">Wenn der CNI startet, trägt er auf jedem Node Routen für das Pod-Netz ein. Ab diesem Moment gibt es für jede Zieladresse im Pod-Netz zwei konkurrierende Einträge: die spezifische Route ins Overlay und die Default-Route ins Firmennetz.</p>
+
+  <div class="card">
+    <h3>Die Entscheidung des Kernels</h3>
+    <svg viewBox="0 0 860 310" width="100%" style="max-width:840px;display:block;margin:6px auto" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Ein Pod schickt ein Paket an 10.42.7.13. Die Routing-Tabelle hat eine spezifische Route 10.42.0.0/16 ins Overlay und die Default-Route ins Firmennetz. Die spezifischere Route gewinnt, das Paket bleibt im Cluster, die Datenbank in der Firma ist unerreichbar." font-family="Inter, sans-serif">
+      <defs>
+        <marker id="lp-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="var(--mint-deep)"/></marker>
+        <marker id="lp-b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="var(--rose-deep)"/></marker>
+        <marker id="lp-c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="var(--ink-soft)"/></marker>
+      </defs>
+
+      <rect x="20" y="118" width="180" height="62" rx="12" fill="var(--card)" stroke="var(--line)" stroke-width="1.5"/>
+      <text x="110" y="143" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="12.5" fill="var(--ink)">Pod schickt Paket</text>
+      <text x="110" y="162" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="var(--ink-soft)">Ziel 10.42.7.13</text>
+
+      <path d="M204 149 H254" fill="none" stroke="var(--ink-soft)" stroke-width="1.5" marker-end="url(#lp-c)"/>
+
+      <rect x="260" y="112" width="200" height="74" rx="37" fill="var(--sky)" stroke="var(--sky-deep)" stroke-width="1.6"/>
+      <text x="360" y="143" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="12.5" fill="var(--sky-deep)">Routing-Tabelle</text>
+      <text x="360" y="162" text-anchor="middle" font-size="11" fill="var(--sky-deep)">auf dem Node</text>
+
+      <path d="M460 132 C510 132, 520 66, 578 66" fill="none" stroke="var(--mint-deep)" stroke-width="2" marker-end="url(#lp-a)"/>
+      <text x="400" y="44" font-family="JetBrains Mono, monospace" font-size="10.5" fill="var(--mint-deep)">10.42.0.0/16 → cni0</text>
+      <text x="400" y="60" font-size="10.5" fill="var(--mint-deep)">längster Präfix gewinnt</text>
+
+      <rect x="584" y="36" width="256" height="62" rx="12" fill="var(--mint)" stroke="var(--mint-deep)" stroke-width="1.6"/>
+      <text x="712" y="61" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="12.5" fill="var(--mint-deep)">Overlay im Cluster</text>
+      <text x="712" y="80" text-anchor="middle" font-size="11" fill="var(--mint-deep)">Paket landet hier</text>
+
+      <path d="M460 166 C510 166, 520 232, 578 232" fill="none" stroke="var(--rose-deep)" stroke-width="1.6" stroke-dasharray="6 5" marker-end="url(#lp-b)"/>
+      <text x="400" y="256" font-family="JetBrains Mono, monospace" font-size="10.5" fill="var(--rose-deep)">0.0.0.0/0 → Gateway</text>
+      <text x="400" y="272" font-size="10.5" fill="var(--rose-deep)">wird nie geprüft</text>
+
+      <rect x="584" y="202" width="256" height="62" rx="12" fill="var(--rose)" stroke="var(--rose-deep)" stroke-width="1.6"/>
+      <text x="712" y="227" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="12.5" fill="var(--rose-deep)">DB 10.42.7.13 in der Firma</text>
+      <text x="712" y="246" text-anchor="middle" font-size="11" fill="var(--rose-deep)">unerreichbar</text>
+
+      <text x="430" y="296" text-anchor="middle" font-size="11.5" fill="var(--ink-soft)">Der Kernel fragt nicht „intern oder extern“, sondern nur nach der Präfixlänge.</text>
+    </svg>
+    <p>Die spezifischere Route gewinnt, immer. Ein <code>/16</code> schlägt ein <code>/0</code>, die Default-Route kommt gar nicht erst zum Zug.</p>
+  </div>
+
+  <div class="mnemo"><b>Ein Hotel nummeriert seine Zimmer intern von 1 bis 200 – in einer Straße, in der es die Hausnummern 1 bis 200 ebenfalls gibt.</b> Post an „Nummer 47“ landet garantiert im Hotelzimmer, nie beim Nachbarn. Der Portier fragt nicht nach.</div>
+
+  <div class="warn"><b>Der Rückweg ist genauso betroffen:</b> Antwortpakete aus dem Firmennetz an eine Adresse, die dort ebenfalls existiert, werden an den falschen Host zugestellt. Ergebnis ist asymmetrisches Routing – Verbindungen bauen sich scheinbar auf und brechen dann ab.</div>
+
+  <div class="mnemo"><b>Der Kernel liest keine Absichten, nur Präfixlängen.</b></div>
+</section>
+
+<!-- ================= 2 SYMPTOME ================= -->
+<section id="symptome" class="sky">
+  <div class="sec-head"><div class="badge">2</div><h2>Woran man den Konflikt erkennt</h2></div>
+  <p class="sec-sub">Das Fehlerbild ist tückisch, weil alles außer dem Datenpfad funktioniert. Namensauflösung ist sauber, Firewall-Logs zeigen nichts, die Anwendung meldet nur ein Timeout.</p>
+
+  <div class="card">
+    <h3>Die Signatur</h3>
+    <ul class="clean">
+      <li>Genau <b>ein</b> externer Dienst ist nicht erreichbar, alle anderen laufen. Das ist die klassische Signatur.</li>
+      <li>DNS liefert die richtige IP, <code>curl</code> läuft in den Timeout, <code>traceroute</code> endet auf dem eigenen Node oder in einem fremden Pod.</li>
+      <li>Ein Ziel antwortet vom Host aus (<code>ssh</code> auf den Node, dann <code>curl</code>), aber nicht aus einem Pod heraus.</li>
+      <li>Verbindungen aus dem Firmennetz in den Cluster brechen nach dem Handshake ab.</li>
+      <li>Nach einem Node-Neustart oder einem CNI-Update ändert sich das Verhalten, ohne dass jemand etwas an der Anwendung geändert hat.</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>Die Prüfung in zwei Minuten</h3>
+    <pre><code><span class="c"># Die Bereiche des Clusters auslesen</span>
+kubectl cluster-info dump | grep -m2 -E 'cluster-cidr|service-cluster-ip-range'
+kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.podCIDR}{"\n"}{end}'
+
+<span class="c"># OpenShift</span>
+oc get network.config/cluster -o jsonpath='{.spec.clusterNetwork}{"\n"}{.spec.serviceNetwork}{"\n"}'
+
+<span class="c"># Gegenprobe auf dem Node: welche Route greift für die fragliche Zieladresse?</span>
+ip route get 10.42.7.13</code></pre>
+  </div>
+
+  <div class="note"><b><code>ip route get</code> ist das aussagekräftigste Kommando</b> – es zeigt nicht die Tabelle, sondern die Entscheidung des Kernels für genau dieses Ziel.</div>
+</section>
+
+<!-- ================= 3 PLANUNG ================= -->
+<section id="planung" class="lav">
+  <div class="sec-head"><div class="badge">3</div><h2>Planung: der Teil, der später nicht nachholbar ist</h2></div>
+  <p class="sec-sub">Die Pod-CIDR ist kein Konfigurationswert, sondern ein Fundament. Anbauen geht, versetzen nicht. Deshalb gehören vor jede Installation drei Schritte.</p>
+
+  <div class="card">
+    <ol class="steps">
+      <li><div><b>Beim Netzwerkteam einen Block reservieren lassen</b><small>Nicht nur „wir nehmen 10.42“, sondern eine dokumentierte Reservierung im IPAM der Organisation. Ein <code>/14</code> aus RFC 1918 kostet nichts außer Adressraum, den niemand sonst nutzt.</small></div></li>
+      <li><div><b>Großzügig dimensionieren</b><small>Die Rechnung geht über <code>hostPrefix</code>: Bei <code>hostPrefix: 23</code> bekommt jeder Node 510 nutzbare Pod-Adressen, ein <code>/14</code> trägt dann 512 Nodes. Wer knapp plant, landet später genau bei diesem Problem.</small></div></li>
+      <li><div><b>Alle Netze aufschreiben, mit denen der Cluster jemals sprechen soll</b><small>Inklusive der Netze von Tochtergesellschaften, Partnern und geplanten Zukäufen. Genau dort entsteht die Überlappung typischerweise: nicht am ersten Tag, sondern wenn zwei Jahre später eine weitere Organisation angebunden wird.</small></div></li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h3>Weniger offensichtliche Kollisionskandidaten</h3>
+    <table>
+      <thead><tr><th>Bereich</th><th>Wer ihn belegt</th></tr></thead>
+      <tbody>
+        <tr><td><code>172.17.0.0/16</code></td><td>Docker-Bridge, auf vielen Hosts vorhanden</td></tr>
+        <tr><td><code>169.254.0.0/16</code></td><td>Link-Local, Cloud-Metadata-Dienste</td></tr>
+        <tr><td>VPN-Pools</td><td>Adressen, die VPN-Clients zugewiesen bekommen</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="mnemo"><b>Die Pod-CIDR ist das Fundament, nicht die Wandfarbe.</b></div>
+</section>
+
+<!-- ================= 4 ÄNDERN ================= -->
+<section id="aendern" class="peach">
+  <div class="sec-head"><div class="badge">4</div><h2>Was sich im laufenden Cluster ändern lässt – und was nicht</h2></div>
+  <p class="sec-sub">Hier trennen sich die Plattformen deutlich. Der entscheidende Punkt: <code>node.spec.podCIDR</code> ist unveränderlich. Ein Node, der einmal einen Block bekommen hat, behält ihn bis zu seiner Neuregistrierung.</p>
+
+  <div class="card">
+    <h3>Überblick</h3>
+    <table>
+      <thead><tr><th>Vorhaben</th><th>Möglich?</th></tr></thead>
+      <tbody>
+        <tr><td>Pod-CIDR vergrößern (gleicher Netzanteil)</td><td><b>ja</b>, unterstützt</td></tr>
+        <tr><td>Pod-CIDR auf anderen Netzanteil verschieben</td><td><b>nein</b></td></tr>
+        <tr><td><code>hostPrefix</code> ändern</td><td><b>nein</b></td></tr>
+        <tr><td>Zweiten, disjunkten <code>clusterNetwork</code>-Eintrag nachrüsten</td><td>nur bei der Installation</td></tr>
+        <tr><td>Calico-IPPool wechseln (bei Calico-IPAM)</td><td><b>ja</b>, rollierend</td></tr>
+        <tr><td>Service-CIDR erweitern (Kubernetes ≥ 1.33)</td><td><b>ja</b>, additiv</td></tr>
+        <tr><td>Service-CIDR ersetzen</td><td><b>nein</b></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <details>
+    <summary>Pod-CIDR vergrößern</summary>
+    <div class="inner">
+      <p>Unterstützt, solange der <b>Netzanteil gleich bleibt</b> und nur die Präfixlänge kleiner wird. Aus <code>10.128.0.0/16</code> darf <code>10.128.0.0/14</code> werden, aus <code>10.42.x</code> niemals <code>172.20.x</code>. <code>hostPrefix</code> bleibt dabei unverändert.</p>
+      <pre><code><span class="c"># OpenShift, OVN-Kubernetes: Erweiterung des bestehenden Bereichs</span>
+oc patch Network.config.openshift.io cluster --type=merge --patch \
+  '{"spec":{"clusterNetwork":[{"cidr":"10.128.0.0/14","hostPrefix":23}],"networkType":"OVNKubernetes"}}'
+
+oc get network.operator.openshift.io -o jsonpath='{.items[0].spec.clusterNetwork}'</code></pre>
+      <div class="warn"><b>Hilft gegen Adressknappheit, nicht gegen Überlappung.</b> Der kollidierende Netzanteil bleibt ja erhalten.</div>
+    </div>
+  </details>
+
+  <details>
+    <summary>Pod-CIDR verschieben</summary>
+    <div class="inner">
+      <p><b>Nicht unterstützt.</b> Kein Pfad, keine Dokumentation, kein Support.</p>
+      <p style="margin-top:10px">Wer es hypothetisch durchspielt: Cluster-Network-Objekt und Controller-Manager-Flags ändern, jedes Node-Objekt löschen und neu registrieren lassen (weil <code>podCIDR</code> unveränderlich ist), CNI-State wegwerfen (OVN-Northbound-Datenbank bzw. Flannel-Subnet-Leases), Kubelets neu starten, sämtliche Pods neu erzeugen. Bei OVN-Kubernetes tragen zusätzlich die Logical Switches pro Node die alten Subnetze.</p>
+      <div class="warn"><b>Das ist ein Vollausfall, kein Rolling Update</b> – und im Fehlerfall steht man ohne getesteten Rückweg da.</div>
+    </div>
+  </details>
+
+  <details>
+    <summary>Sonderfall Calico-IPAM</summary>
+    <div class="inner">
+      <p>Calico benutzt bei eigenem IPAM <b>nicht</b> <code>node.spec.podCIDR</code>, sondern eigene IPPool-Objekte. Damit gibt es einen dokumentierten Migrationspfad: neuen Pool anlegen, alten Pool auf <code>disabled: true</code> setzen, Pods rollierend neu starten. Jeder neu erzeugte Pod bekommt eine Adresse aus dem neuen Pool, bestehende Verbindungen bleiben unberührt.</p>
+      <pre><code>calicoctl get ippools -o wide
+calicoctl apply -f neuer-pool.yaml
+calicoctl patch ippool alter-pool -p '{"spec":{"disabled":true}}'
+<span class="c"># danach rollierender Neustart aller Workloads</span></code></pre>
+      <div class="note"><b>Einschränkung laut Calico-Doku:</b> Kubernetes erwartet, dass alle Pod-Adressen innerhalb der Cluster-CIDR liegen. Pools außerhalb davon sind technisch möglich, aber nicht empfohlen – Pods darin verlieren ihre Anbindung. Für OpenShift scheidet dieser Weg ohnehin aus, da die Plattform die Änderung der Pod-Netz-CIDR nicht vorsieht.</div>
+    </div>
+  </details>
+
+  <details>
+    <summary>Service-CIDR</summary>
+    <div class="inner">
+      <p>Seit Kubernetes 1.33 ist <code>MultiCIDRServiceAllocator</code> stabil und standardmäßig aktiv. Damit lässt sich ein <b>zusätzlicher</b> Bereich als <code>ServiceCIDR</code>-Objekt anlegen, wenn die Adressen knapp werden.</p>
+      <p style="margin-top:10px">Der ursprüngliche Bereich – das Objekt <code>kubernetes</code> – lässt sich dadurch nicht ersetzen. Er hängt am <code>--service-cluster-ip-range</code> des API-Servers und an der ClusterIP des <code>kubernetes</code>-Service selbst.</p>
+      <pre><code>kubectl get servicecidr</code></pre>
+    </div>
+  </details>
+</section>
+
+<!-- ================= 5 VERSTECKEN ================= -->
+<section id="verstecken" class="butter">
+  <div class="sec-head"><div class="badge">5</div><h2>Wenn die Überlappung schon existiert: verstecken statt ändern</h2></div>
+  <p class="sec-sub">Der pragmatische Weg ist fast immer, die Pod-Adressen nach außen gar nicht erst sichtbar werden zu lassen. Welcher Weg trägt, hängt davon ab, wer wen erreichen muss.</p>
+
+  <div class="card">
+    <h3>Die Entscheidung</h3>
+    <svg viewBox="0 0 860 330" width="100%" style="max-width:840px;display:block;margin:6px auto" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Bei festgestellter Überlappung entscheidet die Verkehrsrichtung: ausgehend hilft Egress-IP oder SNAT, eingehend eine LoadBalancer-IP aus neutralem Pool; liegt die Zieladresse selbst im überlappenden Bereich, bleibt nur ein Proxy-Hop mit DNAT oder ein Neubau." font-family="Inter, sans-serif">
+      <defs><marker id="vs-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="var(--ink-soft)"/></marker></defs>
+
+      <rect x="16" y="130" width="150" height="50" rx="12" fill="var(--card)" stroke="var(--line)" stroke-width="1.5"/>
+      <text x="91" y="152" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="12" fill="var(--ink)">Überlappung</text>
+      <text x="91" y="169" text-anchor="middle" font-size="11" fill="var(--ink-soft)">festgestellt</text>
+      <path d="M170 155 H200" fill="none" stroke="var(--ink-soft)" stroke-width="1.5" marker-end="url(#vs-a)"/>
+
+      <rect x="206" y="124" width="144" height="62" rx="31" fill="var(--sky)" stroke="var(--sky-deep)" stroke-width="1.6"/>
+      <text x="278" y="150" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="12" fill="var(--sky-deep)">Wer muss</text>
+      <text x="278" y="167" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="12" fill="var(--sky-deep)">wen erreichen?</text>
+
+      <path d="M350 144 C410 144, 410 60, 504 60" fill="none" stroke="var(--ink-soft)" stroke-width="1.4" marker-end="url(#vs-a)"/>
+      <text x="418" y="44" font-size="10.5" fill="var(--ink-soft)">Cluster → außen</text>
+      <rect x="510" y="34" width="196" height="52" rx="12" fill="var(--mint)" stroke="var(--mint-deep)" stroke-width="1.6"/>
+      <text x="608" y="56" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="12" fill="var(--mint-deep)">Egress-IP oder SNAT</text>
+      <text x="608" y="74" text-anchor="middle" font-size="11" fill="var(--mint-deep)">auf neutrale Adressen</text>
+
+      <path d="M350 155 H504" fill="none" stroke="var(--ink-soft)" stroke-width="1.4" marker-end="url(#vs-a)"/>
+      <text x="384" y="147" font-size="10.5" fill="var(--ink-soft)">außen → Cluster</text>
+      <rect x="510" y="129" width="196" height="52" rx="12" fill="var(--mint)" stroke="var(--mint-deep)" stroke-width="1.6"/>
+      <text x="608" y="151" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="12" fill="var(--mint-deep)">LoadBalancer-IP</text>
+      <text x="608" y="169" text-anchor="middle" font-size="11" fill="var(--mint-deep)">aus neutralem Pool</text>
+
+      <path d="M350 166 C410 166, 410 250, 504 250" fill="none" stroke="var(--ink-soft)" stroke-width="1.4" marker-end="url(#vs-a)"/>
+      <text x="382" y="282" font-size="10.5" fill="var(--ink-soft)">Ziel liegt selbst</text>
+      <text x="382" y="296" font-size="10.5" fill="var(--ink-soft)">im Überlappungsbereich</text>
+      <rect x="510" y="224" width="196" height="52" rx="12" fill="var(--rose)" stroke="var(--rose-deep)" stroke-width="1.6"/>
+      <text x="608" y="246" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="12" fill="var(--rose-deep)">Proxy-Hop mit DNAT</text>
+      <text x="608" y="264" text-anchor="middle" font-size="11" fill="var(--rose-deep)">oder Neubau</text>
+
+      <path d="M710 60 H730 V108" fill="none" stroke="var(--ink-soft)" stroke-width="1.2" stroke-dasharray="4 3"/>
+      <path d="M710 155 H730 V108" fill="none" stroke="var(--ink-soft)" stroke-width="1.2" stroke-dasharray="4 3"/>
+      <path d="M730 108 H742" fill="none" stroke="var(--ink-soft)" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#vs-a)"/>
+      <text x="750" y="104" font-size="11" fill="var(--mint-deep)">trägt für</text>
+      <text x="750" y="119" font-size="11" fill="var(--mint-deep)">Nord-Süd-Verkehr</text>
+
+      <path d="M710 250 H742" fill="none" stroke="var(--ink-soft)" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#vs-a)"/>
+      <text x="750" y="246" font-size="11" fill="var(--rose-deep)">aufwendig,</text>
+      <text x="750" y="261" font-size="11" fill="var(--rose-deep)">fehleranfällig</text>
+
+      <text x="430" y="322" text-anchor="middle" font-size="11.5" fill="var(--ink-soft)">Solange die Gegenseite nie eine Pod-IP sieht, stört die Überlappung nicht.</text>
+    </svg>
+  </div>
+
+  <div class="card">
+    <h3>Die drei Fälle</h3>
+    <ul class="clean">
+      <li><b>Ausgehend:</b> Egress-IP bzw. SNAT auf dedizierte Adressen aus einem Netz, das beiden Seiten passt. Die Gegenseite sieht nie eine Pod-IP.</li>
+      <li><b>Eingehend:</b> Dienste ausschließlich über LoadBalancer- oder Ingress-Adressen aus einem neutralen Pool veröffentlichen.</li>
+      <li><b>Der harte Fall:</b> Müssen aus dem Cluster heraus genau die überlappenden Zieladressen erreicht werden, hilft kein SNAT. Dann bleibt ein Proxy-Hop mit Destination-NAT auf einer Ersatzadresse – technisch machbar, betrieblich unschön, und jeder neue Dienst braucht wieder einen Eintrag.</li>
+    </ul>
+  </div>
+
+  <div class="mnemo"><b>SNAT versteckt, wo ein Paket herkommt.</b> Gegen ein Ziel, das es zweimal gibt, hilft es nicht.</div>
+</section>
+
+<!-- ================= 6 NEUBAU ================= -->
+<section id="neubau" class="rose">
+  <div class="sec-head"><div class="badge">6</div><h2>Der Neubau als Referenzweg</h2></div>
+  <p class="sec-sub">Ist die Überlappung nicht umgehbar, ist der Neubau daneben in der Praxis der schnellere und sicherere Weg. Der ehrliche Vergleich lautet nicht „Fundament tauschen gegen Neubau“, sondern „undokumentierter Eingriff mit Totalausfall gegen kontrollierten Umzug, bei dem der alte Cluster bis zum Umschalten weiterläuft“.</p>
+
+  <div class="card">
+    <ol class="steps">
+      <li><div><b>Neuen Cluster aufbauen</b><small>Mit sauberen, reservierten Bereichen.</small></div></li>
+      <li><div><b>Workloads per GitOps ausrollen</b><small>Bei sauberer Trennung von Konfiguration und Cluster ist das der günstigste Schritt.</small></div></li>
+      <li><div><b>Persistente Daten migrieren</b><small>Backup/Restore oder Storage-Replikation.</small></div></li>
+      <li><div><b>Umschalten</b><small>Über DNS bzw. Loadbalancer; alten Cluster als Rückfallebene behalten.</small></div></li>
+      <li><div><b>Erst nach einer Bewährungszeit abbauen</b></div></li>
+    </ol>
+  </div>
+
+  <div class="note"><b>Wer ohnehin GitOps betreibt, gewinnt mit diesem Weg fast immer.</b></div>
+</section>
+
+<!-- ================= 7 CHECKLISTE ================= -->
+<section id="checkliste" class="mint">
+  <div class="sec-head"><div class="badge">7</div><h2>Checkliste vor jeder Installation</h2></div>
+  <p class="sec-sub">Sieben Punkte, die zehn Minuten kosten und einen Neubau ersparen.</p>
+
+  <div class="card">
+    <ul class="clean">
+      <li>Pod-CIDR, Service-CIDR und Node-Netz sind paarweise überschneidungsfrei</li>
+      <li>Beide Cluster-Bereiche sind im IPAM der Organisation reserviert und dokumentiert</li>
+      <li>Alle Netze, die der Cluster erreichen soll, sind gegengeprüft – inklusive VPN-Pools und Partnernetzen</li>
+      <li><code>hostPrefix</code> passt zur geplanten Node-Zahl, mit Reserve</li>
+      <li>LoadBalancer-Pool und Egress-Adressen sind separat geplant</li>
+      <li><code>172.17.0.0/16</code> und <code>169.254.0.0/16</code> sind geprüft</li>
+      <li>Bei mehreren Clustern: unterschiedliche Bereiche je Cluster, falls sie jemals direkt miteinander sprechen sollen</li>
+    </ul>
+  </div>
+</section>
+
+</main>
+
+<footer>Quellen: Red Hat – <i>Configuring the cluster network range</i> und <i>Cluster Network Operator in OpenShift Container Platform</i> · Kubernetes – <i>Extend Service IP Ranges</i> (<code>MultiCIDRServiceAllocator</code>, stabil seit 1.33) · Tigera/Calico – <i>Migrate from one IP pool to another</i> und <i>Get started with IP address management</i>. Stand September 2026: Kubernetes 1.34, OpenShift 4.18–4.22, Calico 3.32.</footer>
+
+</body>
+</html>
