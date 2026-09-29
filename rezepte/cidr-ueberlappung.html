@@ -7,7 +7,7 @@
 <meta name="rezept-kategorie"    content="cluster-ops">
 <meta name="rezept-beschreibung" content="Warum sich Pod-CIDR, Service-CIDR und Node-Netz nicht überschneiden dürfen, woran man einen Konflikt erkennt, was sich im laufenden Cluster noch ändern lässt und was nicht.">
 <meta name="rezept-stand"        content="Kubernetes 1.34 · OpenShift 4.22 · 09/2026">
-<meta name="rezept-suche"        content="cidr überlappung pod-cidr service-cidr clusternetwork servicenetwork hostprefix podcidr longest prefix match routing asymmetrisch ip route get egress-ip snat dnat loadbalancer metallb calico ippool multicidrserviceallocator servicecidr ipam rfc1918 docker bridge 172.17 169.254 neubau gitops">
+<meta name="rezept-suche"        content="cidr überlappung pod-cidr service-cidr clusternetwork servicenetwork hostprefix podcidr longest prefix match routing asymmetrisch ip route get egress-ip snat dnat loadbalancer metallb calico ippool multicidrserviceallocator servicecidr ipam rfc1918 docker bridge 172.17 169.254 neubau gitops ovn-kubernetes node-subnets internaljoinsubnet internaltransitswitchsubnet masquerade 100.64 cgnat tailscale cilium cluster-pool ovnkube-trace natoutgoing 10.43">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
@@ -193,13 +193,30 @@ footer a{color:var(--ink-soft)}
       <table>
         <thead><tr><th>Bereich</th><th>Wofür</th><th>Typischer Standard</th><th>Sichtbar über</th></tr></thead>
         <tbody>
-          <tr><td><b>Pod-CIDR</b><br><code>clusterNetwork</code></td><td>Adressen aller Pods, in Blöcke pro Node zerlegt</td><td><code>10.128.0.0/14</code> (OpenShift)<br><code>10.42.0.0/16</code> (k3s/RKE2)<br><code>10.244.0.0/16</code> (Flannel)<br><code>192.168.0.0/16</code> (Calico-Standardmanifest)</td><td><code>node.spec.podCIDR</code></td></tr>
-          <tr><td><b>Service-CIDR</b><br><code>serviceNetwork</code></td><td>ClusterIPs, rein virtuell, existiert nur in Regelwerken</td><td><code>172.30.0.0/16</code> (OpenShift)<br><code>10.96.0.0/12</code> (kubeadm)</td><td><code>kubectl get svc</code>, <code>ServiceCIDR</code>-Objekt</td></tr>
+          <tr><td><b>Pod-CIDR</b><br><code>clusterNetwork</code></td><td>Adressen aller Pods, in Blöcke pro Node zerlegt</td><td><code>10.128.0.0/14</code> (OpenShift)<br><code>10.42.0.0/16</code> (k3s/RKE2)<br><code>10.244.0.0/16</code> (Flannel)<br><code>192.168.0.0/16</code> (Calico-Standardmanifest)<br><code>10.0.0.0/8</code> (Cilium cluster-pool)</td><td><code>node.spec.podCIDR</code> (kubeadm, Flannel, k3s/RKE2)<br>Annotation <code>k8s.ovn.org/node-subnets</code> (OVN-K/OpenShift)<br><code>IPAMBlock</code> (Calico-IPAM)<br><code>CiliumNode</code> (Cilium cluster-pool)</td></tr>
+          <tr><td><b>Service-CIDR</b><br><code>serviceNetwork</code></td><td>ClusterIPs, rein virtuell, existiert nur in Regelwerken</td><td><code>172.30.0.0/16</code> (OpenShift)<br><code>10.43.0.0/16</code> (k3s/RKE2)<br><code>10.96.0.0/12</code> (kubeadm)</td><td><code>kubectl get svc</code>, <code>ServiceCIDR</code>-Objekt</td></tr>
           <tr><td><b>Node-Netz</b></td><td>echte Adressen der Maschinen</td><td>aus dem Firmennetz vergeben</td><td><code>ip addr</code> auf dem Node</td></tr>
         </tbody>
       </table>
     </div>
   </div>
+
+  <div class="warn"><b>Cilium cluster-pool: <code>10.0.0.0/8</code>.</b> Der Default-Pool belegt den gesamten 10er-Bereich und ist damit der größte Kollisionskandidat überhaupt. Bei Cilium den Pool immer explizit setzen.</div>
+
+  <div class="card">
+    <h3>Die internen Netze von OVN-Kubernetes</h3>
+    <p>OpenShift bringt mit OVN-Kubernetes drei weitere Bereiche mit, die in keiner Cluster-Übersicht auftauchen:</p>
+    <table>
+      <thead><tr><th>Feld</th><th>Standard</th><th>Wofür</th></tr></thead>
+      <tbody>
+        <tr><td><code>internalJoinSubnet</code></td><td><code>100.64.0.0/16</code></td><td>Verbindung zwischen den logischen Routern pro Node</td></tr>
+        <tr><td><code>internalTransitSwitchSubnet</code></td><td><code>100.88.0.0/16</code></td><td>Transit-Switch zwischen den Nodes (Interconnect)</td></tr>
+        <tr><td><code>internalMasqueradeSubnet</code></td><td><code>169.254.0.0/17</code></td><td>Masquerade für Host- und Service-Verkehr</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="warn"><b><code>100.64.0.0/10</code> ist in der Praxis belegt:</b> CGNAT-Bereich, Tailscale, viele VPN-Pools. Kommen Clients oder Ziele aus diesem Bereich, kollidieren sie mit Join- oder Transit-Subnetz.</div>
 
   <div class="note"><b>Gern vergessen:</b> der LoadBalancer-Pool (MetalLB, OpenShift Ingress), Egress-IPs, das Hybrid-Overlay-Netz für Windows-Nodes sowie Adressen, die eine Storage- oder Backup-Appliance mitbringt.</div>
 
@@ -255,6 +272,8 @@ footer a{color:var(--ink-soft)}
 
   <div class="warn"><b>Der Rückweg ist genauso betroffen:</b> Antwortpakete aus dem Firmennetz an eine Adresse, die dort ebenfalls existiert, werden an den falschen Host zugestellt. Ergebnis ist asymmetrisches Routing – Verbindungen bauen sich scheinbar auf und brechen dann ab.</div>
 
+  <div class="note"><b>Überlappung mit der Service-CIDR bricht anders.</b> ClusterIPs werden nicht geroutet, sondern schon vorher behandelt: kube-proxy (iptables/nftables) bzw. der OVN-Loadbalancer schreibt sie per DNAT auf einen Pod um oder verwirft bzw. rejectet Pakete an Adressen ohne passenden Service – je nach Implementierung. Die Routing-Tabelle kommt gar nicht erst zum Zug. Ein externes Ziel im Service-Bereich ist aus Pods deshalb unerreichbar, und statt eines Timeouts kommt oft ein sofortiges <i>connection refused</i>.</div>
+
   <div class="mnemo"><b>Der Kernel liest keine Absichten, nur Präfixlängen.</b></div>
 </section>
 
@@ -280,14 +299,26 @@ footer a{color:var(--ink-soft)}
 kubectl cluster-info dump | grep -m2 -E 'cluster-cidr|service-cluster-ip-range'
 kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.podCIDR}{"\n"}{end}'
 
-<span class="c"># OpenShift</span>
+<span class="c"># OpenShift – node.spec.podCIDR ist unter OVN-Kubernetes leer</span>
 oc get network.config/cluster -o jsonpath='{.spec.clusterNetwork}{"\n"}{.spec.serviceNetwork}{"\n"}'
-
-<span class="c"># Gegenprobe auf dem Node: welche Route greift für die fragliche Zieladresse?</span>
-ip route get 10.42.7.13</code></pre>
+oc get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.metadata.annotations.k8s\.ovn\.org/node-subnets}{"\n"}{end}'
+oc get network.operator.openshift.io cluster -o jsonpath='{.spec.defaultNetwork.ovnKubernetesConfig}{"\n"}'</code></pre>
   </div>
 
-  <div class="note"><b><code>ip route get</code> ist das aussagekräftigste Kommando</b> – es zeigt nicht die Tabelle, sondern die Entscheidung des Kernels für genau dieses Ziel.</div>
+  <div class="card">
+    <h3>Welche Route greift – je nach CNI</h3>
+    <p><b>Linux-Routing (Flannel, Calico, Canal):</b> Die Host-Routingtabelle entscheidet. <code>ip route get</code> zeigt nicht die Tabelle, sondern die Entscheidung des Kernels für genau dieses Ziel.</p>
+    <pre><code>ip route get 10.42.7.13</code></pre>
+    <p><b>OVN-Kubernetes:</b> Pod-Verkehr entscheidet der logische Router in OVN, nicht die Host-Routingtabelle. <code>ip route get</code> auf dem Node prüft hier das Falsche. Stattdessen den Weg simulieren oder direkt aus dem Pod testen:</p>
+    <pre><code><span class="c"># Paketweg aus einem Pod zu einem externen Ziel simulieren</span>
+./ovnkube-trace -src-namespace &lt;ns&gt; -src &lt;pod&gt; \
+  -dst-ip 10.42.7.13 -tcp -dst-port 5432
+
+<span class="c"># Echter Test aus dem Pod-Netzwerk-Namespace</span>
+oc rsh -n &lt;ns&gt; &lt;pod&gt; curl -v --connect-timeout 5 http://10.42.7.13:5432</code></pre>
+  </div>
+
+  <div class="warn"><b>Falsches Werkzeug, falsche Antwort:</b> Unter OVN-Kubernetes sieht <code>ip route get</code> auf dem Node oft unauffällig aus, obwohl der logische Router das Paket längst ins Overlay schickt.</div>
 </section>
 
 <!-- ================= 3 PLANUNG ================= -->
@@ -310,6 +341,8 @@ ip route get 10.42.7.13</code></pre>
       <tbody>
         <tr><td><code>172.17.0.0/16</code></td><td>Docker-Bridge, auf vielen Hosts vorhanden</td></tr>
         <tr><td><code>169.254.0.0/16</code></td><td>Link-Local, Cloud-Metadata-Dienste</td></tr>
+        <tr><td><code>100.64.0.0/10</code></td><td>CGNAT, Tailscale, manche VPNs – kollidiert mit den OVN-internen Join- und Transit-Netzen</td></tr>
+        <tr><td><code>10.0.0.0/8</code></td><td>Cilium-Default-Pool, belegt den kompletten 10er-Bereich</td></tr>
         <tr><td>VPN-Pools</td><td>Adressen, die VPN-Clients zugewiesen bekommen</td></tr>
       </tbody>
     </table>
@@ -321,7 +354,7 @@ ip route get 10.42.7.13</code></pre>
 <!-- ================= 4 ÄNDERN ================= -->
 <section id="aendern" class="peach">
   <div class="sec-head"><div class="badge">4</div><h2>Was sich im laufenden Cluster ändern lässt – und was nicht</h2></div>
-  <p class="sec-sub">Hier trennen sich die Plattformen deutlich. Der entscheidende Punkt: <code>node.spec.podCIDR</code> ist unveränderlich. Ein Node, der einmal einen Block bekommen hat, behält ihn bis zu seiner Neuregistrierung.</p>
+  <p class="sec-sub">Hier trennen sich die Plattformen deutlich. Der entscheidende Punkt: Ein Node, der einmal einen Block bekommen hat, behält ihn – egal, wo die Zuweisung steht. Bei kubeadm und Flannel ist das <code>node.spec.podCIDR</code> (unveränderlich bis zur Neuregistrierung), bei OVN-Kubernetes die Annotation <code>k8s.ovn.org/node-subnets</code>, bei Calico-IPAM die IPAM-Blöcke, bei Cilium das <code>CiliumNode</code>-Objekt.</p>
 
   <div class="card">
     <h3>Überblick</h3>
@@ -332,7 +365,8 @@ ip route get 10.42.7.13</code></pre>
         <tr><td>Pod-CIDR auf anderen Netzanteil verschieben</td><td><b>nein</b></td></tr>
         <tr><td><code>hostPrefix</code> ändern</td><td><b>nein</b></td></tr>
         <tr><td>Zweiten, disjunkten <code>clusterNetwork</code>-Eintrag nachrüsten</td><td>nur bei der Installation</td></tr>
-        <tr><td>Calico-IPPool wechseln (bei Calico-IPAM)</td><td><b>ja</b>, rollierend</td></tr>
+        <tr><td>Calico-IPPool wechseln (bei Calico-IPAM)</td><td><b>bedingt</b> – Pool soll innerhalb der Cluster-CIDR liegen</td></tr>
+        <tr><td>OVN <code>internalJoinSubnet</code> / <code>internalTransitSwitchSubnet</code> ändern</td><td><b>ja</b>, nachträglich</td></tr>
         <tr><td>Service-CIDR erweitern (Kubernetes ≥ 1.33)</td><td><b>ja</b>, additiv</td></tr>
         <tr><td>Service-CIDR ersetzen</td><td><b>nein</b></td></tr>
       </tbody>
@@ -356,7 +390,7 @@ oc get network.operator.openshift.io -o jsonpath='{.items[0].spec.clusterNetwork
     <summary>Pod-CIDR verschieben</summary>
     <div class="inner">
       <p><b>Nicht unterstützt.</b> Kein Pfad, keine Dokumentation, kein Support.</p>
-      <p style="margin-top:10px">Wer es hypothetisch durchspielt: Cluster-Network-Objekt und Controller-Manager-Flags ändern, jedes Node-Objekt löschen und neu registrieren lassen (weil <code>podCIDR</code> unveränderlich ist), CNI-State wegwerfen (OVN-Northbound-Datenbank bzw. Flannel-Subnet-Leases), Kubelets neu starten, sämtliche Pods neu erzeugen. Bei OVN-Kubernetes tragen zusätzlich die Logical Switches pro Node die alten Subnetze.</p>
+      <p style="margin-top:10px">Wer es hypothetisch durchspielt: Cluster-Network-Objekt und Controller-Manager-Flags ändern, jedes Node-Objekt löschen und neu registrieren lassen (weil die Subnetz-Zuweisung pro Node fest ist), CNI-State wegwerfen (OVN-Northbound-Datenbank bzw. Flannel-Subnet-Leases), Kubelets neu starten, sämtliche Pods neu erzeugen. Bei OVN-Kubernetes tragen zusätzlich die Logical Switches pro Node die alten Subnetze.</p>
       <div class="warn"><b>Das ist ein Vollausfall, kein Rolling Update</b> – und im Fehlerfall steht man ohne getesteten Rückweg da.</div>
     </div>
   </details>
@@ -364,12 +398,28 @@ oc get network.operator.openshift.io -o jsonpath='{.items[0].spec.clusterNetwork
   <details>
     <summary>Sonderfall Calico-IPAM</summary>
     <div class="inner">
-      <p>Calico benutzt bei eigenem IPAM <b>nicht</b> <code>node.spec.podCIDR</code>, sondern eigene IPPool-Objekte. Damit gibt es einen dokumentierten Migrationspfad: neuen Pool anlegen, alten Pool auf <code>disabled: true</code> setzen, Pods rollierend neu starten. Jeder neu erzeugte Pod bekommt eine Adresse aus dem neuen Pool, bestehende Verbindungen bleiben unberührt.</p>
+      <p>Calico benutzt bei eigenem IPAM <b>nicht</b> <code>node.spec.podCIDR</code>, sondern eigene IPPool-Objekte. Damit gibt es einen dokumentierten Migrationspfad: neuen Pool anlegen, alten Pool auf <code>disabled: true</code> setzen, Pods rollierend neu starten. Jeder neu erzeugte Pod bekommt eine Adresse aus dem neuen Pool.</p>
+      <div class="warn"><b>Verbindungen bleiben nicht unberührt:</b> Beim rollierenden Neustart verliert jeder neu gestartete Pod seine Adresse und damit alle offenen Verbindungen. Anwendungen müssen Reconnects vertragen.</div>
       <pre><code>calicoctl get ippools -o wide
 calicoctl apply -f neuer-pool.yaml
 calicoctl patch ippool alter-pool -p '{"spec":{"disabled":true}}'
 <span class="c"># danach rollierender Neustart aller Workloads</span></code></pre>
-      <div class="note"><b>Einschränkung laut Calico-Doku:</b> Kubernetes erwartet, dass alle Pod-Adressen innerhalb der Cluster-CIDR liegen. Pools außerhalb davon sind technisch möglich, aber nicht empfohlen – Pods darin verlieren ihre Anbindung. Für OpenShift scheidet dieser Weg ohnehin aus, da die Plattform die Änderung der Pod-Netz-CIDR nicht vorsieht.</div>
+      <div class="note"><b>Einschränkung laut Calico-Doku:</b> Kubernetes erwartet, dass alle Pod-Adressen innerhalb der Cluster-CIDR liegen. Pools außerhalb davon sind technisch möglich, aber nicht empfohlen – Pods darin verlieren ihre Anbindung. Gegen Überlappung hilft der Weg damit nur bedingt: Liegt die Kollision in der Cluster-CIDR selbst, führt der empfohlene Pfad nicht aus ihr heraus. Für OpenShift scheidet dieser Weg ohnehin aus, da die Plattform die Änderung der Pod-Netz-CIDR nicht vorsieht.</div>
+    </div>
+  </details>
+
+  <details>
+    <summary>Positives Gegenbeispiel: OVN-interne Netze</summary>
+    <div class="inner">
+      <p>Anders als die Pod-CIDR lassen sich Join- und Transit-Subnetz von OVN-Kubernetes im laufenden Cluster ändern. Kollidiert etwa <code>100.64.0.0/16</code> mit CGNAT oder Tailscale, ist das ein lösbares Problem:</p>
+      <pre><code><span class="c"># Join-Subnetz</span>
+oc patch networks.operator.openshift.io cluster --type=merge -p \
+  '{"spec":{"defaultNetwork":{"ovnKubernetesConfig":{"ipv4":{"internalJoinSubnet":"100.99.0.0/16"}}}}}'
+
+<span class="c"># Transit-Switch-Subnetz</span>
+oc patch networks.operator.openshift.io cluster --type=merge -p \
+  '{"spec":{"defaultNetwork":{"ovnKubernetesConfig":{"ipv4":{"internalTransitSwitchSubnet":"100.98.0.0/16"}}}}}'</code></pre>
+      <p>Die neuen Bereiche dürfen sich weder untereinander noch mit Pod-, Service- oder Node-Netz überschneiden. Der Cluster Network Operator rollt die Änderung auf alle Nodes aus – Wartungsfenster einplanen.</p>
     </div>
   </details>
 
@@ -390,7 +440,7 @@ calicoctl patch ippool alter-pool -p '{"spec":{"disabled":true}}'
 
   <div class="card">
     <h3>Die Entscheidung</h3>
-    <svg viewBox="0 0 860 330" width="100%" style="max-width:840px;display:block;margin:6px auto" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Bei festgestellter Überlappung entscheidet die Verkehrsrichtung: ausgehend hilft Egress-IP oder SNAT, eingehend eine LoadBalancer-IP aus neutralem Pool; liegt die Zieladresse selbst im überlappenden Bereich, bleibt nur ein Proxy-Hop mit DNAT oder ein Neubau." font-family="Inter, sans-serif">
+    <svg viewBox="0 0 860 330" width="100%" style="max-width:840px;display:block;margin:6px auto" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Bei festgestellter Überlappung entscheidet die Verkehrsrichtung: ausgehend hilft das standardmäßige SNAT auf die Node-IP, eingehend eine LoadBalancer-IP aus neutralem Pool; liegt die Zieladresse selbst im überlappenden Bereich, bleibt nur ein Proxy-Hop mit DNAT oder ein Neubau." font-family="Inter, sans-serif">
       <defs><marker id="vs-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="var(--ink-soft)"/></marker></defs>
 
       <rect x="16" y="130" width="150" height="50" rx="12" fill="var(--card)" stroke="var(--line)" stroke-width="1.5"/>
@@ -405,8 +455,8 @@ calicoctl patch ippool alter-pool -p '{"spec":{"disabled":true}}'
       <path d="M350 144 C410 144, 410 60, 504 60" fill="none" stroke="var(--ink-soft)" stroke-width="1.4" marker-end="url(#vs-a)"/>
       <text x="418" y="44" font-size="10.5" fill="var(--ink-soft)">Cluster → außen</text>
       <rect x="510" y="34" width="196" height="52" rx="12" fill="var(--mint)" stroke="var(--mint-deep)" stroke-width="1.6"/>
-      <text x="608" y="56" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="12" fill="var(--mint-deep)">Egress-IP oder SNAT</text>
-      <text x="608" y="74" text-anchor="middle" font-size="11" fill="var(--mint-deep)">auf neutrale Adressen</text>
+      <text x="608" y="56" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="12" fill="var(--mint-deep)">SNAT auf Node-IP</text>
+      <text x="608" y="74" text-anchor="middle" font-size="11" fill="var(--mint-deep)">meist schon Standard</text>
 
       <path d="M350 155 H504" fill="none" stroke="var(--ink-soft)" stroke-width="1.4" marker-end="url(#vs-a)"/>
       <text x="384" y="147" font-size="10.5" fill="var(--ink-soft)">außen → Cluster</text>
@@ -438,11 +488,13 @@ calicoctl patch ippool alter-pool -p '{"spec":{"disabled":true}}'
   <div class="card">
     <h3>Die drei Fälle</h3>
     <ul class="clean">
-      <li><b>Ausgehend:</b> Egress-IP bzw. SNAT auf dedizierte Adressen aus einem Netz, das beiden Seiten passt. Die Gegenseite sieht nie eine Pod-IP.</li>
+      <li><b>Ausgehend:</b> meist schon gelöst. OVN-Kubernetes, Flannel und Calico mit <code>natOutgoing</code> SNATen Pod-Egress standardmäßig auf die Node-IP – die Gegenseite sieht nie eine Pod-IP. Ein Problem gibt es nur ohne SNAT, also bei per BGP annoncierten Pod-Netzen oder <code>natOutgoing: false</code>. Dann SNAT (wieder) aktivieren oder den Verkehr über ein Egress-Gateway führen.</li>
       <li><b>Eingehend:</b> Dienste ausschließlich über LoadBalancer- oder Ingress-Adressen aus einem neutralen Pool veröffentlichen.</li>
       <li><b>Der harte Fall:</b> Müssen aus dem Cluster heraus genau die überlappenden Zieladressen erreicht werden, hilft kein SNAT. Dann bleibt ein Proxy-Hop mit Destination-NAT auf einer Ersatzadresse – technisch machbar, betrieblich unschön, und jeder neue Dienst braucht wieder einen Eintrag.</li>
     </ul>
   </div>
+
+  <div class="note"><b>Egress-IP ist kein Überlappungswerkzeug.</b> Sie dient dem Firewall-Pinning – eine feste Absenderadresse pro Namespace, damit Firewall-Regeln greifen. Gegen Überlappung bringt sie gegenüber dem Standard-SNAT auf die Node-IP nichts.</div>
 
   <div class="mnemo"><b>SNAT versteckt, wo ein Paket herkommt.</b> Gegen ein Ziel, das es zweimal gibt, hilft es nicht.</div>
 </section>
@@ -468,7 +520,7 @@ calicoctl patch ippool alter-pool -p '{"spec":{"disabled":true}}'
 <!-- ================= 7 CHECKLISTE ================= -->
 <section id="checkliste" class="mint">
   <div class="sec-head"><div class="badge">7</div><h2>Checkliste vor jeder Installation</h2></div>
-  <p class="sec-sub">Sieben Punkte, die zehn Minuten kosten und einen Neubau ersparen.</p>
+  <p class="sec-sub">Neun Punkte, die zehn Minuten kosten und einen Neubau ersparen.</p>
 
   <div class="card">
     <ul class="clean">
@@ -478,6 +530,8 @@ calicoctl patch ippool alter-pool -p '{"spec":{"disabled":true}}'
       <li><code>hostPrefix</code> passt zur geplanten Node-Zahl, mit Reserve</li>
       <li>LoadBalancer-Pool und Egress-Adressen sind separat geplant</li>
       <li><code>172.17.0.0/16</code> und <code>169.254.0.0/16</code> sind geprüft</li>
+      <li>Bei OVN-Kubernetes: Join-, Transit- und Masquerade-Subnetz (<code>100.64.0.0/16</code>, <code>100.88.0.0/16</code>, <code>169.254.0.0/17</code>) gegen CGNAT, Tailscale und VPN-Pools geprüft</li>
+      <li>Bei Cilium: cluster-pool explizit gesetzt, nicht der Default <code>10.0.0.0/8</code></li>
       <li>Bei mehreren Clustern: unterschiedliche Bereiche je Cluster, falls sie jemals direkt miteinander sprechen sollen</li>
     </ul>
   </div>
