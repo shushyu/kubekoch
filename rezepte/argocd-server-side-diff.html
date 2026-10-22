@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Argo CD Server-Side Diff – wie der API-Server den Vergleich übernimmt</title>
+<meta name="rezept-kategorie"    content="gitops">
+<meta name="rezept-beschreibung" content="Wie Argo CD Git und Cluster vergleicht: Legacy-Diff, Structured-Merge und Server-Side Diff per Dry-Run, Field Ownership mit managedFields, CRD-Defaults, Admission Webhooks und die Umstellung.">
+<meta name="rezept-stand"        content="Argo CD 3.2 · 10/2026">
+<meta name="rezept-suche"        content="argo cd argocd server-side diff ssd legacy diff client-side structured-merge diff 3-way-merge last-applied-configuration server-side apply ssa dry-run dryrun managedfields field ownership field manager fake drift outofsync ignoredifferences crd defaults conversion cel admission webhook gatekeeper kyverno mutating includemutationwebhook comparisonerror compare-options argocd-cmd-params-cm controller.diff.server.side hpa replicas gitops">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#33394a;
+  --ink-soft:#5c6376;
+  --paper:#fbfaf7;
+  --card:#ffffff;
+  --line:#e9e6df;
+  --code-bg:#31364a;
+  --code-ink:#e8eaf2;
+  --mint:#d9f2e4;      --mint-deep:#2f8f6b;
+  --sky:#dcebf9;       --sky-deep:#2d6fa8;
+  --lav:#e7e2f7;       --lav-deep:#6b5bb5;
+  --peach:#fbe6d7;     --peach-deep:#c2703d;
+  --butter:#faf0cf;    --butter-deep:#a5842a;
+  --rose:#f9e0e6;      --rose-deep:#b34f6d;
+  --aqua:#d7eff0;      --aqua-deep:#2b8288;
+  --r-lg:26px; --r-md:18px; --r-sm:12px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;scroll-padding-top:90px}
+body{font-family:'Inter',sans-serif;background:var(--paper);color:var(--ink);line-height:1.65;font-size:16px}
+h1,h2,h3,h4{font-family:'Sora',sans-serif;line-height:1.2}
+
+/* ---------- Kopf ---------- */
+header{max-width:1060px;margin:0 auto;padding:56px 24px 8px}
+.kicker{display:inline-block;background:var(--lav);color:var(--lav-deep);font-weight:600;font-size:.8rem;letter-spacing:.08em;text-transform:uppercase;padding:6px 14px;border-radius:999px;margin-bottom:18px}
+header h1{font-size:clamp(1.9rem,4.5vw,3rem);font-weight:800;letter-spacing:-.02em}
+header h1 span{color:var(--mint-deep)}
+.lede{color:var(--ink-soft);max-width:640px;margin-top:14px;font-size:1.05rem}
+
+/* ---------- Route ---------- */
+.route{max-width:1060px;margin:34px auto 10px;padding:0 24px;display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
+.route a{display:flex;flex-direction:column;gap:8px;text-decoration:none;color:var(--ink);background:var(--card);border:1.5px solid var(--line);border-radius:var(--r-md);padding:16px 14px;transition:transform .15s ease,box-shadow .15s ease}
+.route a:hover,.route a:focus-visible{transform:translateY(-3px);box-shadow:0 8px 22px rgba(60,60,90,.10);outline:none}
+.route .dot{width:34px;height:34px;border-radius:12px;display:grid;place-items:center;font-family:'Sora';font-weight:700;font-size:.9rem}
+.route .t{font-weight:600;font-size:.86rem;line-height:1.3}
+.route .s{font-size:.74rem;color:var(--ink-soft)}
+.route a:nth-child(1) .dot{background:var(--aqua);color:var(--aqua-deep)}
+.route a:nth-child(2) .dot{background:var(--mint);color:var(--mint-deep)}
+.route a:nth-child(3) .dot{background:var(--sky);color:var(--sky-deep)}
+.route a:nth-child(4) .dot{background:var(--lav);color:var(--lav-deep)}
+.route a:nth-child(5) .dot{background:var(--peach);color:var(--peach-deep)}
+.route a:nth-child(6) .dot{background:var(--butter);color:var(--butter-deep)}
+.route a:nth-child(7) .dot{background:var(--rose);color:var(--rose-deep)}
+.route a:nth-child(8) .dot{background:var(--mint);color:var(--mint-deep)}
+.route a:nth-child(9) .dot{background:var(--sky);color:var(--sky-deep)}
+.route a:nth-child(10) .dot{background:var(--lav);color:var(--lav-deep)}
+
+/* ---------- Sticky-Nav ---------- */
+nav{position:sticky;top:0;z-index:50;background:rgba(251,250,247,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);margin-top:26px}
+nav .wrap{max-width:1060px;margin:0 auto;padding:10px 24px;display:flex;gap:8px;overflow-x:auto}
+nav a{white-space:nowrap;text-decoration:none;font-size:.82rem;font-weight:600;color:var(--ink-soft);padding:7px 14px;border-radius:999px;border:1px solid transparent}
+nav a:hover{background:var(--card);border-color:var(--line);color:var(--ink)}
+
+/* ---------- Sektionen ---------- */
+main{max-width:1060px;margin:0 auto;padding:20px 24px 90px}
+section{margin-top:64px}
+.sec-head{display:flex;align-items:center;gap:16px;margin-bottom:8px}
+.badge{width:52px;height:52px;border-radius:16px;display:grid;place-items:center;font-family:'Sora';font-weight:800;font-size:1.25rem;flex-shrink:0}
+section h2{font-size:clamp(1.4rem,3vw,1.9rem);font-weight:700}
+.sec-sub{color:var(--ink-soft);margin-bottom:22px;max-width:720px}
+.aqua .badge{background:var(--aqua);color:var(--aqua-deep)}
+.mint .badge{background:var(--mint);color:var(--mint-deep)}
+.sky .badge{background:var(--sky);color:var(--sky-deep)}
+.lav .badge{background:var(--lav);color:var(--lav-deep)}
+.peach .badge{background:var(--peach);color:var(--peach-deep)}
+.butter .badge{background:var(--butter);color:var(--butter-deep)}
+.rose .badge{background:var(--rose);color:var(--rose-deep)}
+
+/* ---------- Karten & Schritte ---------- */
+.card{background:var(--card);border:1.5px solid var(--line);border-radius:var(--r-lg);padding:26px 28px;margin-bottom:20px}
+.card h3{font-size:1.08rem;margin-bottom:14px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+ol.steps{list-style:none;counter-reset:s;display:flex;flex-direction:column;gap:14px}
+ol.steps li{counter-increment:s;display:grid;grid-template-columns:34px 1fr;gap:14px;align-items:start}
+ol.steps li::before{content:counter(s);width:30px;height:30px;border-radius:10px;display:grid;place-items:center;font-family:'Sora';font-weight:700;font-size:.85rem;margin-top:2px}
+.aqua ol.steps li::before{background:var(--aqua);color:var(--aqua-deep)}
+.mint ol.steps li::before{background:var(--mint);color:var(--mint-deep)}
+.sky ol.steps li::before{background:var(--sky);color:var(--sky-deep)}
+.lav ol.steps li::before{background:var(--lav);color:var(--lav-deep)}
+.peach ol.steps li::before{background:var(--peach);color:var(--peach-deep)}
+.butter ol.steps li::before{background:var(--butter);color:var(--butter-deep)}
+.rose ol.steps li::before{background:var(--rose);color:var(--rose-deep)}
+.steps b{font-weight:600}
+.steps small{display:block;color:var(--ink-soft);font-size:.86rem;margin-top:2px}
+
+ul.clean{list-style:none;display:flex;flex-direction:column;gap:10px}
+ul.clean li{padding-left:24px;position:relative}
+ul.clean li::before{content:"";position:absolute;left:4px;top:.62em;width:9px;height:9px;border-radius:3px;background:var(--line)}
+.aqua ul.clean li::before{background:var(--aqua-deep)}
+.mint ul.clean li::before{background:var(--mint-deep)}
+.sky ul.clean li::before{background:var(--sky-deep)}
+.lav ul.clean li::before{background:var(--lav-deep)}
+.peach ul.clean li::before{background:var(--peach-deep)}
+.butter ul.clean li::before{background:var(--butter-deep)}
+.rose ul.clean li::before{background:var(--rose-deep)}
+
+/* ---------- Code ---------- */
+pre{background:var(--code-bg);color:var(--code-ink);border-radius:var(--r-sm);padding:16px 18px;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:.82rem;line-height:1.6;margin:10px 0}
+code{font-family:'JetBrains Mono',monospace;font-size:.85em;background:#efede7;border-radius:6px;padding:2px 6px}
+pre code{background:none;padding:0;font-size:1em}
+pre .c{color:#9aa3c0}
+
+/* ---------- Hinweisboxen ---------- */
+.note,.warn,.mnemo{border-radius:var(--r-md);padding:14px 18px;margin:14px 0;font-size:.92rem}
+.note{background:var(--sky)}
+.warn{background:var(--rose)}
+.mnemo{background:var(--butter)}
+.note b,.warn b,.mnemo b{font-weight:700}
+.mnemo::before{content:"🧠 Merkbild · ";font-weight:700}
+.warn::before{content:"⚠️ ";font-weight:700}
+
+/* ---------- Tabellen ---------- */
+table{width:100%;border-collapse:separate;border-spacing:0;font-size:.88rem;margin:10px 0}
+th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-family:'Sora';font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft)}
+tr:last-child td{border-bottom:none}
+thead th:first-child{border-top-left-radius:var(--r-sm)}
+thead th:last-child{border-top-right-radius:var(--r-sm)}
+thead{background:var(--paper)}
+.scroll-x{overflow-x:auto}
+.scroll-x table{min-width:640px}
+
+
+/* ---------- Details ---------- */
+details{border:1.5px solid var(--line);border-radius:var(--r-md);margin:12px 0;background:var(--card)}
+details summary{cursor:pointer;padding:14px 18px;font-weight:600;font-size:.94rem;list-style:none;display:flex;align-items:center;gap:10px}
+details summary::before{content:"+";font-family:'Sora';font-weight:700;width:24px;height:24px;border-radius:8px;background:var(--paper);display:grid;place-items:center;flex-shrink:0}
+details[open] summary::before{content:"–"}
+details .inner{padding:0 18px 18px}
+summary::-webkit-details-marker{display:none}
+
+footer{max-width:1060px;margin:0 auto;padding:30px 24px 60px;color:var(--ink-soft);font-size:.82rem;border-top:1px solid var(--line)}
+footer a{color:var(--ink-soft)}
+
+@media(max-width:820px){
+  .route{grid-template-columns:repeat(2,1fr)}
+  .grid2{grid-template-columns:1fr}
+}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.route a{transition:none}}
+</style>
+</head>
+<body>
+
+<header>
+  <span class="kicker">Argo CD 3.2 · GitOps · Server-Side Diff</span>
+  <h1>Argo CD Server-Side Diff:<br>wie der <span>API-Server</span> den Vergleich übernimmt</h1>
+  <p class="lede">Argo CD vergleicht ständig, was in Git steht, mit dem, was im Cluster läuft. Wie dieser Vergleich gerechnet wird, legt die Diff-Strategie fest. Zehn Abschnitte zu den Strategien, zu Field Ownership, typischen Fake-Drift-Fällen und zur Umstellung.</p>
+</header>
+
+<div class="route">
+  <a href="#ueberblick"><span class="dot">0</span><span class="t">Überblick</span><span class="s">Schätzen oder fragen</span></a>
+  <a href="#strategien"><span class="dot">1</span><span class="t">Drei Strategien</span><span class="s">Legacy, Structured-Merge, SSD</span></a>
+  <a href="#legacy"><span class="dot">2</span><span class="t">Legacy Diff</span><span class="s">3-Way-Merge im Controller</span></a>
+  <a href="#ssd"><span class="dot">3</span><span class="t">Server-Side Diff</span><span class="s">Dry-Run am API-Server</span></a>
+  <a href="#diff-apply"><span class="dot">4</span><span class="t">Diff und Apply</span><span class="s">Zwei getrennte Schalter</span></a>
+  <a href="#managedfields"><span class="dot">5</span><span class="t">managedFields</span><span class="s">Field Ownership</span></a>
+  <a href="#praxis"><span class="dot">6</span><span class="t">Praxisfälle</span><span class="s">CRDs, Webhooks</span></a>
+  <a href="#abwaegung"><span class="dot">7</span><span class="t">Vor- und Nachteile</span><span class="s">Was es kostet</span></a>
+  <a href="#aktivieren"><span class="dot">8</span><span class="t">Aktivieren</span><span class="s">Global, pro App, Migration</span></a>
+  <a href="#versionen"><span class="dot">9</span><span class="t">Versionsstand</span><span class="s">2.5 bis 3.2</span></a>
+</div>
+
+<nav><div class="wrap">
+  <a href="#ueberblick">0 · Überblick</a>
+  <a href="#strategien">1 · Strategien</a>
+  <a href="#legacy">2 · Legacy</a>
+  <a href="#ssd">3 · Server-Side Diff</a>
+  <a href="#diff-apply">4 · Diff und Apply</a>
+  <a href="#managedfields">5 · managedFields</a>
+  <a href="#praxis">6 · Praxisfälle</a>
+  <a href="#abwaegung">7 · Vor-/Nachteile</a>
+  <a href="#aktivieren">8 · Aktivieren</a>
+  <a href="#versionen">9 · Versionen</a>
+</div></nav>
+
+<main>
+
+<!-- ================= 0 ÜBERBLICK ================= -->
+<section id="ueberblick" class="aqua">
+  <div class="sec-head"><div class="badge">0</div><h2>Überblick</h2></div>
+  <p class="sec-sub">Argo CD vergleicht zwei Zustände: das, was in Git steht (Desired State), und das, was im Cluster läuft (Live State). Wie dieser Vergleich gerechnet wird, legt die <b>Diff-Strategie</b> fest.</p>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>Legacy (Client-Side) Diff</h3>
+      <p>Der Application Controller rechnet den Diff selbst, ohne den API-Server zu fragen. Das ist weiterhin der Default.</p>
+    </div>
+    <div class="card">
+      <h3>Server-Side Diff (SSD)</h3>
+      <p>Der Controller schickt das Manifest als <b>Server-Side Apply im Dry-Run</b> an den API-Server und vergleicht das Ergebnis mit dem Live State.</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Gegenüberstellung</h3>
+    <div class="scroll-x">
+      <table>
+        <thead><tr><th></th><th>Client-Side (Legacy)</th><th>Server-Side Diff</th></tr></thead>
+        <tbody>
+          <tr><td><b>Wer rechnet?</b></td><td>Argo CD Controller</td><td>kube-apiserver (Dry-Run)</td></tr>
+          <tr><td><b>Defaults (eingebaut + CRD)</b></td><td>geraten bzw. unbekannt</td><td>vom Server gesetzt</td></tr>
+          <tr><td><b>Admission Webhooks</b></td><td>nicht beteiligt</td><td>validierende ja, mutierende optional</td></tr>
+          <tr><td><b>CRD-Schema / Conversion</b></td><td>unbekannt</td><td>bekannt</td></tr>
+          <tr><td><b>Merge-Grundlage</b></td><td>Annotation <code>last-applied-configuration</code></td><td><code>managedFields</code> (Field Ownership)</td></tr>
+          <tr><td><b>Zusätzliche API-Calls</b></td><td>keine</td><td>ein Dry-Run je Ressource (gecacht)</td></tr>
+          <tr><td><b>Status</b></td><td>Default</td><td>Beta seit 2.10, stable seit 3.1.0</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="mnemo"><b>Client-Side schätzt, Server-Side fragt.</b> Legacy ist der Kostenvoranschlag aus dem Gedächtnis, Server-Side Diff die Probefahrt mit dem echten Fahrzeug.</div>
+</section>
+
+<!-- ================= 1 STRATEGIEN ================= -->
+<section id="strategien" class="mint">
+  <div class="sec-head"><div class="badge">1</div><h2>Die drei Diff-Strategien</h2></div>
+  <p class="sec-sub">Argo CD kennt drei Strategien. Welche greift, ergibt sich aus zwei Schaltern, die nacheinander geprüft werden.</p>
+
+  <div class="card">
+    <ol class="steps">
+      <li><div><b>Legacy</b><small>3-Way-Merge im Controller. Default.</small></div></li>
+      <li><div><b>Structured-Merge Diff</b><small>Wird automatisch genutzt, sobald die Sync-Option <code>ServerSideApply=true</code> aktiv ist und kein Server-Side Diff eingeschaltet ist. Basiert auf der Kubernetes-Bibliothek <code>structured-merge-diff</code>, läuft aber weiterhin lokal im Controller.</small></div></li>
+      <li><div><b>Server-Side Diff</b><small>Server-Side Apply im Dry-Run-Modus gegen den API-Server.</small></div></li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h3>Welche Strategie greift</h3>
+    <svg viewBox="0 0 860 310" width="100%" style="max-width:840px;display:block;margin:6px auto" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Entscheidung der Diff-Strategie: Ist ServerSideDiff aktiv, wird Server-Side Diff per Dry-Run am API-Server verwendet. Andernfalls entscheidet die Sync-Option ServerSideApply: ist sie gesetzt, greift Structured-Merge Diff lokal im Controller, sonst Legacy mit 3-Way-Merge lokal." font-family="Inter, sans-serif">
+      <defs>
+        <marker id="st-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="var(--mint-deep)"/></marker>
+        <marker id="st-b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="var(--ink-soft)"/></marker>
+      </defs>
+
+      <rect x="20" y="112" width="130" height="56" rx="12" fill="var(--card)" stroke="var(--line)" stroke-width="1.5"/>
+      <text x="85" y="145" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="12.5" fill="var(--ink)">Diff-Strategie</text>
+
+      <path d="M150 140 H180" fill="none" stroke="var(--ink-soft)" stroke-width="1.5" marker-end="url(#st-b)"/>
+
+      <rect x="185" y="108" width="180" height="64" rx="32" fill="var(--sky)" stroke="var(--sky-deep)" stroke-width="1.6"/>
+      <text x="275" y="137" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="12" fill="var(--sky-deep)">ServerSideDiff</text>
+      <text x="275" y="155" text-anchor="middle" font-size="11" fill="var(--sky-deep)">aktiv?</text>
+
+      <path d="M352 120 C450 120, 480 54, 594 54" fill="none" stroke="var(--mint-deep)" stroke-width="2" marker-end="url(#st-a)"/>
+      <text x="470" y="74" font-size="11" font-weight="600" fill="var(--mint-deep)">ja</text>
+
+      <rect x="600" y="24" width="240" height="60" rx="12" fill="var(--mint)" stroke="var(--mint-deep)" stroke-width="1.6"/>
+      <text x="720" y="49" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="12.5" fill="var(--mint-deep)">Server-Side Diff</text>
+      <text x="720" y="68" text-anchor="middle" font-size="11" fill="var(--mint-deep)">Dry-Run am API-Server</text>
+
+      <path d="M340 168 C370 208, 380 208, 410 208" fill="none" stroke="var(--ink-soft)" stroke-width="1.5" marker-end="url(#st-b)"/>
+      <text x="328" y="206" font-size="11" font-weight="600" fill="var(--ink-soft)">nein</text>
+
+      <rect x="415" y="176" width="180" height="64" rx="32" fill="var(--sky)" stroke="var(--sky-deep)" stroke-width="1.6"/>
+      <text x="505" y="203" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="12" fill="var(--sky-deep)">Sync-Option</text>
+      <text x="505" y="222" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10.5" fill="var(--sky-deep)">ServerSideApply=true?</text>
+
+      <path d="M590 196 C610 196, 615 160, 634 160" fill="none" stroke="var(--ink-soft)" stroke-width="1.5" marker-end="url(#st-b)"/>
+      <text x="600" y="168" font-size="11" font-weight="600" fill="var(--ink-soft)">ja</text>
+
+      <rect x="640" y="130" width="200" height="60" rx="12" fill="var(--peach)" stroke="var(--peach-deep)" stroke-width="1.6" stroke-dasharray="6 4"/>
+      <text x="740" y="155" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="12" fill="var(--peach-deep)">Structured-Merge Diff</text>
+      <text x="740" y="174" text-anchor="middle" font-size="10.5" fill="var(--peach-deep)">lokal im Controller · eingestellt</text>
+
+      <path d="M590 222 C606 222, 612 252, 634 252" fill="none" stroke="var(--ink-soft)" stroke-width="1.5" marker-end="url(#st-b)"/>
+      <text x="596" y="262" font-size="11" font-weight="600" fill="var(--ink-soft)">nein</text>
+
+      <rect x="640" y="222" width="200" height="60" rx="12" fill="var(--card)" stroke="var(--line)" stroke-width="1.5"/>
+      <text x="740" y="247" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="12" fill="var(--ink)">Legacy</text>
+      <text x="740" y="266" text-anchor="middle" font-size="10.5" fill="var(--ink-soft)">3-Way-Merge lokal</text>
+
+      <text x="300" y="298" text-anchor="middle" font-size="11.5" fill="var(--ink-soft)">Zuerst zählt ServerSideDiff, erst danach die Sync-Option.</text>
+    </svg>
+  </div>
+
+  <div class="warn"><b>Structured-Merge Diff wird eingestellt.</b> Die Argo-CD-Doku (Release 3.2) führt die Strategie als „Feature Discontinued“: Nach mehreren Problemen aus der Community wird sie zugunsten von Server-Side Diff aufgegeben. Wer Server-Side Apply nutzt, sollte Server-Side Diff deshalb mit einschalten, statt sich auf den automatischen Fallback zu verlassen.</div>
+</section>
+
+<!-- ================= 2 LEGACY ================= -->
+<section id="legacy" class="sky">
+  <div class="sec-head"><div class="badge">2</div><h2>Legacy Diff: 3-Way-Merge im Controller</h2></div>
+  <p class="sec-sub">Beim Legacy-Diff kombiniert der Controller drei Quellen und berechnet daraus lokal, wie das Objekt nach einem Apply aussehen würde. Das Ergebnis vergleicht er mit dem Live State.</p>
+
+  <div class="card">
+    <h3>Drei Quellen, ein lokaler Merge</h3>
+    <svg viewBox="0 0 860 260" width="100%" style="max-width:840px;display:block;margin:6px auto" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Legacy Diff: Git-Manifest, Live State und die Annotation last-applied-configuration fließen in einen 3-Way-Merge im Controller. Danach folgt die Normalisierung mit ignoreDifferences und Known Types, am Ende steht der Diff. Der API-Server wird nicht gefragt." font-family="Inter, sans-serif">
+      <defs>
+        <marker id="lg-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="var(--sky-deep)"/></marker>
+      </defs>
+
+      <rect x="20" y="20" width="220" height="56" rx="12" fill="var(--card)" stroke="var(--line)" stroke-width="1.5"/>
+      <text x="130" y="44" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="12.5" fill="var(--ink)">Git-Manifest</text>
+      <text x="130" y="62" text-anchor="middle" font-size="11" fill="var(--ink-soft)">Helm, Kustomize, Plain YAML</text>
+
+      <rect x="20" y="96" width="220" height="56" rx="12" fill="var(--card)" stroke="var(--line)" stroke-width="1.5"/>
+      <text x="130" y="120" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="12.5" fill="var(--ink)">Live State</text>
+      <text x="130" y="138" text-anchor="middle" font-size="11" fill="var(--ink-soft)">aus dem Cluster</text>
+
+      <rect x="20" y="172" width="220" height="56" rx="12" fill="var(--card)" stroke="var(--line)" stroke-width="1.5"/>
+      <text x="130" y="196" text-anchor="middle" font-family="JetBrains Mono, monospace" font-weight="500" font-size="10.5" fill="var(--ink)">last-applied-configuration</text>
+      <text x="130" y="214" text-anchor="middle" font-size="11" fill="var(--ink-soft)">Gedächtnis des letzten Apply</text>
+
+      <path d="M240 48 C270 48, 270 108, 290 112" fill="none" stroke="var(--sky-deep)" stroke-width="1.5" marker-end="url(#lg-a)"/>
+      <path d="M240 124 H290" fill="none" stroke="var(--sky-deep)" stroke-width="1.5" marker-end="url(#lg-a)"/>
+      <path d="M240 200 C270 200, 270 140, 290 136" fill="none" stroke="var(--sky-deep)" stroke-width="1.5" marker-end="url(#lg-a)"/>
+
+      <rect x="296" y="94" width="160" height="60" rx="12" fill="var(--sky)" stroke="var(--sky-deep)" stroke-width="1.6"/>
+      <text x="376" y="119" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="12.5" fill="var(--sky-deep)">3-Way-Merge</text>
+      <text x="376" y="138" text-anchor="middle" font-size="11" fill="var(--sky-deep)">im Controller</text>
+
+      <path d="M456 124 H494" fill="none" stroke="var(--sky-deep)" stroke-width="1.5" marker-end="url(#lg-a)"/>
+
+      <rect x="500" y="86" width="190" height="76" rx="12" fill="var(--sky)" stroke="var(--sky-deep)" stroke-width="1.6"/>
+      <text x="595" y="112" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="12.5" fill="var(--sky-deep)">Normalisierung</text>
+      <text x="595" y="131" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10.5" fill="var(--sky-deep)">ignoreDifferences,</text>
+      <text x="595" y="148" text-anchor="middle" font-size="11" fill="var(--sky-deep)">Known Types</text>
+
+      <path d="M690 124 H728" fill="none" stroke="var(--sky-deep)" stroke-width="1.5" marker-end="url(#lg-a)"/>
+
+      <rect x="734" y="94" width="106" height="60" rx="12" fill="var(--card)" stroke="var(--sky-deep)" stroke-width="1.6"/>
+      <text x="787" y="129" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="12.5" fill="var(--sky-deep)">Diff</text>
+
+      <text x="560" y="214" text-anchor="middle" font-size="11.5" fill="var(--ink-soft)">Alles läuft lokal – der API-Server wird nicht gefragt.</text>
+    </svg>
+  </div>
+
+  <div class="card">
+    <h3>Grenzen</h3>
+    <ul class="clean">
+      <li><b>Defaults:</b> Der API-Server ergänzt Felder wie <code>imagePullPolicy</code>, <code>protocol: TCP</code> oder <code>terminationMessagePath</code>. Für eingebaute Typen kennt Argo CD viele davon, für CRD-Defaults nicht.</li>
+      <li><b>Listen:</b> Ohne Schema-Wissen werden Listen als Ganzes betrachtet. Ein von einem Controller ergänzter Eintrag oder ein Default innerhalb eines Listenelements erzeugt Drift.</li>
+      <li><b>Normalisierung:</b> Werte wie <code>cpu: 1000m</code> speichert der Server als <code>cpu: "1"</code>. Solche Umschreibungen müssen lokal nachgebildet werden.</li>
+      <li><b>Admission:</b> Webhooks laufen nur im Cluster. Fehler zeigen sich erst beim Sync.</li>
+      <li><b>Annotation-Limit:</b> <code>last-applied-configuration</code> unterliegt der Größengrenze für Annotations (256 KiB). Große CRDs scheitern daran.</li>
+    </ul>
+  </div>
+
+  <div class="note"><b>Übliche Gegenmaßnahme:</b> <code>ignoreDifferences</code>-Einträge und Normalizer im <code>argocd-cm</code>. Sie behandeln Symptome, nicht die Ursache.</div>
+</section>
+
+<!-- ================= 3 SSD ================= -->
+<section id="ssd" class="lav">
+  <div class="sec-head"><div class="badge">3</div><h2>Server-Side Diff: Dry-Run am API-Server</h2></div>
+  <p class="sec-sub">Der Controller schickt jedes Manifest als Server-Side-Apply-Patch mit <code>dryRun=All</code> an den API-Server. Der Server durchläuft seine normale Verarbeitungskette, schreibt aber nichts nach etcd. Zurück kommt der <b>vorhergesagte Live State</b>, den Argo CD mit dem tatsächlichen Live State vergleicht.</p>
+
+  <div class="card">
+    <h3>Ablauf eines Dry-Runs</h3>
+    <svg viewBox="0 0 860 440" width="100%" style="max-width:840px;display:block;margin:6px auto" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Sequenz: Der Argo CD Controller schickt einen PATCH als Server-Side Apply mit dryRun=All und fieldManager argocd-controller an den kube-apiserver. Dieser führt Conversion, Defaulting und Schema-Validierung aus und ruft die Admission Webhooks auf, validierende immer, mutierende optional. Die Webhooks erlauben oder lehnen ab. Wegen des Dry-Runs wird nichts nach etcd geschrieben. Der API-Server liefert den vorhergesagten Live State inklusive managedFields zurück, der Controller vergleicht ihn mit dem Live State." font-family="Inter, sans-serif">
+      <defs>
+        <marker id="sq-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="var(--lav-deep)"/></marker>
+        <marker id="sq-c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="var(--peach-deep)"/></marker>
+        <marker id="sq-b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="var(--ink-soft)"/></marker>
+      </defs>
+
+      <!-- Köpfe -->
+      <rect x="30" y="16" width="160" height="44" rx="12" fill="var(--lav)" stroke="var(--lav-deep)" stroke-width="1.6"/>
+      <text x="110" y="43" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="12" fill="var(--lav-deep)">Argo CD Controller</text>
+      <rect x="265" y="16" width="150" height="44" rx="12" fill="var(--sky)" stroke="var(--sky-deep)" stroke-width="1.6"/>
+      <text x="340" y="43" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="12" fill="var(--sky-deep)">kube-apiserver</text>
+      <rect x="490" y="16" width="160" height="44" rx="12" fill="var(--peach)" stroke="var(--peach-deep)" stroke-width="1.6"/>
+      <text x="570" y="43" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="12" fill="var(--peach-deep)">Admission Webhooks</text>
+      <rect x="715" y="16" width="110" height="44" rx="12" fill="var(--card)" stroke="var(--line)" stroke-width="1.5"/>
+      <text x="770" y="43" text-anchor="middle" font-family="Sora,sans-serif" font-weight="700" font-size="12" fill="var(--ink-soft)">etcd</text>
+
+      <!-- Lebenslinien -->
+      <path d="M110 60 V425" stroke="var(--line)" stroke-width="1.5" stroke-dasharray="4 4"/>
+      <path d="M340 60 V425" stroke="var(--line)" stroke-width="1.5" stroke-dasharray="4 4"/>
+      <path d="M570 60 V425" stroke="var(--line)" stroke-width="1.5" stroke-dasharray="4 4"/>
+      <path d="M770 60 V425" stroke="var(--line)" stroke-width="1.5" stroke-dasharray="4 4"/>
+
+      <!-- 1 PATCH -->
+      <text x="225" y="86" text-anchor="middle" font-size="11" font-weight="600" fill="var(--lav-deep)">PATCH · Server-Side Apply · dryRun=All</text>
+      <text x="225" y="101" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="var(--lav-deep)">fieldManager=argocd-controller</text>
+      <path d="M112 110 H336" fill="none" stroke="var(--lav-deep)" stroke-width="1.8" marker-end="url(#sq-a)"/>
+
+      <!-- 2 Verarbeitung im API-Server -->
+      <rect x="250" y="128" width="180" height="46" rx="10" fill="var(--sky)" stroke="var(--sky-deep)" stroke-width="1.4"/>
+      <text x="340" y="148" text-anchor="middle" font-size="11" fill="var(--sky-deep)">Conversion · Defaulting</text>
+      <text x="340" y="164" text-anchor="middle" font-size="11" fill="var(--sky-deep)">Schema-Validierung</text>
+
+      <!-- 3 Admission -->
+      <text x="455" y="202" text-anchor="middle" font-size="11" font-weight="600" fill="var(--peach-deep)">Admission</text>
+      <text x="455" y="217" text-anchor="middle" font-size="10.5" fill="var(--peach-deep)">validierend; mutierend optional</text>
+      <path d="M342 226 H566" fill="none" stroke="var(--peach-deep)" stroke-width="1.8" marker-end="url(#sq-c)"/>
+
+      <!-- 4 Antwort Webhook -->
+      <text x="455" y="256" text-anchor="middle" font-size="10.5" fill="var(--ink-soft)">erlaubt / abgelehnt</text>
+      <path d="M568 266 H344" fill="none" stroke="var(--ink-soft)" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#sq-b)"/>
+
+      <!-- 5 Notiz Dry-Run -->
+      <rect x="300" y="286" width="510" height="34" rx="10" fill="var(--butter)" stroke="var(--butter-deep)" stroke-width="1.4"/>
+      <text x="555" y="308" text-anchor="middle" font-size="11.5" font-weight="600" fill="var(--butter-deep)">Dry-Run: kein Schreiben nach etcd</text>
+
+      <!-- 6 Antwort -->
+      <text x="225" y="346" text-anchor="middle" font-size="10.5" fill="var(--ink-soft)">Predicted Live State</text>
+      <text x="225" y="360" text-anchor="middle" font-size="10.5" fill="var(--ink-soft)">inkl. managedFields</text>
+      <path d="M338 370 H114" fill="none" stroke="var(--ink-soft)" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#sq-b)"/>
+
+      <!-- 7 Vergleich -->
+      <rect x="25" y="384" width="170" height="36" rx="10" fill="var(--lav)" stroke="var(--lav-deep)" stroke-width="1.4"/>
+      <text x="110" y="406" text-anchor="middle" font-size="11" font-weight="600" fill="var(--lav-deep)">Vergleich Predicted vs. Live</text>
+    </svg>
+  </div>
+
+  <div class="mnemo"><b>Generalprobe ohne Publikum.</b> Der API-Server spielt das ganze Stück durch – Conversion, Defaults, Validierung, Webhooks –, aber der Vorhang (etcd) bleibt zu.</div>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>Caching</h3>
+      <p>Die Ergebnisse werden zwischengespeichert. Ein neuer Dry-Run geht nur raus, wenn</p>
+      <ul class="clean" style="margin-top:10px">
+        <li>ein Refresh oder Hard-Refresh der Application angefordert wird,</li>
+        <li>eine neue Revision im Repo vorliegt, auf das die Application zeigt,</li>
+        <li>sich die Application-Spec geändert hat,</li>
+        <li>sich die <code>resourceVersion</code> der Live-Ressource geändert hat.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Einschränkung: neue Ressourcen</h3>
+      <p>Für Ressourcen, die noch nicht im Cluster existieren, wird kein Server-Side Diff ausgeführt. Argo CD nutzt dann einen einfacheren Diff ohne Dry-Run.</p>
+      <p style="margin-top:10px">Folge: Validierende Webhooks laufen beim Diff einer noch nicht angelegten Ressource nicht mit. Deren Ablehnung zeigt sich wie bisher erst beim Sync.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 4 DIFF UND APPLY ================= -->
+<section id="diff-apply" class="peach">
+  <div class="sec-head"><div class="badge">4</div><h2>Diff und Apply: zwei getrennte Schalter</h2></div>
+  <p class="sec-sub">Häufige Verwechslung: Server-Side <b>Diff</b> bestimmt, wie Argo CD <i>vergleicht</i>. Server-Side <b>Apply</b> (Sync-Option, seit 2.5) bestimmt, wie Argo CD <i>schreibt</i>. Beides lässt sich unabhängig schalten.</p>
+
+  <div class="card">
+    <div class="scroll-x">
+      <table>
+        <thead><tr><th>Diff</th><th>Apply</th><th>Ergebnis</th></tr></thead>
+        <tbody>
+          <tr><td>Legacy</td><td>Client-Side</td><td>Default-Verhalten</td></tr>
+          <tr><td>Structured-Merge (automatisch)</td><td>Server-Side</td><td>ältere SSA-Variante, Diff weiterhin lokal; Strategie wird eingestellt</td></tr>
+          <tr><td>Server-Side</td><td>Server-Side</td><td><b>empfohlene Kombination</b></td></tr>
+          <tr><td>Server-Side</td><td>Client-Side</td><td>möglich, aber Vorsicht: Diff und Apply arbeiten mit unterschiedlichen Operationstypen; dadurch können z. B. entfernte Labels im Diff verborgen bleiben</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="mnemo"><b>Diff ist die Brille, Apply der Stift.</b> Mit der Brille sieht man, was abweicht; mit dem Stift wird geschrieben. Beides vom selben Hersteller passt am besten zusammen.</div>
+
+  <div class="note"><b>Empfehlung:</b> Server-Side Diff und Server-Side Apply gemeinsam einsetzen.</div>
+</section>
+
+<!-- ================= 5 MANAGEDFIELDS ================= -->
+<section id="managedfields" class="butter">
+  <div class="sec-head"><div class="badge">5</div><h2>Field Ownership mit <code>managedFields</code></h2></div>
+  <p class="sec-sub">Server-Side Apply ersetzt die <code>last-applied-configuration</code>-Annotation durch <code>metadata.managedFields</code>. Dort ist für jedes Feld eingetragen, welcher <b>Field Manager</b> es besitzt.</p>
+
+  <div class="card">
+<pre><code>metadata:
+  managedFields:
+    - manager: argocd-controller
+      operation: Apply
+      apiVersion: apps/v1
+      fieldsType: FieldsV1
+      fieldsV1:
+        f:spec:
+          f:template:
+            f:spec:
+              f:containers:
+                k:{"name":"web"}:
+                  f:image: {}
+                  f:ports: {}
+    - manager: kube-controller-manager
+      operation: Update
+      apiVersion: apps/v1
+      fieldsType: FieldsV1
+      fieldsV1:
+        f:spec:
+          f:replicas: {}</code></pre>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>Lesehilfe</h3>
+      <ul class="clean">
+        <li><code>f:</code> steht für ein Feld.</li>
+        <li><code>k:{"name":"web"}</code> steht für einen Listeneintrag, identifiziert über den Merge-Key <code>name</code>, nicht über die Position. Die Ownership bleibt stabil, wenn sich die Reihenfolge ändert.</li>
+        <li><code>{}</code> markiert nur den Besitz. Werte stehen nicht in <code>managedFields</code>.</li>
+        <li><code>operation: Apply</code> bedeutet deklaratives Setzen per Server-Side Apply, <code>operation: Update</code> klassisches PUT/PATCH, typisch für Controller.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Folgen für den Diff</h3>
+      <ul class="clean">
+        <li>Felder, die nicht in Git stehen und einem anderen Manager gehören (im Beispiel <code>spec.replicas</code> des HPA), erscheinen nicht als Drift.</li>
+        <li>Felder, die in Git stehen, werden weiterhin verglichen. Ändert jemand <code>image</code> per <code>kubectl edit</code>, zeigt der Server-Side Diff das als Drift an, weil der Dry-Run-Apply den Wert zurücksetzen würde.</li>
+        <li>Beanspruchen Git und ein Controller dasselbe Feld (z. B. <code>replicas</code> in Git plus HPA), überschreiben sich beide gegenseitig. Lösung: das Feld aus dem Manifest entfernen.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="mnemo"><b><code>managedFields</code> ist das Grundbuch des Objekts.</b> Für jedes Flurstück (Feld) steht ein Eigentümer drin. Argo CD streitet nur um die Grundstücke, die auf seinen Namen eingetragen sind.</div>
+</section>
+
+<!-- ================= 6 PRAXISFÄLLE ================= -->
+<section id="praxis" class="rose">
+  <div class="sec-head"><div class="badge">6</div><h2>Praxisfälle</h2></div>
+  <p class="sec-sub">Vier Situationen, in denen sich Legacy und Server-Side Diff sichtbar unterscheiden.</p>
+
+  <div class="card">
+    <h3>6.1 CRD-Defaults</h3>
+    <p>Ein CRD-Schema kann Defaults festlegen:</p>
+<pre><code>spec:
+  type: object
+  properties:
+    affinity:
+      type: object
+      properties:
+        podAffinityType:
+          type: string
+          default: "preferred"
+    enablePDB:
+      type: boolean
+      default: true</code></pre>
+    <p>Fehlen diese Felder in der Custom Resource in Git, ergänzt der API-Server sie. Der Server-Side Diff erhält dieselben Defaults aus dem Dry-Run, also entsteht kein Diff. Der Legacy-Diff kennt das CRD-Schema nicht und kann je nach Situation Fake-Drift melden: bei Defaults in Listenelementen, bei fehlender <code>last-applied-configuration</code> oder bei explizit leeren Werten.</p>
+    <div class="note"><b>Defaults greifen nur innerhalb existierender Objekte.</b> <code>podAffinityType</code> wird nur gesetzt, wenn <code>spec.affinity</code> in der CR vorhanden ist (oder <code>affinity</code> selbst einen Default <code>{}</code> hat). <code>enablePDB</code> liegt direkt unter <code>spec</code> und wird immer ergänzt.</div>
+  </div>
+
+  <div class="card">
+    <h3>6.2 CRD-Versionen und Validierung</h3>
+    <ul class="clean">
+      <li><b>Conversion:</b> Steht in Git eine ältere API-Version (z. B. <code>v1beta1</code>) und ist <code>v1</code> die Storage-Version, läuft der Dry-Run durch die echte Conversion-Kette des Servers.</li>
+      <li><b>Validierung:</b> <code>required</code>, <code>enum</code>, <code>pattern</code> und CEL-Regeln (<code>x-kubernetes-validations</code>) greifen bereits beim Diff.</li>
+      <li><b>Listen-Semantik:</b> <code>x-kubernetes-list-type: map</code> und <code>x-kubernetes-list-map-keys</code> sagen dem Server, dass eine Liste über einen Schlüssel gemergt wird. Das verhindert Drift durch geänderte Reihenfolge oder ergänzte Einträge.</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>6.3 Admission Webhooks: Fehler vor dem Sync</h3>
+    <p>Beispiel: Eine Gatekeeper-Constraint begrenzt CPU-Requests auf maximal 2. In Git wird versehentlich <code>cpu: 5</code> eingetragen.</p>
+    <div class="grid2" style="margin-top:14px">
+      <div>
+        <p><b>Ohne Server-Side Diff</b></p>
+        <p>Argo CD zeigt nur OutOfSync. Erst beim Sync lehnt der Webhook den Apply ab, die Operation endet mit Phase <code>Failed</code>. Andere Ressourcen derselben Sync-Wave können zu diesem Zeitpunkt bereits angewendet sein.</p>
+      </div>
+      <div>
+        <p><b>Mit Server-Side Diff</b></p>
+        <p>Schon der Dry-Run läuft durch die Admission-Kette. Die Application zeigt direkt nach dem Commit einen <code>ComparisonError</code> mit der Ablehnungsmeldung des Webhooks. Ein Sync wird gar nicht erst versucht.</p>
+      </div>
+    </div>
+    <div class="warn"><b>Nebenwirkung:</b> Ein <code>ComparisonError</code> betrifft die ganze Application. Bis der Fehler behoben ist, fehlt die Diff-Anzeige auch für die übrigen Ressourcen.</div>
+  </div>
+
+  <div class="card">
+    <h3>6.4 Mutating Webhooks</h3>
+    <p>Mutierende Webhooks (z. B. Istio-Sidecar-Injection, Kyverno-Mutationen) werden beim Server-Side Diff <b>standardmäßig nicht</b> einbezogen. Sollen ihre Änderungen in den Diff einfließen, braucht die Application zusätzlich <code>IncludeMutationWebhook=true</code> (siehe <a href="#aktivieren">Abschnitt 8</a>). Die Option wirkt nur bei aktivem Server-Side Diff.</p>
+  </div>
+</section>
+
+<!-- ================= 7 VOR- UND NACHTEILE ================= -->
+<section id="abwaegung" class="mint">
+  <div class="sec-head"><div class="badge">7</div><h2>Vor- und Nachteile</h2></div>
+  <p class="sec-sub">Weniger Fake-Drift und frühere Fehler gegen zusätzliche Last am API-Server und ein paar Sonderfälle.</p>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>Vorteile</h3>
+      <ul class="clean">
+        <li>Deutlich weniger Fake-Drift durch Defaults, Normalisierung und CRD-Schemas.</li>
+        <li>Weniger <code>ignoreDifferences</code>-Einträge nötig.</li>
+        <li>Policy-Verstöße (Gatekeeper, Kyverno, CEL) fallen beim Vergleich auf, nicht erst beim Sync.</li>
+        <li>In Kombination mit Server-Side Apply: Field Ownership statt Annotation, saubere Koexistenz mit HPA, VPA und Operatoren, korrekte Entfernung gelöschter Felder, keine 256-KiB-Grenze.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Nachteile und Einschränkungen</h3>
+      <ul class="clean">
+        <li>Zusätzliche Last auf dem API-Server: ein Dry-Run je Ressource, abgefedert durch Caching.</li>
+        <li>Mutating Webhooks nur per Opt-in.</li>
+        <li>Kein Server-Side Diff beim Anlegen neuer Ressourcen.</li>
+        <li>Ein abgelehnter Dry-Run blockiert die Diff-Anzeige der gesamten Application.</li>
+        <li>Mischbetrieb mit Client-Side Apply kann Änderungen verschleiern.</li>
+        <li>Bei der Umstellung bleiben alte <code>managedFields</code>-Einträge von <code>kubectl-client-side-apply</code> bestehen und können Ownership-Konflikte auslösen.</li>
+        <li>Nicht der Default: muss aktiv eingeschaltet werden.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 8 AKTIVIEREN ================= -->
+<section id="aktivieren" class="sky">
+  <div class="sec-head"><div class="badge">8</div><h2>Aktivieren und migrieren</h2></div>
+  <p class="sec-sub">Server-Side Diff lässt sich global oder pro Application einschalten. Die Annotation pro Application hat Vorrang und erlaubt auch das gezielte Abschalten.</p>
+
+  <div class="card">
+    <h3>Global</h3>
+    <p>Im ConfigMap <code>argocd-cmd-params-cm</code>, danach den Application Controller neu starten:</p>
+<pre><code>apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-cmd-params-cm
+  namespace: argocd
+data:
+  controller.diff.server.side: "true"</code></pre>
+<pre><code><span class="c"># Standardinstallation: der Controller läuft als StatefulSet</span>
+kubectl -n argocd rollout restart statefulset argocd-application-controller</code></pre>
+    <div class="note"><b>Operator-verwaltete Instanzen:</b> Wird Argo CD über einen Operator betrieben, kann dieser direkte Änderungen an der ConfigMap überschreiben. Den passenden Weg über die Operator-CR in dessen Doku prüfen – oder mit der Annotation pro Application arbeiten, die davon unabhängig ist.</div>
+  </div>
+
+  <div class="card">
+    <h3>Pro Application</h3>
+    <p>Per Annotation, hier zusammen mit Mutating Webhooks und Server-Side Apply:</p>
+<pre><code>apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: my-app
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/compare-options: ServerSideDiff=true,IncludeMutationWebhook=true
+spec:
+  syncPolicy:
+    syncOptions:
+      - ServerSideApply=true</code></pre>
+    <p>Pro Application abschalten, wenn global aktiv:</p>
+<pre><code>metadata:
+  annotations:
+    argocd.argoproj.io/compare-options: ServerSideDiff=false</code></pre>
+  </div>
+
+  <div class="card">
+    <h3>Vorgehen bei der Migration</h3>
+    <ol class="steps">
+      <li><div><b>Klein anfangen</b><small>Server-Side Diff zunächst für einige unkritische Applications per Annotation aktivieren.</small></div></li>
+      <li><div><b>Diffs vergleichen</b><small>Vor und nach der Umstellung mit <code>argocd app diff &lt;app&gt;</code> gegenüberstellen.</small></div></li>
+      <li><div><b>Controller-Felder entfernen</b><small>Felder, die Controller verwalten (z. B. <code>replicas</code> bei HPA), aus den Manifesten nehmen.</small></div></li>
+      <li><div><b>ignoreDifferences abbauen</b><small>Überflüssig gewordene Einträge entfernen.</small></div></li>
+      <li><div><b>Server-Side Apply zuschalten</b><small>Für dieselben Applications die Sync-Option <code>ServerSideApply=true</code> setzen.</small></div></li>
+      <li><div><b>Global aktivieren</b><small>Danach global einschalten und problematische Applications gezielt per Annotation ausnehmen.</small></div></li>
+    </ol>
+  </div>
+</section>
+
+<!-- ================= 9 VERSIONEN ================= -->
+<section id="versionen" class="lav">
+  <div class="sec-head"><div class="badge">9</div><h2>Versionsstand</h2></div>
+  <p class="sec-sub">Wie sich die Diff-Strategien über die Releases entwickelt haben.</p>
+
+  <div class="card">
+    <table>
+      <thead><tr><th>Version</th><th>Neuerung</th></tr></thead>
+      <tbody>
+        <tr><td><b>2.5</b> (Okt. 2022)</td><td>Sync-Option Server-Side Apply, Diff per Structured-Merge</td></tr>
+        <tr><td><b>2.10</b> (Anfang 2024)</td><td>Server-Side Diff als Beta</td></tr>
+        <tr><td><b>3.1.0</b> (2025)</td><td>Server-Side Diff stable</td></tr>
+        <tr><td><b>3.2</b></td><td>Legacy weiterhin Default-Strategie; Structured-Merge Diff als eingestellt markiert</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+</main>
+
+<footer>Quellen: Argo CD – <a href="https://argo-cd.readthedocs.io/en/release-3.2/user-guide/diff-strategies/"><i>Diff Strategies</i> (Release 3.2)</a> · Argo CD – <a href="https://argo-cd.readthedocs.io/en/release-3.3/developer-guide/release-process-and-cadence/"><i>Release Process and Cadence</i></a> · <a href="https://blogs.apievangelist.com/blogs/argo-2025-06-19-announcing-argo-cd-v3-1/"><i>Announcing Argo CD v3.1</i></a> · Kubernetes – <a href="https://kubernetes.io/docs/reference/using-api/server-side-apply/"><i>Server-Side Apply</i></a> · Vortrag ArgoCon North America (Intuit) zu Server-Side Diff mit Beispielen zu Admission Webhooks, Field Ownership und CRD-Defaults. Stand Oktober 2026: Argo CD 3.2.</footer>
+
+</body>
+</html>
